@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify a bridge job once, then dispatch only to an allowed local runner."""
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,10 @@ def main(spec_path: str) -> int:
 
     if payload_type == V1_PAYLOAD_TYPE and spec.get("kind") == "unsloth-qlora-sft-v1":
         runner = ROOT / "runjob.py"
-    elif payload_type == V2_PAYLOAD_TYPE and spec.get("kind") == "unsloth-frontier-sft-v2":
+    elif (
+        payload_type == V2_PAYLOAD_TYPE
+        and spec.get("kind") == "unsloth-frontier-sft-v2"
+    ):
         try:
             validate_v2_spec(spec)
         except ContractError as exc:

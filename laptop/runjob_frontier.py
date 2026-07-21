@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify, execute, evaluate, export, and publish one signed frontier job."""
+
 from __future__ import annotations
 
 import base64
@@ -14,7 +15,12 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from frontier_contract import V2_PAYLOAD_TYPE, load_pin, validate_v2_spec, verify_envelope
+from frontier_contract import (
+    V2_PAYLOAD_TYPE,
+    load_pin,
+    validate_v2_spec,
+    verify_envelope,
+)
 from frontier_job import (
     ROOT,
     _build_sft_config,
@@ -45,6 +51,7 @@ from frontier_runtime import (
     validate_expected_chat_template,
 )
 
+
 def main(spec_path: str) -> int:
     envelope = json.loads(pathlib.Path(spec_path).read_text(encoding="utf-8-sig"))
     pin = load_pin(ROOT / "keys" / "engine_pubkey.json")
@@ -67,7 +74,9 @@ def main(spec_path: str) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     release_dir.mkdir(parents=True, exist_ok=True)
 
-    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(
+        timezone.utc
+    ):
         blocked(spec, "expiry", f"spec expired at {spec['expiresAt']}")
     free_disk_gb = shutil.disk_usage(str(ROOT)).free / 1e9
     if free_disk_gb < spec["gates"]["minFreeDiskGb"]:
@@ -103,7 +112,11 @@ def main(spec_path: str) -> int:
             repo_type="dataset",
         )
     except Exception as exc:  # noqa: BLE001
-        blocked(spec, "gate:license-metadata", f"pinned Hub license verification failed: {exc}")
+        blocked(
+            spec,
+            "gate:license-metadata",
+            f"pinned Hub license verification failed: {exc}",
+        )
 
     try:
         from huggingface_hub import hf_hub_download
@@ -160,7 +173,9 @@ def main(spec_path: str) -> int:
             lora_dropout=recipe["loraDropout"],
             bias="none",
             target_modules=recipe["targetModules"],
-            use_gradient_checkpointing=_gradient_checkpointing(recipe["gradientCheckpointing"]),
+            use_gradient_checkpointing=_gradient_checkpointing(
+                recipe["gradientCheckpointing"]
+            ),
             random_state=recipe["seed"],
             max_seq_length=recipe["maxSeqLength"],
             use_rslora=recipe["useRsLoRA"],
@@ -175,9 +190,17 @@ def main(spec_path: str) -> int:
                 f"dataset has {len(full_dataset)} rows > signed maximum {spec['gates']['maxDatasetRows']}",
             )
         if len(full_dataset) < 4:
-            blocked(spec, "gate:dataset-rows", "dataset requires at least four rows for train/eval split")
+            blocked(
+                spec,
+                "gate:dataset-rows",
+                "dataset requires at least four rows for train/eval split",
+            )
         if "messages" not in full_dataset.column_names:
-            blocked(spec, "gate:dataset-format", "messages-jsonl dataset has no messages column")
+            blocked(
+                spec,
+                "gate:dataset-format",
+                "messages-jsonl dataset has no messages column",
+            )
         try:
             _validate_dataset_rows(full_dataset)
         except ValueError as exc:
@@ -192,8 +215,16 @@ def main(spec_path: str) -> int:
             def on_log(self, args, state, control, logs=None, **kwargs):
                 logs = logs or {}
                 loss = logs.get("loss")
-                if spec["gates"].get("abortOnNanLoss", True) and isinstance(loss, (int, float)) and not math.isfinite(loss):
-                    blocked(spec, "train:non-finite-loss", f"non-finite loss at step {state.global_step}")
+                if (
+                    spec["gates"].get("abortOnNanLoss", True)
+                    and isinstance(loss, (int, float))
+                    and not math.isfinite(loss)
+                ):
+                    blocked(
+                        spec,
+                        "train:non-finite-loss",
+                        f"non-finite loss at step {state.global_step}",
+                    )
                 if time.time() - started > spec["gates"]["maxWallclockMinutes"] * 60:
                     blocked(
                         spec,
@@ -215,12 +246,17 @@ def main(spec_path: str) -> int:
         train_output = trainer.train()
         eval_raw = trainer.evaluate()
         heldout_loss = float(eval_raw.get("eval_loss", float("nan")))
-        if not math.isfinite(float(train_output.training_loss)) or not math.isfinite(heldout_loss):
+        if not math.isfinite(float(train_output.training_loss)) or not math.isfinite(
+            heldout_loss
+        ):
             blocked(
                 spec,
                 "eval:non-finite-loss",
                 "training or held-out loss is non-finite",
-                extra={"trainLoss": float(train_output.training_loss), "heldOutLoss": heldout_loss},
+                extra={
+                    "trainLoss": float(train_output.training_loss),
+                    "heldOutLoss": heldout_loss,
+                },
             )
 
         FastLanguageModel.for_inference(model)
@@ -230,7 +266,9 @@ def main(spec_path: str) -> int:
             eval_dataset,
             spec["eval"],
         )
-        if (generation_metrics["degenerateRate"] or 0) > spec["eval"]["maxDegenerateRate"]:
+        if (generation_metrics["degenerateRate"] or 0) > spec["eval"][
+            "maxDegenerateRate"
+        ]:
             blocked(
                 spec,
                 "eval:degenerate-output",
@@ -286,7 +324,9 @@ def main(spec_path: str) -> int:
         train_rows = len(train_dataset)
         heldout_rows = len(eval_dataset)
         peak_vram_value = (
-            float(torch.cuda.max_memory_allocated()) / 1e9 if torch.cuda.is_available() else None
+            float(torch.cuda.max_memory_allocated()) / 1e9
+            if torch.cuda.is_available()
+            else None
         )
         del trainer, train_output, model
         gc.collect()
@@ -330,7 +370,9 @@ def main(spec_path: str) -> int:
         "label": "MEASURED",
         "finalTrainLoss": train_loss_value,
         "trainMinutes": round(train_minutes, 2),
-        "peakVramGb": round(peak_vram_value, 2) if peak_vram_value is not None else None,
+        "peakVramGb": round(peak_vram_value, 2)
+        if peak_vram_value is not None
+        else None,
         "steps": global_steps,
         "trainRows": train_rows,
     }
@@ -377,7 +419,9 @@ def main(spec_path: str) -> int:
         repo_id=spec["outputs"]["modelRepoId"],
         commit_message=f"release({spec['jobId']}): validated frontier artifacts",
     )
-    release_oid = getattr(release_commit, "oid", None) or getattr(release_commit, "commit_id", None)
+    release_oid = getattr(release_commit, "oid", None) or getattr(
+        release_commit, "commit_id", None
+    )
 
     training_receipt = {
         "kind": "szl-frontier-training-receipt",
@@ -400,7 +444,9 @@ def main(spec_path: str) -> int:
         "at": now_iso(),
     }
     signed_training = sign_receipt(training_receipt)
-    training_body_sha = hashlib.sha256(base64.b64decode(signed_training["bodyBase64"])).hexdigest()
+    training_body_sha = hashlib.sha256(
+        base64.b64decode(signed_training["bodyBase64"])
+    ).hexdigest()
     eval_receipt = {
         "kind": "szl-frontier-eval-receipt",
         "v": 2,

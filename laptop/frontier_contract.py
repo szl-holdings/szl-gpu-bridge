@@ -6,6 +6,7 @@ load before a job has been trusted.  The dispatcher and frontier runner both
 verify the DSSE envelope against the pinned engine key before inspecting any
 job field.
 """
+
 from __future__ import annotations
 
 import base64
@@ -89,7 +90,9 @@ def verify_envelope(
         raise ContractError(f"unsupported payloadType {payload_type!r}")
 
     spki = _decode_b64(envelope.get("publicKeySpkiBase64"), "publicKeySpkiBase64")
-    pin_spki = _decode_b64(engine_pin.get("publicKeySpkiBase64"), "engine pin publicKeySpkiBase64")
+    pin_spki = _decode_b64(
+        engine_pin.get("publicKeySpkiBase64"), "engine pin publicKeySpkiBase64"
+    )
     if spki != pin_spki:
         raise ContractError("envelope public key differs from the pinned engine key")
     derived = derive_key_id(spki)
@@ -124,7 +127,9 @@ def verify_envelope(
     return spec, payload, payload_type
 
 
-def _required_object(parent: dict[str, Any], key: str, required: set[str], allowed: set[str]) -> dict[str, Any]:
+def _required_object(
+    parent: dict[str, Any], key: str, required: set[str], allowed: set[str]
+) -> dict[str, Any]:
     value = parent.get(key)
     if not isinstance(value, dict):
         raise ContractError(f"{key} must be an object")
@@ -154,7 +159,9 @@ def _repo_id(value: Any, field: str) -> str:
 
 def _revision(value: Any, field: str) -> str:
     if not isinstance(value, str) or not _REVISION.fullmatch(value):
-        raise ContractError(f"{field} must be an immutable 40-64 character lowercase hex revision")
+        raise ContractError(
+            f"{field} must be an immutable 40-64 character lowercase hex revision"
+        )
     return value
 
 
@@ -173,8 +180,16 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ContractError("v2 spec must be an object")
     missing = {
-        "jobId", "kind", "createdAt", "expiresAt", "base", "dataset",
-        "recipe", "gates", "outputs", "eval",
+        "jobId",
+        "kind",
+        "createdAt",
+        "expiresAt",
+        "base",
+        "dataset",
+        "recipe",
+        "gates",
+        "outputs",
+        "eval",
     } - spec.keys()
     extra = spec.keys() - _ALLOWED_TOP_LEVEL_V2
     if missing:
@@ -211,38 +226,78 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
     )
     _repo_id(dataset["repoId"], "dataset.repoId")
     _revision(dataset["revision"], "dataset.revision")
-    if not isinstance(dataset["file"], str) or not _SAFE_RELATIVE.fullmatch(dataset["file"]):
+    if not isinstance(dataset["file"], str) or not _SAFE_RELATIVE.fullmatch(
+        dataset["file"]
+    ):
         raise ContractError("dataset.file must be a safe relative Hub path")
-    if dataset["file"].startswith("/") or ".." in pathlib.PurePosixPath(dataset["file"]).parts:
-        raise ContractError("dataset.file must not be absolute or traverse parent directories")
-    if not isinstance(dataset["sha256"], str) or not _SHA256.fullmatch(dataset["sha256"]):
+    if (
+        dataset["file"].startswith("/")
+        or ".." in pathlib.PurePosixPath(dataset["file"]).parts
+    ):
+        raise ContractError(
+            "dataset.file must not be absolute or traverse parent directories"
+        )
+    if not isinstance(dataset["sha256"], str) or not _SHA256.fullmatch(
+        dataset["sha256"]
+    ):
         raise ContractError("dataset.sha256 must be lowercase sha256 hex")
     if dataset["format"] != "messages-jsonl":
         raise ContractError("dataset.format must be 'messages-jsonl'")
     if not isinstance(dataset["licenseId"], str) or not dataset["licenseId"].strip():
-        raise ContractError("dataset.licenseId must be a non-empty SPDX-style identifier")
-    if not isinstance(dataset["provenance"], str) or len(dataset["provenance"].strip()) < 20:
-        raise ContractError("dataset.provenance must contain an auditable lineage statement")
+        raise ContractError(
+            "dataset.licenseId must be a non-empty SPDX-style identifier"
+        )
+    if (
+        not isinstance(dataset["provenance"], str)
+        or len(dataset["provenance"].strip()) < 20
+    ):
+        raise ContractError(
+            "dataset.provenance must contain an auditable lineage statement"
+        )
 
     recipe_required = {
-        "maxSeqLength", "loraR", "loraAlpha", "loraDropout", "targetModules",
-        "batchSize", "gradAccum", "epochs", "learningRate", "optimizer",
-        "gradientCheckpointing", "seed", "packing", "packingStrategy",
-        "assistantOnlyLoss", "useRsLoRA", "warmupRatio", "weightDecay",
-        "lrSchedulerType", "expectedChatTemplateSha256",
+        "maxSeqLength",
+        "loraR",
+        "loraAlpha",
+        "loraDropout",
+        "targetModules",
+        "batchSize",
+        "gradAccum",
+        "epochs",
+        "learningRate",
+        "optimizer",
+        "gradientCheckpointing",
+        "seed",
+        "packing",
+        "packingStrategy",
+        "assistantOnlyLoss",
+        "useRsLoRA",
+        "warmupRatio",
+        "weightDecay",
+        "lrSchedulerType",
+        "expectedChatTemplateSha256",
     }
     recipe = _required_object(spec, "recipe", recipe_required, recipe_required)
-    if not isinstance(recipe["maxSeqLength"], int) or not 256 <= recipe["maxSeqLength"] <= 131072:
+    if (
+        not isinstance(recipe["maxSeqLength"], int)
+        or not 256 <= recipe["maxSeqLength"] <= 131072
+    ):
         raise ContractError("recipe.maxSeqLength must be an integer from 256 to 131072")
     if not isinstance(recipe["loraR"], int) or not 1 <= recipe["loraR"] <= 256:
         raise ContractError("recipe.loraR must be an integer from 1 to 256")
     if not isinstance(recipe["loraAlpha"], int) or recipe["loraAlpha"] <= 0:
         raise ContractError("recipe.loraAlpha must be a positive integer")
-    dropout = _positive_number(recipe["loraDropout"], "recipe.loraDropout", allow_zero=True)
+    dropout = _positive_number(
+        recipe["loraDropout"], "recipe.loraDropout", allow_zero=True
+    )
     if dropout > 0.5:
         raise ContractError("recipe.loraDropout must not exceed 0.5")
     modules = recipe["targetModules"]
-    if not isinstance(modules, list) or not modules or not all(isinstance(v, str) and v for v in modules):
+    if (
+        not isinstance(modules, list)
+        or not modules
+        or not all(isinstance(v, str) and v for v in modules)
+    ):
         raise ContractError("recipe.targetModules must be a non-empty string array")
     for field in ("batchSize", "gradAccum"):
         if not isinstance(recipe[field], int) or recipe[field] <= 0:
@@ -261,25 +316,40 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
             raise ContractError(f"recipe.{field} must be boolean")
     if recipe["packingStrategy"] not in {"ffd", "wrapped"}:
         raise ContractError("recipe.packingStrategy must be ffd or wrapped")
-    warmup = _positive_number(recipe["warmupRatio"], "recipe.warmupRatio", allow_zero=True)
+    warmup = _positive_number(
+        recipe["warmupRatio"], "recipe.warmupRatio", allow_zero=True
+    )
     if warmup > 0.5:
         raise ContractError("recipe.warmupRatio must not exceed 0.5")
     _positive_number(recipe["weightDecay"], "recipe.weightDecay", allow_zero=True)
     if recipe["lrSchedulerType"] not in {"linear", "cosine", "constant_with_warmup"}:
         raise ContractError("recipe.lrSchedulerType is unsupported")
     expected_template = recipe["expectedChatTemplateSha256"]
-    if not isinstance(expected_template, str) or not _SHA256.fullmatch(expected_template):
-        raise ContractError("recipe.expectedChatTemplateSha256 must be lowercase sha256 hex")
+    if not isinstance(expected_template, str) or not _SHA256.fullmatch(
+        expected_template
+    ):
+        raise ContractError(
+            "recipe.expectedChatTemplateSha256 must be lowercase sha256 hex"
+        )
 
     gates = _required_object(
         spec,
         "gates",
         {"minFreeVramGb", "minFreeDiskGb", "maxWallclockMinutes", "maxDatasetRows"},
-        {"minFreeVramGb", "minFreeDiskGb", "maxWallclockMinutes", "maxDatasetRows", "abortOnNanLoss"},
+        {
+            "minFreeVramGb",
+            "minFreeDiskGb",
+            "maxWallclockMinutes",
+            "maxDatasetRows",
+            "abortOnNanLoss",
+        },
     )
     _positive_number(gates["minFreeVramGb"], "gates.minFreeVramGb")
     _positive_number(gates["minFreeDiskGb"], "gates.minFreeDiskGb")
-    if not isinstance(gates["maxWallclockMinutes"], int) or gates["maxWallclockMinutes"] <= 0:
+    if (
+        not isinstance(gates["maxWallclockMinutes"], int)
+        or gates["maxWallclockMinutes"] <= 0
+    ):
         raise ContractError("gates.maxWallclockMinutes must be a positive integer")
     if not isinstance(gates["maxDatasetRows"], int) or gates["maxDatasetRows"] <= 0:
         raise ContractError("gates.maxDatasetRows must be a positive integer")
@@ -299,17 +369,28 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if "checkpointBucketId" in outputs:
         _repo_id(outputs["checkpointBucketId"], "outputs.checkpointBucketId")
     exports = outputs["exports"]
-    if not isinstance(exports, dict) or set(exports) != {"adapter", "merged16bit", "ggufQuantizations", "requireReloadSmoke"}:
-        raise ContractError("outputs.exports must contain exactly adapter, merged16bit, ggufQuantizations, requireReloadSmoke")
+    if not isinstance(exports, dict) or set(exports) != {
+        "adapter",
+        "merged16bit",
+        "ggufQuantizations",
+        "requireReloadSmoke",
+    }:
+        raise ContractError(
+            "outputs.exports must contain exactly adapter, merged16bit, ggufQuantizations, requireReloadSmoke"
+        )
     if exports["adapter"] is not True:
         raise ContractError("outputs.exports.adapter must be true")
-    if not isinstance(exports["merged16bit"], bool) or not isinstance(exports["requireReloadSmoke"], bool):
+    if not isinstance(exports["merged16bit"], bool) or not isinstance(
+        exports["requireReloadSmoke"], bool
+    ):
         raise ContractError("merged16bit and requireReloadSmoke must be boolean")
     quants = exports["ggufQuantizations"]
     if not isinstance(quants, list) or len(quants) != len(set(quants)):
         raise ContractError("ggufQuantizations must be a unique array")
     if any(quant not in _ALLOWED_QUANTS for quant in quants):
-        raise ContractError(f"unsupported GGUF quantization; allowed={sorted(_ALLOWED_QUANTS)}")
+        raise ContractError(
+            f"unsupported GGUF quantization; allowed={sorted(_ALLOWED_QUANTS)}"
+        )
     if (exports["merged16bit"] or quants) and not exports["requireReloadSmoke"]:
         raise ContractError("merged or GGUF exports require reload smoke verification")
 
@@ -317,14 +398,30 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
         spec,
         "eval",
         {
-            "suite", "heldOutFraction", "seed", "maxGenerations", "maxNewTokens",
-            "requiredJsonKeys", "convictionCeiling", "maxDegenerateRate",
-            "minJsonValidRate", "minRequiredKeysRate", "minCeilingRespectRate",
+            "suite",
+            "heldOutFraction",
+            "seed",
+            "maxGenerations",
+            "maxNewTokens",
+            "requiredJsonKeys",
+            "convictionCeiling",
+            "maxDegenerateRate",
+            "minJsonValidRate",
+            "minRequiredKeysRate",
+            "minCeilingRespectRate",
         },
         {
-            "suite", "heldOutFraction", "seed", "maxGenerations", "maxNewTokens",
-            "requiredJsonKeys", "convictionCeiling", "maxDegenerateRate",
-            "minJsonValidRate", "minRequiredKeysRate", "minCeilingRespectRate",
+            "suite",
+            "heldOutFraction",
+            "seed",
+            "maxGenerations",
+            "maxNewTokens",
+            "requiredJsonKeys",
+            "convictionCeiling",
+            "maxDegenerateRate",
+            "minJsonValidRate",
+            "minRequiredKeysRate",
+            "minCeilingRespectRate",
         },
     )
     if evaluation["suite"] != "frontier-heldout-v2":
@@ -344,11 +441,17 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
         or len(keys) != len(set(keys))
         or not all(isinstance(v, str) and v for v in keys)
     ):
-        raise ContractError("eval.requiredJsonKeys must be a non-empty unique string array")
-    ceiling = _positive_number(evaluation["convictionCeiling"], "eval.convictionCeiling", allow_zero=True)
+        raise ContractError(
+            "eval.requiredJsonKeys must be a non-empty unique string array"
+        )
+    ceiling = _positive_number(
+        evaluation["convictionCeiling"], "eval.convictionCeiling", allow_zero=True
+    )
     if ceiling > 1:
         raise ContractError("eval.convictionCeiling must be <= 1")
-    degenerate = _positive_number(evaluation["maxDegenerateRate"], "eval.maxDegenerateRate", allow_zero=True)
+    degenerate = _positive_number(
+        evaluation["maxDegenerateRate"], "eval.maxDegenerateRate", allow_zero=True
+    )
     if degenerate > 1:
         raise ContractError("eval.maxDegenerateRate must be <= 1")
     for field in ("minJsonValidRate", "minRequiredKeysRate", "minCeilingRespectRate"):

@@ -11,7 +11,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "laptop"))
 
 from frontier_contract import (  # noqa: E402
-    ContractError, V2_PAYLOAD_TYPE, pae, validate_v2_spec, verify_envelope,
+    ContractError,
+    V2_PAYLOAD_TYPE,
+    pae,
+    validate_v2_spec,
+    verify_envelope,
 )
 from frontier_runtime import (  # noqa: E402
     artifact_manifest,
@@ -116,7 +120,9 @@ class ContractTests(unittest.TestCase):
         except ImportError:
             self.skipTest("PyNaCl not installed")
         signing_key = SigningKey.generate()
-        spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(signing_key.verify_key)
+        spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(
+            signing_key.verify_key
+        )
         key_id = __import__("hashlib").sha256(spki).hexdigest()[:16]
         spec = valid_spec()
         payload = json.dumps(spec, separators=(",", ":"), ensure_ascii=False).encode()
@@ -125,7 +131,9 @@ class ContractTests(unittest.TestCase):
             "payloadType": V2_PAYLOAD_TYPE,
             "payload": base64.b64encode(payload).decode(),
             "publicKeySpkiBase64": base64.b64encode(spki).decode(),
-            "signatures": [{"keyid": key_id, "sig": base64.b64encode(signature).decode()}],
+            "signatures": [
+                {"keyid": key_id, "sig": base64.b64encode(signature).decode()}
+            ],
         }
         pin = {"keyId": key_id, "publicKeySpkiBase64": envelope["publicKeySpkiBase64"]}
         observed, exact, observed_type = verify_envelope(envelope, pin)
@@ -176,7 +184,9 @@ class ContractTests(unittest.TestCase):
 
 class RuntimeEvidenceTests(unittest.TestCase):
     def test_chat_template_evidence(self):
-        tokenizer = SimpleNamespace(chat_template="{% generation %}{{ x }}{% endgeneration %}")
+        tokenizer = SimpleNamespace(
+            chat_template="{% generation %}{{ x }}{% endgeneration %}"
+        )
         evidence = chat_template_evidence(tokenizer)
         self.assertTrue(evidence["present"])
         self.assertTrue(evidence["hasGenerationBlocks"])
@@ -236,7 +246,10 @@ class RuntimeEvidenceTests(unittest.TestCase):
             validate_v2_spec(spec)
 
     def test_json_and_degeneracy_checks(self):
-        self.assertEqual(extract_json_object('prefix {"action":"ABSTAIN"} suffix')["action"], "ABSTAIN")
+        self.assertEqual(
+            extract_json_object('prefix {"action":"ABSTAIN"} suffix')["action"],
+            "ABSTAIN",
+        )
         self.assertIsNone(extract_json_object("no object"))
         self.assertTrue(is_degenerate_text("@@@@@@@@@@@@@@@@@@@@@@@@@@@@"))
         self.assertFalse(is_degenerate_text('{"action":"ABSTAIN","conviction":0.2}'))

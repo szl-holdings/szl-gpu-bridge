@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Execution helpers for the governed frontier training runner."""
+
 from __future__ import annotations
 
 import base64
@@ -25,6 +26,7 @@ from frontier_runtime import (
 
 ROOT = pathlib.Path(__file__).resolve().parent
 
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -33,9 +35,13 @@ def laptop_keys():
     from nacl.signing import SigningKey
 
     pem = (ROOT / "keys" / "laptop_key.pem").read_text(encoding="utf-8-sig")
-    seed = base64.b64decode("".join(line for line in pem.splitlines() if "-----" not in line))
+    seed = base64.b64decode(
+        "".join(line for line in pem.splitlines() if "-----" not in line)
+    )
     signing_key = SigningKey(seed)
-    public = json.loads((ROOT / "keys" / "laptop_pubkey.json").read_text(encoding="utf-8-sig"))
+    public = json.loads(
+        (ROOT / "keys" / "laptop_pubkey.json").read_text(encoding="utf-8-sig")
+    )
     return signing_key, public
 
 
@@ -55,7 +61,9 @@ def sign_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
 
 def write_json(path: pathlib.Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def upload_receipt(signed: dict[str, Any], name: str, spec: dict[str, Any]) -> Any:
@@ -79,7 +87,13 @@ def upload_receipt(signed: dict[str, Any], name: str, spec: dict[str, Any]) -> A
     )
 
 
-def blocked(spec: dict[str, Any], stage: str, reason: str, *, extra: dict[str, Any] | None = None) -> None:
+def blocked(
+    spec: dict[str, Any],
+    stage: str,
+    reason: str,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> None:
     receipt = {
         "kind": "szl-frontier-training-blocked",
         "v": 2,
@@ -115,12 +129,17 @@ def _gradient_checkpointing(value: str) -> str | bool:
 
 def _filtered_kwargs(callable_obj: Any, values: dict[str, Any]) -> dict[str, Any]:
     parameters = inspect.signature(callable_obj).parameters
-    if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
         return values
     return {key: value for key, value in values.items() if key in parameters}
 
 
-def _build_sft_config(SFTConfig: Any, recipe: dict[str, Any], torch: Any, output_dir: pathlib.Path):
+def _build_sft_config(
+    SFTConfig: Any, recipe: dict[str, Any], torch: Any, output_dir: pathlib.Path
+):
     values = {
         "per_device_train_batch_size": recipe["batchSize"],
         "gradient_accumulation_steps": recipe["gradAccum"],
@@ -204,7 +223,9 @@ def _verify_hub_license(
     observed = _license_values(metadata.get("license"))
     expected_normalized = expected.strip().lower()
     if not observed:
-        raise RuntimeError(f"{repo_type} card at the pinned revision has no license metadata")
+        raise RuntimeError(
+            f"{repo_type} card at the pinned revision has no license metadata"
+        )
     if expected_normalized not in observed:
         raise RuntimeError(
             f"signed license {expected_normalized!r} does not match pinned Hub metadata {sorted(observed)!r}"
@@ -230,8 +251,12 @@ def _validate_dataset_rows(dataset: Any) -> None:
             raise ValueError(f"dataset row {index} is malformed: {exc}") from exc
 
 
-def _generate(model: Any, tokenizer: Any, messages: list[dict[str, Any]], *, max_new_tokens: int) -> str:
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+def _generate(
+    model: Any, tokenizer: Any, messages: list[dict[str, Any]], *, max_new_tokens: int
+) -> str:
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
     encoded = tokenizer(prompt, return_tensors="pt")
     encoded = {key: value.to(model.device) for key, value in encoded.items()}
     output = model.generate(
@@ -244,17 +269,23 @@ def _generate(model: Any, tokenizer: Any, messages: list[dict[str, Any]], *, max
     return tokenizer.decode(output[0][start:], skip_special_tokens=True)
 
 
-def _evaluate_generations(model: Any, tokenizer: Any, eval_dataset: Any, config: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _evaluate_generations(
+    model: Any, tokenizer: Any, eval_dataset: Any, config: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     total = min(config["maxGenerations"], len(eval_dataset))
     records: list[dict[str, Any]] = []
     json_valid = required_keys_valid = ceiling_valid = abstains = degenerate = 0
     for index in range(total):
         messages = eval_dataset[index].get("messages")
         prompt = prompt_messages(messages)
-        text = _generate(model, tokenizer, prompt, max_new_tokens=config["maxNewTokens"])
+        text = _generate(
+            model, tokenizer, prompt, max_new_tokens=config["maxNewTokens"]
+        )
         obj = extract_json_object(text)
         is_json = obj is not None
-        keys_ok = bool(obj is not None and all(key in obj for key in config["requiredJsonKeys"]))
+        keys_ok = bool(
+            obj is not None and all(key in obj for key in config["requiredJsonKeys"])
+        )
         conviction = obj.get("conviction") if obj else None
         ceiling_ok = conviction is None or (
             isinstance(conviction, (int, float))
@@ -278,6 +309,7 @@ def _evaluate_generations(model: Any, tokenizer: Any, eval_dataset: Any, config:
                 "degenerate": is_degenerate,
             }
         )
+
     def rate(count: int) -> float | None:
         return count / total if total else None
 
@@ -305,7 +337,9 @@ def _reload_smoke_merged(
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(str(merged_dir), trust_remote_code=trust_remote_code)
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(merged_dir), trust_remote_code=trust_remote_code
+    )
     evidence = chat_template_evidence(tokenizer)
     if evidence["sha256"] != expected_template_sha256:
         raise RuntimeError(
@@ -346,7 +380,13 @@ def _llama_cli() -> str | None:
     candidates = (
         ROOT / "llama.cpp" / "llama-cli.exe",
         home / "llama.cpp" / "build" / "bin" / "Release" / "llama-cli.exe",
-        home / "szl-forge" / "llama.cpp" / "build" / "bin" / "Release" / "llama-cli.exe",
+        home
+        / "szl-forge"
+        / "llama.cpp"
+        / "build"
+        / "bin"
+        / "Release"
+        / "llama-cli.exe",
         home / "szl-forge" / "llama.cpp" / "build" / "bin" / "llama-cli.exe",
     )
     for candidate in candidates:
@@ -363,7 +403,9 @@ def _reload_smoke_gguf(
 ) -> list[dict[str, Any]]:
     cli = _llama_cli()
     if not cli:
-        raise RuntimeError("GGUF was requested but llama-cli is not installed for reload smoke")
+        raise RuntimeError(
+            "GGUF was requested but llama-cli is not installed for reload smoke"
+        )
     files = sorted(root.rglob("*.gguf"))
     if not files:
         raise RuntimeError("GGUF export produced no .gguf file")
@@ -394,7 +436,9 @@ def _reload_smoke_gguf(
                 f"llama-cli failed for {file.name}: {(completed.stderr or text)[-1000:]}"
             )
         if is_degenerate_text(text):
-            raise RuntimeError(f"GGUF reload produced degenerate output for {file.name}")
+            raise RuntimeError(
+                f"GGUF reload produced degenerate output for {file.name}"
+            )
         evidence.append(
             {
                 "kind": "gguf",
@@ -407,7 +451,9 @@ def _reload_smoke_gguf(
     return evidence
 
 
-def _sync_checkpoint_bucket(output_dir: pathlib.Path, spec: dict[str, Any]) -> dict[str, Any] | None:
+def _sync_checkpoint_bucket(
+    output_dir: pathlib.Path, spec: dict[str, Any]
+) -> dict[str, Any] | None:
     bucket_id = spec["outputs"].get("checkpointBucketId")
     if not bucket_id:
         return None

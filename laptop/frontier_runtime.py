@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Pure evidence and artifact helpers for frontier training jobs."""
+
 from __future__ import annotations
 
 import hashlib
@@ -48,11 +49,14 @@ def chat_template_evidence(tokenizer: Any) -> dict[str, Any]:
         "present": bool(template),
         "sha256": sha256_bytes(encoded),
         "bytes": len(encoded),
-        "hasGenerationBlocks": "{% generation %}" in template and "{% endgeneration %}" in template,
+        "hasGenerationBlocks": "{% generation %}" in template
+        and "{% endgeneration %}" in template,
     }
 
 
-def validate_expected_chat_template(evidence: dict[str, Any], expected_sha256: str | None) -> None:
+def validate_expected_chat_template(
+    evidence: dict[str, Any], expected_sha256: str | None
+) -> None:
     if expected_sha256 and evidence.get("sha256") != expected_sha256:
         raise ValueError(
             f"chat-template sha256 {evidence.get('sha256')} != pinned {expected_sha256}"
@@ -81,7 +85,9 @@ def artifact_manifest(root: str | pathlib.Path) -> list[dict[str, Any]]:
 
 
 def manifest_digest(entries: Iterable[dict[str, Any]]) -> str:
-    body = json.dumps(list(entries), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    body = json.dumps(list(entries), sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     return sha256_bytes(body)
 
 
@@ -226,11 +232,11 @@ def model_card(
     yaml_loss = "null" if heldout_loss is None else str(heldout_loss)
     artifact_digest = manifest_digest(artifacts)
     return f"""---
-base_model: {spec['base']['repoId']}
+base_model: {spec["base"]["repoId"]}
 datasets:
-- {spec['dataset']['repoId']}
-{f"buckets:\n- {spec['outputs']['checkpointBucketId']}\n" if spec['outputs'].get('checkpointBucketId') else ""}library_name: peft
-license: {spec['base']['licenseId']}
+- {spec["dataset"]["repoId"]}
+{f"buckets:\n- {spec['outputs']['checkpointBucketId']}\n" if spec["outputs"].get("checkpointBucketId") else ""}library_name: peft
+license: {spec["base"]["licenseId"]}
 pipeline_tag: text-generation
 tags:
 - unsloth
@@ -244,8 +250,8 @@ model-index:
   - task:
       type: text-generation
     dataset:
-      name: {spec['dataset']['repoId']} held-out split
-      type: {spec['dataset']['repoId']}
+      name: {spec["dataset"]["repoId"]} held-out split
+      type: {spec["dataset"]["repoId"]}
     metrics:
     - type: loss
       value: {yaml_loss}
@@ -256,23 +262,23 @@ model-index:
 
 This repository was produced by the SZL GPU Bridge under a DSSE-signed
 `unsloth-frontier-sft-v2` job. It is an adaptation of the immutable base
-`{spec['base']['repoId']}@{spec['base']['revision']}`; it is not from-scratch
+`{spec["base"]["repoId"]}@{spec["base"]["revision"]}`; it is not from-scratch
 pretraining.
 
 ## Reproducibility anchors
 
-- Base license metadata: `{spec['base']['licenseId']}`
-- Dataset: `{spec['dataset']['repoId']}@{spec['dataset']['revision']}`
-- Dataset license metadata: `{spec['dataset']['licenseId']}`
-- Dataset file sha256: `{spec['dataset']['sha256']}`
-- Chat-template sha256: `{chat_template['sha256']}`
+- Base license metadata: `{spec["base"]["licenseId"]}`
+- Dataset: `{spec["dataset"]["repoId"]}@{spec["dataset"]["revision"]}`
+- Dataset license metadata: `{spec["dataset"]["licenseId"]}`
+- Dataset file sha256: `{spec["dataset"]["sha256"]}`
+- Chat-template sha256: `{chat_template["sha256"]}`
 - Artifact-manifest sha256: `{artifact_digest}`
-- Training recipe seed: `{spec['recipe']['seed']}`
+- Training recipe seed: `{spec["recipe"]["seed"]}`
 
 ## Measured run evidence
 
 ```json
-{json.dumps({'training': training_metrics, 'evaluation': eval_metrics}, indent=2, sort_keys=True)}
+{json.dumps({"training": training_metrics, "evaluation": eval_metrics}, indent=2, sort_keys=True)}
 ```
 
 ## Limitations
