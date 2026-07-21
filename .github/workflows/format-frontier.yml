@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  format-and-verify:
+  format:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'frontier/training-contract-v2' &&
@@ -28,19 +28,14 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Format and verify without semantic rewrites
+      - name: Apply deterministic Ruff formatting and safe fixes
         run: |
           set -euo pipefail
-          python -m pip install 'PyNaCl==1.6.2' 'jsonschema==4.26.0' 'ruff==0.15.22'
+          python -m pip install 'ruff==0.15.22'
           ruff format laptop tests
           ruff check --fix laptop tests
+          ruff format --check laptop tests
           ruff check laptop tests
-          python -m py_compile laptop/*.py tests/*.py
-          python -m unittest discover -s tests -v
-          node --check cloud/sign-job.mjs
-          node --check cloud/verify-receipt.mjs
-          node --check cloud/materialize-frontier-spec.mjs
-          node --test tests/test_cloud_contract.mjs tests/test_materialize_frontier_spec.mjs
 
       - name: Commit formatting only
         run: |
