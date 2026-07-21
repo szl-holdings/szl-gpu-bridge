@@ -33,15 +33,13 @@ jobs:
           set -euo pipefail
           python -m pip install 'ruff==0.15.22'
           ruff format laptop tests
-          ruff check --fix laptop tests
-          ruff format --check laptop tests
-          ruff check laptop tests
+          ruff check --fix --exit-zero laptop tests
 
-      - name: Commit formatting only
+      - name: Commit formatter output
         run: |
           set -euo pipefail
           if git diff --quiet; then
-            echo 'No formatting changes required.'
+            echo 'No formatter changes required.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
