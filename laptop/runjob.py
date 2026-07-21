@@ -64,15 +64,23 @@ def laptop_keys():
 
 
 def sign_receipt(receipt: dict) -> dict:
+    """Sign over exact bytes and CARRY those bytes (bodyBase64) in the file.
+
+    Verifiers must check the signature against bodyBase64's decoded bytes —
+    never against a re-serialization. Python json.dumps and JS JSON.stringify
+    disagree on integer-valued floats (2.0 vs 2), so cross-language
+    re-canonicalization would reject honest receipts intermittently.
+    """
     sk, pub = laptop_keys()
     body = canonicalize(receipt).encode()
     sig = sk.sign(body).signature
     return {
-        "receipt": receipt,
+        "receipt": receipt,  # display copy; verifiers parse bodyBase64 instead
+        "bodyBase64": base64.b64encode(body).decode(),
         "signatureBase64": base64.b64encode(sig).decode(),
         "publicKeySpkiBase64": pub["publicKeySpkiBase64"],
         "keyId": pub["keyId"],
-        "scheme": "ed25519-over-canonical-json",
+        "scheme": "ed25519-over-exact-bytes-v2",
     }
 
 
@@ -118,9 +126,16 @@ def main(spec_path: str):
         spec = verify_envelope(env)
     except Exception as e:
         # cannot sign a per-job BLOCKED without trusting jobId from an unverified
-        # spec; log-only refusal, exit 0 so the daemon ledgers it as consumed.
+        # spec (uploading to a spec-derived path would be an injection vector).
+        # Exit 3: daemon ledgers it as REFUSED-UNVERIFIED (permanently bad —
+        # a bad signature never heals) and logs loudly; a local refusal record
+        # is kept so the owner can see exactly what was rejected and why.
         print(f"REFUSED (unverified spec): {e}")
-        return 0
+        refusals = ROOT / "logs" / "refused-specs.jsonl"
+        refusals.parent.mkdir(parents=True, exist_ok=True)
+        with refusals.open("a") as fh:
+            fh.write(json.dumps({"at": now_iso(), "file": spec_path, "reason": str(e)}) + "\n")
+        return 3
 
     # 2 — replay/expiry + gates (each failure = signed BLOCKED receipt)
     if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
@@ -244,7 +259,9 @@ def main(spec_path: str):
         "stack": {"note": "pinned via bootstrap.ps1; unsloth as dependency (Apache core, LGPL zoo unvendored)"},
     }
     signed_training = sign_receipt(training_receipt)
-    tr_sha = hashlib.sha256(canonicalize(signed_training).encode()).hexdigest()
+    # chain pin = sha256 of the EXACT signed bytes (bodyBase64-decoded), which
+    # both Python and JS can recompute identically from the stored field.
+    tr_sha = hashlib.sha256(base64.b64decode(signed_training["bodyBase64"])).hexdigest()
 
     eval_receipt = {
         "kind": "szl-bridge-eval-receipt", "v": 1, "jobId": spec["jobId"],

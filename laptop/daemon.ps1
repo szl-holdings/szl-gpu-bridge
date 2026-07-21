@@ -41,12 +41,17 @@ try {
     Log "picked up $jobId — handing to runjob.py (verify-first, fail-closed)"
 
     # runjob.py verifies the DSSE envelope BEFORE acting; exit codes:
-    # 0 = receipts uploaded (success or honest BLOCKED) ; nonzero = local infra failure
+    # 0 = receipts uploaded (success or honest BLOCKED)
+    # 3 = spec REFUSED as unverifiable (bad sig/pin — permanently bad, never retried)
+    # other = local infra failure (retried next cycle)
     & $Py "$Root\runjob.py" $specPath *>> $Log
     $code = $LASTEXITCODE
     if ($code -eq 0) {
       Add-Content -Path $Ledger -Value $jobId
       Log "$jobId complete (receipts pushed)"
+    } elseif ($code -eq 3) {
+      Add-Content -Path $Ledger -Value "$jobId  # REFUSED-UNVERIFIED"
+      Log "!! $jobId REFUSED — spec did not verify against the pinned engine key. Ledgered as consumed (a bad signature never heals). See logs\refused-specs.jsonl"
     } else {
       Log "$jobId LOCAL FAILURE (exit $code) — left OFF the ledger for retry next cycle"
     }

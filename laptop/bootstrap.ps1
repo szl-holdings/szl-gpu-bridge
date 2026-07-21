@@ -20,11 +20,21 @@ $EnginePin = @'
 {
   "kind": "szl-quant-engine-pubkey",
   "keyId": "5c6cf59741ade920",
-  "publicKeySpkiBase64": "MCowBQYDK2VwAyEArBOmZZSDK+n7Qq1HJYbqNuX9P1QDLxSNM1nBB1Iu4Sw="
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEArBOmZZSDK+n7Qq1HJYbqNuX9YymnsRWbzSGHHnhsERM="
 }
 '@
+# self-check BEFORE writing: keyId must equal sha256(SPKI)[:16] or this file
+# could install a mislabeled trust root (fail closed, install nothing).
+$PinObj = $EnginePin | ConvertFrom-Json
+$SpkiBytes = [Convert]::FromBase64String($PinObj.publicKeySpkiBase64)
+$Sha = [System.Security.Cryptography.SHA256]::Create()
+$DerivedKeyId = (($Sha.ComputeHash($SpkiBytes) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 16)
+if ($DerivedKeyId -ne $PinObj.keyId) {
+  Write-Host "FATAL: engine pubkey self-check failed (derived $DerivedKeyId ≠ labeled $($PinObj.keyId)) — refusing to install a mislabeled trust root." -ForegroundColor Red
+  exit 1
+}
 Set-Content -Path "$Root\keys\engine_pubkey.json" -Value $EnginePin -Encoding utf8
-Write-Host "engine pubkey pinned (keyId 5c6cf59741ade920)"
+Write-Host "engine pubkey pinned (keyId $DerivedKeyId, self-check passed)"
 
 # ---- 2. conda env with pinned training stack ----
 $CondaBase = "$env:USERPROFILE\miniconda3"
@@ -59,7 +69,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ---- 3. laptop signing key (ed25519, never leaves this machine) ----
 if (-not (Test-Path "$Root\keys\laptop_key.pem")) {
-  & $Py - <<'PYEOF'
+  $KeygenPy = @'
 from nacl.signing import SigningKey
 import base64, hashlib, json, pathlib
 sk = SigningKey.generate()
@@ -74,7 +84,10 @@ key_id = hashlib.sha256(spki).hexdigest()[:16]
   "publicKeySpkiBase64": base64.b64encode(spki).decode(),
 }, indent=2))
 print("laptop signing keyId:", key_id)
-PYEOF
+'@
+  Set-Content -Path "$Root\keygen.py" -Value $KeygenPy -Encoding utf8
+  & $Py "$Root\keygen.py"
+  Remove-Item "$Root\keygen.py" -Force
 }
 $LapKeyId = (Get-Content "$Root\keys\laptop_pubkey.json" | ConvertFrom-Json).keyId
 Write-Host ""

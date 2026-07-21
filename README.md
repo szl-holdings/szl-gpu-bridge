@@ -22,7 +22,7 @@ cloud/verify-receipt.mjs ◄── pull receipts from HF, verify, then (and only
 ```
 
 - **Inbound** (jobs): the laptop polls `queue/pending/*.json` over public raw HTTPS — no laptop GitHub auth needed. Signature verification against the **pinned** engine pubkey (`keys/engine_pubkey.json`, keyId `5c6cf59741ade920`, baked into `bootstrap.ps1`) happens **before** any field of a spec is acted on.
-- **Outbound** (results): the laptop pushes weights + signed receipts to Hugging Face with its already-authenticated `hf` CLI — the same proven path that shipped 3 GB of khipu weights. The cloud verifies receipts independently; **an unverified claim is treated as no claim**.
+- **Outbound** (results): the laptop pushes weights + signed receipts to Hugging Face with its already-authenticated `hf` CLI — the same already-exercised path that shipped the khipu weights (~3 GB, REPORTED, prior upload). The cloud verifies receipts independently; **an unverified claim is treated as no claim**.
 - **Trust roots**: the laptop trusts exactly one engine pubkey (baked at bootstrap). The cloud trusts the laptop key that the owner announces after bootstrap prints its keyId. Neither side ever transmits a private key or token.
 
 ## Job specs

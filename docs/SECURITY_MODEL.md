@@ -33,3 +33,17 @@ Private keys never move: engine key stays in the cloud workspace; laptop seed is
 3. **No liveness guarantee**: cloud sees the laptop only through pushed receipts. Silence is indistinguishable from power-off — and is reported as exactly that (UNAVAILABLE).
 4. **Public queue metadata**: job specs are world-readable by design (no secrets inside). Anyone can see *what* we train; only the laptop will act on it, and only when signed.
 5. **GGUF/export pins**: any future GGUF export inherits the known khipu gotcha — artifact-form hashes verify only against the artifact actually hashed; receipts must name the exact file form they pin.
+
+## Receipt verification is over exact signed bytes
+
+Laptop receipts carry `bodyBase64` — the exact canonical bytes that were
+signed. `cloud/verify-receipt.mjs` verifies the ed25519 signature over those
+bytes and then requires the human-readable `receipt` display copy to match
+them; re-serialization is display-only, never the verification path.
+**Why:** Python `json.dumps` and JS `JSON.stringify` disagree on
+integer-valued floats (`2.0` vs `2`) and exponent forms (`1e-07` vs `1e-7`);
+a re-canonicalizing verifier would reject honest receipts intermittently —
+a fail-closed system must never manufacture false negatives and call them
+honesty. The eval→training chain pin (`trainingReceiptSha256`) is likewise
+sha256 of the training receipt's decoded `bodyBase64`, recomputable
+identically in any language.

@@ -17,3 +17,7 @@ projects, with gratitude and attribution:
   signing; SZL's receipt chain is an independent implementation.
 
 DSSE/in-toto envelope format per https://github.com/secure-systems-lab/dsse.
+
+Prior art surveyed but NOT adapted (no code or format taken): OpenSSF Model
+Signing, C2PA, zero-knowledge proof-of-training literature — see
+docs/RESEARCH_MEMO.md §3 for what was studied and why it was not copied.
