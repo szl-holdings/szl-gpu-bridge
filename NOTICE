@@ -1,0 +1,19 @@
+szl-gpu-bridge
+Copyright 2026 SZL Holdings
+
+This product adapts *patterns* (never copied source) from the following
+projects, with gratitude and attribution:
+
+- Unsloth (https://github.com/unslothai/unsloth, Apache-2.0):
+  monkeypatch-at-load acceleration, offloaded gradient checkpointing shape,
+  chunked cross-entropy shape, VRAM-aware auto batch sizing. Used strictly
+  as an installed dependency; unsloth-zoo (LGPL-3.0) is depended on,
+  never vendored; the AGPL-3.0 MoE grouped-GEMM subtree is not used at all.
+- Hugging Face kernels / kernel-builder (https://github.com/huggingface/kernels,
+  Apache-2.0): kernel repo layout and provenance-metadata conventions.
+- GitHub Actions self-hosted runner docs: service-survives-reboot and
+  idempotent-job-id lessons (mechanism itself not used — no runner here).
+- sigstore/model-transparency (Apache-2.0): prior art studied for artifact
+  signing; SZL's receipt chain is an independent implementation.
+
+DSSE/in-toto envelope format per https://github.com/secure-systems-lab/dsse.

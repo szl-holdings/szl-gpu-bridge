@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://szl.holdings/gpu-bridge/jobspec/v1",
+  "title": "SZL GPU-bridge job spec v1",
+  "description": "One training job for the owner's metal. Always transported inside a DSSE envelope signed by the engine key; the laptop verifies the envelope BEFORE reading any field. Every reference is pinned; every gate is explicit; unset means BLOCKED, never 'assume'.",
+  "type": "object",
+  "required": ["jobId", "kind", "createdAt", "expiresAt", "base", "dataset", "recipe", "gates", "outputs", "eval"],
+  "additionalProperties": false,
+  "properties": {
+    "jobId": { "type": "string", "pattern": "^job-[0-9]{4}-[a-z0-9-]+$", "description": "unique, idempotent — daemon's seen-ledger key" },
+    "kind": { "const": "unsloth-qlora-sft-v1" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time", "description": "daemon refuses expired specs (replay window)" },
+    "base": {
+      "type": "object",
+      "required": ["repoId", "revision"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": { "type": "string", "description": "HF model id of the base, e.g. unsloth/Qwen2.5-1.5B-Instruct-unsloth-bnb-4bit" },
+        "revision": { "type": "string", "description": "commit sha — never a floating branch" },
+        "licenseNote": { "type": "string" }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["repoId", "revision", "file", "sha256", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": { "type": "string" },
+        "revision": { "type": "string", "description": "HF dataset commit sha" },
+        "file": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "laptop re-hashes the downloaded file; mismatch = BLOCKED" },
+        "provenance": { "type": "string", "description": "human-auditable lineage statement" }
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": ["maxSeqLength", "loraR", "loraAlpha", "loraDropout", "targetModules", "batchSize", "gradAccum", "epochs", "learningRate", "optimizer", "gradientCheckpointing", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "maxSeqLength": { "type": "integer", "minimum": 256, "maximum": 8192 },
+        "loraR": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "loraAlpha": { "type": "integer" },
+        "loraDropout": { "type": "number", "minimum": 0, "maximum": 0.5 },
+        "targetModules": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "batchSize": { "type": "integer", "minimum": 1 },
+        "gradAccum": { "type": "integer", "minimum": 1 },
+        "epochs": { "type": "number", "exclusiveMinimum": 0, "maximum": 10 },
+        "learningRate": { "type": "number", "exclusiveMinimum": 0 },
+        "optimizer": { "type": "string", "enum": ["adamw_8bit", "adamw_torch"] },
+        "gradientCheckpointing": { "type": "string", "enum": ["unsloth", "true", "false"], "description": "'unsloth' = offloaded checkpointer" },
+        "seed": { "type": "integer" },
+        "packing": { "type": "boolean", "default": false },
+        "loraPlusLrRatio": { "type": "number", "description": "optional LoRA+ B-matrix LR multiplier; absent = off" }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "required": ["minFreeVramGb", "minFreeDiskGb", "maxWallclockMinutes"],
+      "additionalProperties": false,
+      "properties": {
+        "minFreeVramGb": { "type": "number", "description": "probed via nvidia-smi before load; below = BLOCKED receipt" },
+        "minFreeDiskGb": { "type": "number" },
+        "maxWallclockMinutes": { "type": "integer", "description": "hard kill + BLOCKED-timeout receipt beyond this" },
+        "abortOnNanLoss": { "type": "boolean", "default": true }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["modelRepoId", "receiptsRepoId"],
+      "additionalProperties": false,
+      "properties": {
+        "modelRepoId": { "type": "string", "description": "HF repo for adapter + receipts trio (private until owner flips)" },
+        "receiptsRepoId": { "type": "string", "description": "HF dataset repo receiving receipt copies (cloud watches this)" },
+        "private": { "type": "boolean", "default": true }
+      }
+    },
+    "eval": {
+      "type": "object",
+      "required": ["suite", "heldOutFraction"],
+      "additionalProperties": false,
+      "properties": {
+        "suite": { "type": "string", "enum": ["quant-sft-heldout-v1"], "description": "deterministic held-out split + doctrine checks (ceiling, abstain form, JSON validity)" },
+        "heldOutFraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.5 },
+        "seed": { "type": "integer", "default": 7 }
+      }
+    },
+    "notes": { "type": "string" }
+  }
+}
