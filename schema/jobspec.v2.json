@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://szl.holdings/gpu-bridge/jobspec/v2",
+  "title": "SZL governed frontier SFT job spec v2",
+  "description": "A verify-first Unsloth SFT contract with immutable inputs, explicit resource gates, export validation, machine-readable evaluation, and signed receipt requirements.",
+  "type": "object",
+  "required": ["jobId", "kind", "createdAt", "expiresAt", "base", "dataset", "recipe", "gates", "outputs", "eval"],
+  "additionalProperties": false,
+  "properties": {
+    "jobId": {"type": "string", "pattern": "^job-[0-9]{4}-[a-z0-9][a-z0-9-]{2,80}$"},
+    "kind": {"const": "unsloth-frontier-sft-v2"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "base": {
+      "type": "object",
+      "required": ["repoId", "revision", "licenseId"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "licenseId": {"type": "string", "minLength": 1},
+        "trustRemoteCode": {"type": "boolean", "default": false}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["repoId", "revision", "file", "sha256", "provenance", "format", "licenseId"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "file": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "provenance": {"type": "string", "minLength": 20},
+        "format": {"const": "messages-jsonl"},
+        "licenseId": {"type": "string", "minLength": 1}
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": ["maxSeqLength", "loraR", "loraAlpha", "loraDropout", "targetModules", "batchSize", "gradAccum", "epochs", "learningRate", "optimizer", "gradientCheckpointing", "seed", "packing", "packingStrategy", "assistantOnlyLoss", "useRsLoRA", "warmupRatio", "weightDecay", "lrSchedulerType", "expectedChatTemplateSha256"],
+      "additionalProperties": false,
+      "properties": {
+        "maxSeqLength": {"type": "integer", "minimum": 256, "maximum": 131072},
+        "loraR": {"type": "integer", "minimum": 1, "maximum": 256},
+        "loraAlpha": {"type": "integer", "minimum": 1},
+        "loraDropout": {"type": "number", "minimum": 0, "maximum": 0.5},
+        "targetModules": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+        "batchSize": {"type": "integer", "minimum": 1},
+        "gradAccum": {"type": "integer", "minimum": 1},
+        "epochs": {"type": "number", "exclusiveMinimum": 0, "maximum": 20},
+        "learningRate": {"type": "number", "exclusiveMinimum": 0},
+        "optimizer": {"enum": ["adamw_8bit", "adamw_torch"]},
+        "gradientCheckpointing": {"enum": ["unsloth", "true", "false"]},
+        "seed": {"type": "integer"},
+        "packing": {"type": "boolean"},
+        "packingStrategy": {"enum": ["ffd", "wrapped"]},
+        "assistantOnlyLoss": {"type": "boolean"},
+        "useRsLoRA": {"type": "boolean"},
+        "warmupRatio": {"type": "number", "minimum": 0, "maximum": 0.5},
+        "weightDecay": {"type": "number", "minimum": 0},
+        "lrSchedulerType": {"enum": ["linear", "cosine", "constant_with_warmup"]},
+        "expectedChatTemplateSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "required": ["minFreeVramGb", "minFreeDiskGb", "maxWallclockMinutes", "maxDatasetRows"],
+      "additionalProperties": false,
+      "properties": {
+        "minFreeVramGb": {"type": "number", "exclusiveMinimum": 0},
+        "minFreeDiskGb": {"type": "number", "exclusiveMinimum": 0},
+        "maxWallclockMinutes": {"type": "integer", "minimum": 1},
+        "maxDatasetRows": {"type": "integer", "minimum": 1},
+        "abortOnNanLoss": {"type": "boolean", "default": true}
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["modelRepoId", "receiptsRepoId", "private", "exports"],
+      "additionalProperties": false,
+      "properties": {
+        "modelRepoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "receiptsRepoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "checkpointBucketId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "private": {"type": "boolean"},
+        "exports": {
+          "type": "object",
+          "required": ["adapter", "merged16bit", "ggufQuantizations", "requireReloadSmoke"],
+          "additionalProperties": false,
+          "properties": {
+            "adapter": {"const": true},
+            "merged16bit": {"type": "boolean"},
+            "ggufQuantizations": {"type": "array", "items": {"enum": ["q4_k_m", "q5_k_m", "q6_k", "q8_0", "f16"]}, "uniqueItems": true},
+            "requireReloadSmoke": {"const": true}
+          }
+        }
+      }
+    },
+    "eval": {
+      "type": "object",
+      "required": ["suite", "heldOutFraction", "seed", "maxGenerations", "maxNewTokens", "requiredJsonKeys", "convictionCeiling", "maxDegenerateRate", "minJsonValidRate", "minRequiredKeysRate", "minCeilingRespectRate"],
+      "additionalProperties": false,
+      "properties": {
+        "suite": {"const": "frontier-heldout-v2"},
+        "heldOutFraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.5},
+        "seed": {"type": "integer"},
+        "maxGenerations": {"type": "integer", "minimum": 1, "maximum": 100},
+        "maxNewTokens": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "requiredJsonKeys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true, "minItems": 1},
+        "convictionCeiling": {"type": "number", "minimum": 0, "maximum": 1},
+        "maxDegenerateRate": {"type": "number", "minimum": 0, "maximum": 1},
+        "minJsonValidRate": {"type": "number", "minimum": 0, "maximum": 1},
+        "minRequiredKeysRate": {"type": "number", "minimum": 0, "maximum": 1},
+        "minCeilingRespectRate": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}

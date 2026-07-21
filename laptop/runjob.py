@@ -6,6 +6,7 @@ signed BLOCKED receipts wherever a signature is already established.
 Exit codes: 0 = receipts uploaded (success OR honest BLOCKED); nonzero = local
 infrastructure failure before receipts were possible (daemon retries).
 """
+
 import base64
 import hashlib
 import json
@@ -57,7 +58,9 @@ def laptop_keys():
     from nacl.signing import SigningKey
 
     pem = (ROOT / "keys" / "laptop_key.pem").read_text()
-    seed = base64.b64decode("".join(l for l in pem.splitlines() if "-----" not in l))
+    seed = base64.b64decode(
+        "".join(line for line in pem.splitlines() if "-----" not in line)
+    )
     sk = SigningKey(seed)
     pub = json.loads((ROOT / "keys" / "laptop_pubkey.json").read_text())
     return sk, pub
@@ -88,10 +91,20 @@ def upload_receipt(signed: dict, name: str, spec: dict):
     from huggingface_hub import HfApi
 
     api = HfApi()
-    api.create_repo(spec["outputs"]["receiptsRepoId"], repo_type="dataset", exist_ok=True, private=False)
+    api.create_repo(
+        spec["outputs"]["receiptsRepoId"],
+        repo_type="dataset",
+        exist_ok=True,
+        private=False,
+    )
     p = ROOT / "jobs" / name
     p.write_text(json.dumps(signed, indent=2))
-    api.upload_file(path_or_fileobj=str(p), path_in_repo=f"{spec['jobId']}/{name}", repo_id=spec["outputs"]["receiptsRepoId"], repo_type="dataset")
+    api.upload_file(
+        path_or_fileobj=str(p),
+        path_in_repo=f"{spec['jobId']}/{name}",
+        repo_id=spec["outputs"]["receiptsRepoId"],
+        repo_type="dataset",
+    )
     print(f"receipt uploaded: {spec['jobId']}/{name}")
 
 
@@ -105,7 +118,10 @@ def blocked(spec: dict, stage: str, reason: str, extra=None):
         "reason": reason,
         "at": now_iso(),
         "extra": extra or {},
-        "doctrine": {"failClosed": True, "note": "a refused job is a result, not an error to hide"},
+        "doctrine": {
+            "failClosed": True,
+            "note": "a refused job is a result, not an error to hide",
+        },
     }
     upload_receipt(sign_receipt(r), "blocked_receipt.signed.json", spec)
     sys.exit(0)
@@ -113,7 +129,8 @@ def blocked(spec: dict, stage: str, reason: str, extra=None):
 
 def probe_vram_gb():
     out = subprocess.check_output(
-        ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"], text=True
+        ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+        text=True,
     )
     return int(out.strip().splitlines()[0]) / 1024.0
 
@@ -134,32 +151,51 @@ def main(spec_path: str):
         refusals = ROOT / "logs" / "refused-specs.jsonl"
         refusals.parent.mkdir(parents=True, exist_ok=True)
         with refusals.open("a") as fh:
-            fh.write(json.dumps({"at": now_iso(), "file": spec_path, "reason": str(e)}) + "\n")
+            fh.write(
+                json.dumps({"at": now_iso(), "file": spec_path, "reason": str(e)})
+                + "\n"
+            )
         return 3
 
     # 2 — replay/expiry + gates (each failure = signed BLOCKED receipt)
-    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(
+        timezone.utc
+    ):
         blocked(spec, "expiry", f"spec expired at {spec['expiresAt']}")
     free_disk_gb = shutil.disk_usage(str(ROOT)).free / 1e9
     if free_disk_gb < spec["gates"]["minFreeDiskGb"]:
-        blocked(spec, "gate:disk", f"free disk {free_disk_gb:.1f} GB < required {spec['gates']['minFreeDiskGb']} GB")
+        blocked(
+            spec,
+            "gate:disk",
+            f"free disk {free_disk_gb:.1f} GB < required {spec['gates']['minFreeDiskGb']} GB",
+        )
     try:
         free_vram = probe_vram_gb()
     except Exception as e:
         blocked(spec, "gate:vram-probe", f"nvidia-smi probe failed: {e}")
     if free_vram < spec["gates"]["minFreeVramGb"]:
-        blocked(spec, "gate:vram", f"free VRAM {free_vram:.1f} GB < required {spec['gates']['minFreeVramGb']} GB")
+        blocked(
+            spec,
+            "gate:vram",
+            f"free VRAM {free_vram:.1f} GB < required {spec['gates']['minFreeVramGb']} GB",
+        )
 
     # 3 — dataset download + hash pin (REPORTED input, pinned)
     from huggingface_hub import hf_hub_download
 
     ds_path = hf_hub_download(
-        repo_id=spec["dataset"]["repoId"], filename=spec["dataset"]["file"],
-        repo_type="dataset", revision=spec["dataset"]["revision"],
+        repo_id=spec["dataset"]["repoId"],
+        filename=spec["dataset"]["file"],
+        repo_type="dataset",
+        revision=spec["dataset"]["revision"],
     )
     got = hashlib.sha256(pathlib.Path(ds_path).read_bytes()).hexdigest()
     if got != spec["dataset"]["sha256"]:
-        blocked(spec, "gate:dataset-hash", f"dataset sha {got[:12]}… ≠ pinned {spec['dataset']['sha256'][:12]}…")
+        blocked(
+            spec,
+            "gate:dataset-hash",
+            f"dataset sha {got[:12]}… ≠ pinned {spec['dataset']['sha256'][:12]}…",
+        )
 
     # 4 — train (Unsloth QLoRA; NaN loss aborts to BLOCKED)
     t0 = time.time()
@@ -170,47 +206,82 @@ def main(spec_path: str):
     from trl import SFTConfig, SFTTrainer
 
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=spec["base"]["repoId"], revision=spec["base"]["revision"],
-        max_seq_length=r["maxSeqLength"], load_in_4bit=True,
+        model_name=spec["base"]["repoId"],
+        revision=spec["base"]["revision"],
+        max_seq_length=r["maxSeqLength"],
+        load_in_4bit=True,
     )
     model = FastLanguageModel.get_peft_model(
-        model, r=r["loraR"], lora_alpha=r["loraAlpha"], lora_dropout=r["loraDropout"],
-        target_modules=r["targetModules"], use_gradient_checkpointing=r["gradientCheckpointing"],
+        model,
+        r=r["loraR"],
+        lora_alpha=r["loraAlpha"],
+        lora_dropout=r["loraDropout"],
+        target_modules=r["targetModules"],
+        use_gradient_checkpointing=r["gradientCheckpointing"],
         random_state=r["seed"],
     )
     full = load_dataset("json", data_files=ds_path, split="train")
-    split = full.train_test_split(test_size=spec["eval"]["heldOutFraction"], seed=spec["eval"].get("seed", 7))
+    split = full.train_test_split(
+        test_size=spec["eval"]["heldOutFraction"], seed=spec["eval"].get("seed", 7)
+    )
     train_ds, eval_ds = split["train"], split["test"]
 
     def to_text(ex):
-        return {"text": tokenizer.apply_chat_template(ex["messages"], tokenize=False, add_generation_prompt=False)}
+        return {
+            "text": tokenizer.apply_chat_template(
+                ex["messages"], tokenize=False, add_generation_prompt=False
+            )
+        }
 
-    train_ds = train_ds.map(to_text, remove_columns=[c for c in train_ds.column_names if c != "text"])
-    eval_txt = eval_ds.map(to_text, remove_columns=[c for c in eval_ds.column_names if c != "text"])
+    train_ds = train_ds.map(
+        to_text, remove_columns=[c for c in train_ds.column_names if c != "text"]
+    )
+    eval_txt = eval_ds.map(
+        to_text, remove_columns=[c for c in eval_ds.column_names if c != "text"]
+    )
 
     class WallclockNan:
-        def __init__(self, max_min): self.deadline = t0 + max_min * 60
+        def __init__(self, max_min):
+            self.deadline = t0 + max_min * 60
+
         def __call__(self, args, state, control, logs=None, **kw):
             if logs and "loss" in logs and (logs["loss"] != logs["loss"]):
                 blocked(spec, "train:nan-loss", f"NaN loss at step {state.global_step}")
             if time.time() > self.deadline:
-                blocked(spec, "train:wallclock", f"exceeded {spec['gates']['maxWallclockMinutes']} min")
+                blocked(
+                    spec,
+                    "train:wallclock",
+                    f"exceeded {spec['gates']['maxWallclockMinutes']} min",
+                )
             return control
 
     from transformers import TrainerCallback
 
     class GateCallback(TrainerCallback):
-        def __init__(self): self.g = WallclockNan(spec["gates"]["maxWallclockMinutes"])
-        def on_log(self, args, state, control, logs=None, **kw): return self.g(args, state, control, logs, **kw)
+        def __init__(self):
+            self.g = WallclockNan(spec["gates"]["maxWallclockMinutes"])
+
+        def on_log(self, args, state, control, logs=None, **kw):
+            return self.g(args, state, control, logs, **kw)
 
     trainer = SFTTrainer(
-        model=model, tokenizer=tokenizer, train_dataset=train_ds, eval_dataset=eval_txt,
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=train_ds,
+        eval_dataset=eval_txt,
         callbacks=[GateCallback()],
         args=SFTConfig(
-            per_device_train_batch_size=r["batchSize"], gradient_accumulation_steps=r["gradAccum"],
-            num_train_epochs=r["epochs"], learning_rate=r["learningRate"], optim=r["optimizer"],
-            seed=r["seed"], output_dir=str(ROOT / "jobs" / spec["jobId"] / "out"),
-            logging_steps=10, save_strategy="epoch", report_to=[], bf16=torch.cuda.is_bf16_supported(),
+            per_device_train_batch_size=r["batchSize"],
+            gradient_accumulation_steps=r["gradAccum"],
+            num_train_epochs=r["epochs"],
+            learning_rate=r["learningRate"],
+            optim=r["optimizer"],
+            seed=r["seed"],
+            output_dir=str(ROOT / "jobs" / spec["jobId"] / "out"),
+            logging_steps=10,
+            save_strategy="epoch",
+            report_to=[],
+            bf16=torch.cuda.is_bf16_supported(),
         ),
     )
     train_out = trainer.train()
@@ -221,12 +292,17 @@ def main(spec_path: str):
     eval_metrics = trainer.evaluate()
     FastLanguageModel.for_inference(model)
     import re
+
     n_gen, json_ok, ceiling_ok, abstain_seen = 0, 0, 0, 0
     for ex in eval_ds.select(range(min(50, len(eval_ds)))):
-        prompt = tokenizer.apply_chat_template(ex["messages"][:2], tokenize=False, add_generation_prompt=True)
+        prompt = tokenizer.apply_chat_template(
+            ex["messages"][:2], tokenize=False, add_generation_prompt=True
+        )
         ids = tokenizer(prompt, return_tensors="pt").to(model.device)
         out = model.generate(**ids, max_new_tokens=400, do_sample=False)
-        text = tokenizer.decode(out[0][ids["input_ids"].shape[1]:], skip_special_tokens=True)
+        text = tokenizer.decode(
+            out[0][ids["input_ids"].shape[1] :], skip_special_tokens=True
+        )
         n_gen += 1
         try:
             obj = json.loads(re.search(r"\{.*\}", text, re.S).group(0))
@@ -241,13 +317,22 @@ def main(spec_path: str):
 
     # 6 — signed receipts (forge trio convention, laptop key), then upload
     adapter_dir = ROOT / "jobs" / spec["jobId"] / "adapter"
-    model.save_pretrained(str(adapter_dir)); tokenizer.save_pretrained(str(adapter_dir))
-    adapter_sha = hashlib.sha256((adapter_dir / "adapter_model.safetensors").read_bytes()).hexdigest()
+    model.save_pretrained(str(adapter_dir))
+    tokenizer.save_pretrained(str(adapter_dir))
+    adapter_sha = hashlib.sha256(
+        (adapter_dir / "adapter_model.safetensors").read_bytes()
+    ).hexdigest()
 
     training_receipt = {
-        "kind": "szl-bridge-training-receipt", "v": 1, "jobId": spec["jobId"],
-        "specPayloadSha256": hashlib.sha256(base64.b64decode(env["payload"])).hexdigest(),
-        "base": spec["base"], "dataset": spec["dataset"], "recipe": r,
+        "kind": "szl-bridge-training-receipt",
+        "v": 1,
+        "jobId": spec["jobId"],
+        "specPayloadSha256": hashlib.sha256(
+            base64.b64decode(env["payload"])
+        ).hexdigest(),
+        "base": spec["base"],
+        "dataset": spec["dataset"],
+        "recipe": r,
         "measured": {
             "label": "MEASURED",
             "finalTrainLoss": float(train_out.training_loss),
@@ -255,8 +340,11 @@ def main(spec_path: str):
             "peakVramGb": round(peak_vram_gb, 2),
             "steps": int(train_out.global_step),
         },
-        "adapterSha256": adapter_sha, "at": now_iso(),
-        "stack": {"note": "pinned via bootstrap.ps1; unsloth as dependency (Apache core, LGPL zoo unvendored)"},
+        "adapterSha256": adapter_sha,
+        "at": now_iso(),
+        "stack": {
+            "note": "pinned via bootstrap.ps1; unsloth as dependency (Apache core, LGPL zoo unvendored)"
+        },
     }
     signed_training = sign_receipt(training_receipt)
     # chain pin = sha256 of the EXACT signed bytes (bodyBase64-decoded), which
@@ -264,7 +352,9 @@ def main(spec_path: str):
     tr_sha = hashlib.sha256(base64.b64decode(signed_training["bodyBase64"])).hexdigest()
 
     eval_receipt = {
-        "kind": "szl-bridge-eval-receipt", "v": 1, "jobId": spec["jobId"],
+        "kind": "szl-bridge-eval-receipt",
+        "v": 1,
+        "jobId": spec["jobId"],
         "trainingReceiptSha256": tr_sha,  # eval→training chain (forge convention)
         "suite": spec["eval"]["suite"],
         "measured": {
@@ -282,17 +372,33 @@ def main(spec_path: str):
     signed_eval = sign_receipt(eval_receipt)
 
     from huggingface_hub import HfApi
+
     api = HfApi()
-    api.create_repo(spec["outputs"]["modelRepoId"], exist_ok=True, private=spec["outputs"].get("private", True))
-    api.upload_folder(folder_path=str(adapter_dir), repo_id=spec["outputs"]["modelRepoId"])
-    for name, obj in [("training_receipt.signed.json", signed_training), ("eval_receipt.signed.json", signed_eval)]:
+    api.create_repo(
+        spec["outputs"]["modelRepoId"],
+        exist_ok=True,
+        private=spec["outputs"].get("private", True),
+    )
+    api.upload_folder(
+        folder_path=str(adapter_dir), repo_id=spec["outputs"]["modelRepoId"]
+    )
+    for name, obj in [
+        ("training_receipt.signed.json", signed_training),
+        ("eval_receipt.signed.json", signed_eval),
+    ]:
         p = ROOT / "jobs" / name
         p.write_text(json.dumps(obj, indent=2))
-        api.upload_file(path_or_fileobj=str(p), path_in_repo=name, repo_id=spec["outputs"]["modelRepoId"])
+        api.upload_file(
+            path_or_fileobj=str(p),
+            path_in_repo=name,
+            repo_id=spec["outputs"]["modelRepoId"],
+        )
         upload_receipt(obj, name, spec)
     (ROOT / "keys" / "laptop_pubkey.json").exists() and api.upload_file(
-        path_or_fileobj=str(ROOT / "keys" / "laptop_pubkey.json"), path_in_repo="owner_pubkey.json",
-        repo_id=spec["outputs"]["modelRepoId"])
+        path_or_fileobj=str(ROOT / "keys" / "laptop_pubkey.json"),
+        path_in_repo="owner_pubkey.json",
+        repo_id=spec["outputs"]["modelRepoId"],
+    )
     print(f"job {spec['jobId']} COMPLETE — adapter + receipt trio uploaded")
     return 0
 

@@ -1,69 +1,129 @@
 # szl-gpu-bridge
 
-**Doctrine-governed training bridge: cloud-signed job specs → owner's GPU metal → signed receipts back. No inbound access, no secrets on the wire, fail-closed in both directions.**
+**Doctrine-governed training bridge: cloud-signed job specs → owner GPU metal → signed receipts back. No inbound access, no secrets on the wire, fail-closed in both directions.**
 
-This repo is the *only* channel between SZL's cloud sessions and the owner's Windows/RTX training laptop. The cloud cannot reach the laptop; the laptop polls this repo. Every job spec is DSSE-signed by the szl-quant engine key before it enters the queue, and the laptop refuses — with an honest, signed **BLOCKED** receipt — anything whose signature, schema, or resource gates fail.
+This repository is the controlled channel between SZL cloud sessions and the owner’s Windows/NVIDIA training host. The cloud cannot reach the laptop; the laptop polls this repository. Every executable job is DSSE-signed by the pinned SZL engine key. The laptop verifies the exact envelope bytes before reading job fields, then either executes an allowlisted local runner or records a permanent refusal.
 
-## How it works
+## Architecture
 
+```text
+cloud                                                owner GPU host
+────────────────────────────────────                 ──────────────────────────────────
+cloud/materialize-frontier-spec.mjs
+  ├─ resolve exact Hub commits
+  ├─ verify model + dataset license metadata
+  ├─ hash exact dataset file
+  └─ pin tokenizer chat-template hash
+cloud/sign-job.mjs
+  └─ DSSE-sign v1/v2 spec ─────────────► queue/pending/
+                                                     laptop/daemon.ps1
+                                                       └─ laptop/dispatcher.py
+                                                          1 verify DSSE + engine pin
+                                                          2 validate allowlisted contract
+                                                          3 run v1 or frontier-v2 runner
+                                                          4 train/evaluate/export
+                                                          5 reload-smoke released formats
+                                                          6 sign exact-byte receipts
+                                                          7 publish Hub artifacts + receipts
+cloud/verify-receipt.mjs ◄──────────────────────────── independently verifies receipt chain
 ```
-cloud (this repo)                          owner's laptop (Windows, RTX)
-─────────────────                          ─────────────────────────────
-cloud/sign-job.mjs                          laptop/daemon.ps1 (scheduled task)
-  └─ DSSE-sign jobspec ──► queue/pending/ ◄── poll raw.githubusercontent.com
-                                              └─ laptop/runjob.py
-                                                 1 verify DSSE vs PINNED engine pubkey
-                                                 2 fail-closed gates (VRAM, disk, wallclock)
-                                                 3 Unsloth QLoRA train (pinned deps)
-                                                 4 eval suite
-                                                 5 sign training/eval receipts (laptop key)
-                                                 6 hf upload weights + receipts ──► HF Hub
-cloud/verify-receipt.mjs ◄── pull receipts from HF, verify, then (and only then) claim anything
+
+- **Inbound jobs:** public HTTPS polling only; no laptop GitHub credential and no inbound port.
+- **Outbound results:** the host uses its local Hugging Face authentication. Tokens and private keys are never committed or sent through the queue.
+- **Trust roots:** the host trusts one baked engine public key. The cloud trusts the separately announced laptop receipt key. An unverifiable claim is treated as no claim.
+
+## Frontier training contract v2
+
+`schema/jobspec.v2.json` and the dependency-free enforcement in `laptop/frontier_contract.py` define the production training contract. V1 remains supported for already signed jobs; the verify-first dispatcher preserves backward compatibility without letting v1 bypass v2 gates.
+
+V2 requires:
+
+- exact model and dataset revisions;
+- exact dataset-file sha256;
+- exact-revision model and dataset license metadata;
+- an auditable dataset-lineage statement;
+- a signed chat-template sha256;
+- explicit Unsloth/TRL/PEFT recipe fields, including rsLoRA, packing, and assistant-only-loss behavior;
+- resource and wall-clock ceilings;
+- signed minimum evaluation rates and a maximum degeneration rate;
+- artifact sha256 manifests;
+- real reload smoke for merged and GGUF outputs;
+- signed training/evaluation receipts chained over exact bytes;
+- immutable Hub release commit evidence.
+
+A successful `trainer.train()` call is **not** a release. Any failed input, license, resource, evaluation, export, reload, or upload gate becomes a signed `BLOCKED` receipt.
+
+## Materialize, sign, and enqueue
+
+Create a human-reviewed draft containing the desired model, dataset file, recipe, gates, output repositories, and evaluation thresholds. The materializer replaces moving references with exact evidence:
+
+```powershell
+$env:HF_TOKEN = "<read token when private inputs are used>"
+node cloud/materialize-frontier-spec.mjs draft.json spec.json
 ```
 
-- **Inbound** (jobs): the laptop polls `queue/pending/*.json` over public raw HTTPS — no laptop GitHub auth needed. Signature verification against the **pinned** engine pubkey (`keys/engine_pubkey.json`, keyId `5c6cf59741ade920`, baked into `bootstrap.ps1`) happens **before** any field of a spec is acted on.
-- **Outbound** (results): the laptop pushes weights + signed receipts to Hugging Face with its already-authenticated `hf` CLI — the same already-exercised path that shipped the khipu weights (~3 GB, REPORTED, prior upload). The cloud verifies receipts independently; **an unverified claim is treated as no claim**.
-- **Trust roots**: the laptop trusts exactly one engine pubkey (baked at bootstrap). The cloud trusts the laptop key that the owner announces after bootstrap prints its keyId. Neither side ever transmits a private key or token.
+It also writes `spec.json.evidence.json`. Review both files, then sign with the existing engine key:
 
-## Job specs
+```powershell
+$env:SZL_QUANT_KEY = "C:\secure\engine_key.pem"
+node cloud/sign-job.mjs spec.json
+```
 
-`schema/jobspec.v1.json` defines the contract. Every reference is pinned: base model by revision, dataset by revision + sha256, output repos named explicitly, VRAM/wallclock gates stated. Specs carry `expiresAt` and a unique `jobId`; the daemon keeps a seen-ledger so a replayed spec is a no-op.
+Only the signed envelope enters `queue/pending/`.
 
-Current queue: `queue/pending/` — first job trains **SZL-Quant-1.5B** on the receipt-derived
-[`SZLHOLDINGS/szl-quant-sft-v1`](https://huggingface.co/datasets/SZLHOLDINGS/szl-quant-sft-v1) dataset (every training row traceable to a DSSE-signed backtest receipt and recomputable from content-addressed archives).
+## Training and release path
 
-## One-paste bootstrap (owner)
+The v2 runner uses Unsloth core as an installed Apache-2.0 dependency, TRL for SFT, PEFT for adapters, Hugging Face repositories for versioned releases, optional Hugging Face Storage Buckets for mutable checkpoints, and llama.cpp for GGUF reload smoke when GGUF is requested. The SZL implementation adds the signed contract, exact input and template pins, license verification, receipt chain, deterministic structural evaluation, export manifests, and fail-closed promotion law.
 
-On the laptop, in an **elevated** PowerShell:
+Released artifacts remain in versioned model repositories. Buckets are used only for mutable checkpoints/working state. The model card records base/dataset lineage, measured run fields, limitations, and artifact anchors.
+
+## One-paste bootstrap
+
+On the owner’s Windows host, in elevated PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/laptop/bootstrap.ps1 | iex
 ```
 
-It pins a Miniconda py3.12 env (torch cu124-class, triton-windows, bitsandbytes with the two known-bad Windows versions excluded, xformers, unsloth, huggingface_hub, pynacl), generates the laptop signing key, prints its keyId for you to announce, registers the daemon as a scheduled task (runs at startup, survives lock screen), and starts polling. Idempotent — safe to re-run.
+The installer:
 
-## Honest limits (LAW)
+1. self-checks and writes the pinned engine public key;
+2. creates the Python 3.12 environment;
+3. installs the current governed interface pins and hardware-specific GPU dependencies;
+4. records `stack-freeze.txt` and its sha256 for receipts;
+5. creates the host’s Ed25519 receipt key if absent;
+6. downloads and compiles the dispatcher, v1/v2 runners, helpers, and schemas;
+7. registers the single-flight scheduled polling task.
 
-- Nothing trains until the owner pastes the bootstrap once — there is no remote-start path, by design.
-- From the cloud, laptop liveness is **inferred only from pushed signed receipts**; every cloud-side claim about a run is REPORTED-from-receipt or it does not exist.
-- Receipts are **attestations** (ed25519 over canonical JSON), not cryptographic proofs of computation — we say "receipt-verified", never "proof of training".
-- Throughput/VRAM numbers for the owner's GPU are **UNAVAILABLE** until a run reports them; nothing here quotes vendor marketing as measurement.
-- Advisory research infrastructure. Paper-only lineage (szl-quant). Not financial advice.
+If Hub authentication or `llama-cli` is unavailable, affected jobs do not silently downgrade; they produce an honest blocked result.
 
-## Repo map
+## Honest limits
 
-| path | what |
+- No training begins until the owner installs and starts the bridge.
+- Cloud-side liveness is inferred only from signed receipts; absence of a receipt is not success.
+- Receipts are Ed25519 attestations, not cryptographic proof of computation.
+- The v2 code and contract CI do not substitute for a measured GPU run. A model is operational only after a real job passes every signed gate and the resulting release passes the serving plane.
+- Existing v1 historical claims remain labeled according to their original receipt contract.
+- Advisory research infrastructure; not financial advice.
+
+## Repository map
+
+| path | responsibility |
 |---|---|
-| `schema/jobspec.v1.json` | job-spec contract v1 |
-| `cloud/sign-job.mjs` | DSSE-sign a spec into the queue (engine key) |
-| `cloud/verify-receipt.mjs` | independently verify laptop receipts pulled from HF |
-| `laptop/bootstrap.ps1` | one-paste pinned installer + scheduled task |
-| `laptop/daemon.ps1` | poll → verify → run → idle loop |
-| `laptop/runjob.py` | verify → gates → Unsloth train → eval → sign → upload |
-| `queue/pending/` | DSSE-signed job specs awaiting the laptop |
-| `queue/done/` | specs the cloud has confirmed via verified receipts |
-| `keys/engine_pubkey.json` | pinned engine identity (`5c6cf59741ade920`) |
-| `docs/RESEARCH_MEMO.md` | leaders studied → lessons adopted → what SZL does differently |
-| `docs/SECURITY_MODEL.md` | threat model, both directions |
+| `schema/jobspec.v1.json` | legacy signed SFT contract |
+| `schema/jobspec.v2.json` | governed frontier training/release contract |
+| `cloud/materialize-frontier-spec.mjs` | resolve exact Hub inputs, licenses, template, and dataset digest |
+| `cloud/sign-job.mjs` | validate and DSSE-sign v1/v2 specs |
+| `cloud/verify-receipt.mjs` | independently verify signed receipt chains |
+| `laptop/bootstrap.ps1` | install, pin, compile, and register the polling service |
+| `laptop/daemon.ps1` | single-flight poll and ledger loop |
+| `laptop/dispatcher.py` | verify envelope, validate contract, select allowlisted runner |
+| `laptop/runjob.py` | legacy v1 runner |
+| `laptop/runjob_frontier.py` | v2 train/evaluate/export/reload/publish runner |
+| `laptop/frontier_contract.py` | pure verify-first contract enforcement |
+| `laptop/frontier_runtime.py` | evidence, dataset, artifact, and model-card helpers |
+| `docs/FRONTIER_TRAINING_V2.md` | v2 architecture and release law |
+| `docs/SECURITY_MODEL.md` | threat model |
+| `docs/RESEARCH_MEMO.md` | leader study and adaptation record |
 
-Apache-2.0. Adapted patterns are attributed in `NOTICE`; LGPL/AGPL upstream code is depended on or avoided, never vendored.
+Apache-2.0. Adapted public patterns are attributed in `NOTICE`; copyleft subtrees are not vendored into this repository.
