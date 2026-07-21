@@ -58,7 +58,9 @@ def laptop_keys():
     from nacl.signing import SigningKey
 
     pem = (ROOT / "keys" / "laptop_key.pem").read_text()
-    seed = base64.b64decode("".join(l for l in pem.splitlines() if "-----" not in l))
+    seed = base64.b64decode(
+        "".join(line for line in pem.splitlines() if "-----" not in line)
+    )
     sk = SigningKey(seed)
     pub = json.loads((ROOT / "keys" / "laptop_pubkey.json").read_text())
     return sk, pub
