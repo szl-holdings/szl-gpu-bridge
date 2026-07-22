@@ -65,7 +65,7 @@ class NemoV3StatusTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def enqueue(self) -> str:
-        payload = canonicalize(self.spec).encode("utf-8")
+        payload = nemo_v3_status.signer_canonicalize(self.spec).encode("utf-8")
         envelope = {
             "payloadType": NEMO_V3_PAYLOAD_TYPE,
             "payload": base64.b64encode(payload).decode(),
@@ -137,6 +137,14 @@ class NemoV3StatusTests(unittest.TestCase):
             "keyId": self.laptop_key_id,
             "scheme": "ed25519-over-exact-bytes-v2",
         }
+
+    def test_python_queue_canonicalizer_matches_javascript_number_spelling(self) -> None:
+        self.assertEqual(
+            nemo_v3_status.signer_canonicalize(
+                {"integral": 1.0, "zero": 0.0, "rate": 0.0001, "items": [2.0]}
+            ),
+            '{"integral":1,"items":[2],"rate":0.0001,"zero":0}',
+        )
 
     def test_plaintext_spec_is_waiting_not_executable(self) -> None:
         report = nemo_v3_status.evaluate(root=self.root, now=self.now)
