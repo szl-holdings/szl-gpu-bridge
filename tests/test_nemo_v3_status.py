@@ -39,9 +39,8 @@ class NemoV3StatusTests(unittest.TestCase):
             json.dumps(self.spec, indent=2) + "\n", encoding="utf-8"
         )
         self.engine = self.SigningKey.generate()
-        self.engine_spki = (
-            b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00"
-            + bytes(self.engine.verify_key)
+        self.engine_spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(
+            self.engine.verify_key
         )
         self.engine_key_id = derive_key_id(self.engine_spki)
         (self.root / "keys" / "engine_pubkey.json").write_text(
@@ -54,9 +53,8 @@ class NemoV3StatusTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.laptop = self.SigningKey.generate()
-        self.laptop_spki = (
-            b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00"
-            + bytes(self.laptop.verify_key)
+        self.laptop_spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(
+            self.laptop.verify_key
         )
         self.laptop_key_id = derive_key_id(self.laptop_spki)
         self.now = datetime(2026, 7, 23, tzinfo=timezone.utc)
@@ -138,7 +136,9 @@ class NemoV3StatusTests(unittest.TestCase):
             "scheme": "ed25519-over-exact-bytes-v2",
         }
 
-    def test_python_queue_canonicalizer_matches_javascript_number_spelling(self) -> None:
+    def test_python_queue_canonicalizer_matches_javascript_number_spelling(
+        self,
+    ) -> None:
         self.assertEqual(
             nemo_v3_status.signer_canonicalize(
                 {"integral": 1.0, "zero": 0.0, "rate": 0.0001, "items": [2.0]}
@@ -177,9 +177,7 @@ class NemoV3StatusTests(unittest.TestCase):
             ),
             now=self.now,
         )
-        self.assertEqual(
-            report["status"], "AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT"
-        )
+        self.assertEqual(report["status"], "AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT")
         self.assertEqual(report["receipt"]["observed_key_id"], self.laptop_key_id)
         self.assertFalse(report["receipt"]["valid"])
 
@@ -198,9 +196,7 @@ class NemoV3StatusTests(unittest.TestCase):
             ),
             now=self.now,
         )
-        self.assertEqual(
-            report["status"], "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW"
-        )
+        self.assertEqual(report["status"], "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW")
         self.assertTrue(report["terminal"])
         self.assertTrue(report["receipt"]["identity_pinned"])
         self.assertEqual(

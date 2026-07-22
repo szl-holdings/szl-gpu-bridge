@@ -42,9 +42,7 @@ class ReviewedNemoV3SpecTests(unittest.TestCase):
             self.spec["base"]["revision"],
             "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
         )
-        self.assertEqual(
-            self.spec["base"]["licenseId"], "nvidia-open-model-license"
-        )
+        self.assertEqual(self.spec["base"]["licenseId"], "nvidia-open-model-license")
         self.assertEqual(
             self.spec["dataset"]["rightsBasis"], "PROJECT_AUTHORED_SCENARIOS"
         )
