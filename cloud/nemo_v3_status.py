@@ -12,8 +12,10 @@ import argparse
 import base64
 import hashlib
 import json
+import math
 import os
 import pathlib
+import re
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -28,7 +30,6 @@ from frontier_contract import canonicalize, derive_key_id, verify_envelope  # no
 from nemo_v3_contract import NEMO_V3_PAYLOAD_TYPE, validate_nemo_v3_spec  # noqa: E402
 
 SPEC_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
-ENGINE_PIN_PATH = ROOT / "keys" / "engine_pubkey.json"
 RECEIPTS_REPO = "SZLHOLDINGS/szl-training-receipts"
 TERMINAL_FILENAMES = (
     "nemo-v3-qualified.signed.json",
@@ -64,6 +65,46 @@ class StatusError(RuntimeError):
     """A signed queue or receipt violated the governed attempt contract."""
 
 
+def signer_canonicalize(value: Any) -> str:
+    """Match the JavaScript signer canonicalizer for the reviewed jobspec.
+
+    ``JSON.stringify`` emits integral floating-point values as integers (``1``
+    rather than Python's ``1.0``). The queue verifier must compare against the
+    bytes produced by ``cloud/sign-nemo-v3-job.mjs``, not a Python-specific JSON
+    spelling.
+    """
+
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise StatusError("non-finite number cannot be signed")
+        if value == 0:
+            return "0"
+        if value.is_integer():
+            return str(int(value))
+        rendered = json.dumps(value, allow_nan=False, separators=(",", ":"))
+        return re.sub(r"e([+-])0+(\d+)", r"e\1\2", rendered)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, list):
+        return "[" + ",".join(signer_canonicalize(item) for item in value) + "]"
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise StatusError("jobspec object keys must be strings")
+        return "{" + ",".join(
+            f"{json.dumps(key, ensure_ascii=False)}:{signer_canonicalize(value[key])}"
+            for key in sorted(value)
+        ) + "}"
+    raise StatusError(f"unsupported jobspec value type {type(value).__name__}")
+
+
 def load_reviewed_spec(root: pathlib.Path = ROOT) -> dict[str, Any]:
     path = root / SPEC_PATH.relative_to(ROOT)
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -92,7 +133,7 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
             raise StatusError(f"unexpected payload type {payload_type!r}")
         if signed_spec != spec:
             raise StatusError("signed queue payload differs from the reviewed jobspec")
-        canonical = canonicalize(spec).encode("utf-8")
+        canonical = signer_canonicalize(spec).encode("utf-8")
         if exact_payload != canonical:
             raise StatusError("signed queue bytes are not the canonical reviewed jobspec")
         return QueueEvidence(
@@ -321,7 +362,7 @@ def evaluate(
         "terminal": terminal,
         "reviewed_spec": {
             "path": str((root / SPEC_PATH.relative_to(ROOT)).relative_to(root)),
-            "sha256": hashlib.sha256(canonicalize(spec).encode("utf-8")).hexdigest(),
+            "sha256": hashlib.sha256(signer_canonicalize(spec).encode("utf-8")).hexdigest(),
             "source_revision": spec["source"]["revision"],
             "base_repo_id": spec["base"]["repoId"],
             "base_revision": spec["base"]["revision"],
