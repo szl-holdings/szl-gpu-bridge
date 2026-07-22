@@ -32,12 +32,16 @@ jobs:
       - name: Validate Node entrypoints
         run: |
           node --check cloud/sign-job.mjs
+          node --check cloud/sign-nemo-v3-job.mjs
           node --check cloud/verify-receipt.mjs
           node --check cloud/materialize-frontier-spec.mjs
       - name: Run fail-closed contract tests
         run: |
           python -m unittest discover -s tests -v
-          node --test tests/test_cloud_contract.mjs tests/test_materialize_frontier_spec.mjs
+          node --test \
+            tests/test_cloud_contract.mjs \
+            tests/test_cloud_nemo_v3.mjs \
+            tests/test_materialize_frontier_spec.mjs
       - name: Validate JSON schemas and queued specs
         run: |
           python - <<'PY'

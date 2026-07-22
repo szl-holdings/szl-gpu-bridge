@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://szl.holdings/gpu-bridge/nemo-v3/jobspec/v1",
+  "title": "SZL-Nemo v3 governed training job",
+  "description": "A single-attempt, fail-closed GPU job that preserves frozen v2 holdouts, adds a preregistered v3 challenge set, trains only rights-admitted project-authored rows, and produces either a separately reviewable candidate receipt or a terminal signed failure.",
+  "type": "object",
+  "required": ["jobId", "kind", "createdAt", "expiresAt", "source", "base", "dataset", "recipe", "gates", "outputs", "evaluation"],
+  "additionalProperties": false,
+  "properties": {
+    "jobId": {"type": "string", "pattern": "^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$"},
+    "kind": {"const": "szl-nemo-governed-v3"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "source": {
+      "type": "object",
+      "required": ["repoId", "revision", "licenseId"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": {"const": "szl-holdings/a11oy"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "licenseId": {"const": "apache-2.0"}
+      }
+    },
+    "base": {
+      "type": "object",
+      "required": ["repoId", "revision", "licenseId", "licenseAcknowledgement", "trustRemoteCode"],
+      "additionalProperties": false,
+      "properties": {
+        "repoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40,64}$"},
+        "licenseId": {"type": "string", "minLength": 1},
+        "licenseAcknowledgement": {"type": "string", "minLength": 20},
+        "trustRemoteCode": {"type": "boolean"}
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["provenance", "rightsBasis", "train", "holdouts", "preregistration"],
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {"type": "string", "minLength": 40},
+        "rightsBasis": {"const": "PROJECT_AUTHORED_SCENARIOS"},
+        "train": {"$ref": "#/$defs/pinnedFile"},
+        "holdouts": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "allOf": [
+              {"$ref": "#/$defs/pinnedFile"},
+              {
+                "type": "object",
+                "required": ["name", "recordIds", "recordIdsSha256"],
+                "properties": {
+                  "name": {"enum": ["original-v2", "shadow-v2", "challenge-v3"]},
+                  "recordIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
+                  "recordIdsSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                }
+              }
+            ]
+          }
+        },
+        "preregistration": {"$ref": "#/$defs/pinnedFile"}
+      }
+    },
+    "recipe": {
+      "type": "object",
+      "required": ["maxSeqLength", "loraR", "loraAlpha", "loraDropout", "targetModules", "batchSize", "gradAccum", "epochs", "learningRate", "optimizer", "gradientCheckpointing", "seed", "warmupRatio", "weightDecay", "lrSchedulerType"],
+      "additionalProperties": false,
+      "properties": {
+        "maxSeqLength": {"type": "integer", "minimum": 256, "maximum": 4096},
+        "loraR": {"type": "integer", "minimum": 1, "maximum": 64},
+        "loraAlpha": {"type": "integer", "minimum": 1, "maximum": 256},
+        "loraDropout": {"type": "number", "minimum": 0, "maximum": 0.2},
+        "targetModules": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "batchSize": {"const": 1},
+        "gradAccum": {"type": "integer", "minimum": 1, "maximum": 64},
+        "epochs": {"type": "number", "exclusiveMinimum": 0, "maximum": 8},
+        "learningRate": {"type": "number", "exclusiveMinimum": 0, "maximum": 0.001},
+        "optimizer": {"enum": ["adamw_8bit", "paged_adamw_8bit"]},
+        "gradientCheckpointing": {"enum": ["unsloth", "true"]},
+        "seed": {"type": "integer"},
+        "warmupRatio": {"type": "number", "minimum": 0, "maximum": 0.2},
+        "weightDecay": {"type": "number", "minimum": 0, "maximum": 0.2},
+        "lrSchedulerType": {"enum": ["linear", "cosine"]}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "required": ["minFreeVramGb", "minFreeDiskGb", "maxWallclockMinutes", "maxDatasetRows", "maxTemperatureC", "maxUtilizationPct"],
+      "additionalProperties": false,
+      "properties": {
+        "minFreeVramGb": {"type": "number", "minimum": 5},
+        "minFreeDiskGb": {"type": "number", "minimum": 20},
+        "maxWallclockMinutes": {"type": "integer", "minimum": 10, "maximum": 360},
+        "maxDatasetRows": {"type": "integer", "minimum": 24, "maximum": 5000},
+        "maxTemperatureC": {"type": "integer", "minimum": 40, "maximum": 80},
+        "maxUtilizationPct": {"type": "integer", "minimum": 0, "maximum": 30}
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["candidateId", "receiptsRepoId", "private", "publishCandidate"],
+      "additionalProperties": false,
+      "properties": {
+        "candidateId": {"type": "string", "pattern": "^SZL-Nemo-v3-[A-Za-z0-9_.-]+$"},
+        "receiptsRepoId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"},
+        "private": {"const": true},
+        "publishCandidate": {"const": false}
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["requiredPassRate", "maxDegenerateRate", "maxNewTokens", "requireExactRecordOrder"],
+      "additionalProperties": false,
+      "properties": {
+        "requiredPassRate": {"const": 1.0},
+        "maxDegenerateRate": {"const": 0.0},
+        "maxNewTokens": {"type": "integer", "minimum": 32, "maximum": 512},
+        "requireExactRecordOrder": {"const": true}
+      }
+    },
+    "notes": {"type": "string"}
+  },
+  "$defs": {
+    "pinnedFile": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "additionalProperties": true,
+      "properties": {
+        "path": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]*$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}
