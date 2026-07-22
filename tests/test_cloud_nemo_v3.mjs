@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   NEMO_V3_PAYLOAD_TYPE,
@@ -8,29 +9,21 @@ import {
 } from '../cloud/sign-nemo-v3-job.mjs';
 
 function idsDigest(ids) {
-  return (await import('node:crypto')).createHash('sha256').update(`${ids.join('\n')}\n`).digest('hex');
+  return createHash('sha256').update(`${ids.join('\n')}\n`).digest('hex');
 }
 
-function pinned(path, name = null, ids = null) {
-  const value = { path, sha256: 'a'.repeat(64), bytes: 100 };
-  if (name) {
-    const { createHash } = require('node:crypto');
-    Object.assign(value, {
-      name,
-      recordIds: ids,
-      recordIdsSha256: createHash('sha256').update(`${ids.join('\n')}\n`).digest('hex'),
-    });
-  }
-  return value;
+function withIds(path, name, ids) {
+  return {
+    path,
+    name,
+    recordIds: ids,
+    sha256: 'a'.repeat(64),
+    bytes: 100,
+    recordIdsSha256: idsDigest(ids),
+  };
 }
 
 function spec() {
-  const { createHash } = require('node:crypto');
-  const withIds = (path, name, ids) => ({
-    path, name, recordIds: ids,
-    sha256: 'a'.repeat(64), bytes: 100,
-    recordIdsSha256: createHash('sha256').update(`${ids.join('\n')}\n`).digest('hex'),
-  });
   return {
     jobId: 'job-2026-nemo-v3-governed',
     kind: 'szl-nemo-governed-v3',
