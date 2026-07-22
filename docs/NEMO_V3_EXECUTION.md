@@ -86,6 +86,8 @@ The workflow `Nemo v3 Governed Attempt Status` runs every 15 minutes and updates
 [nemo-v3-attempt] governed single attempt
 ```
 
+A green workflow run means the status controller executed and the evidence it found was internally valid. It does **not** mean training ran or passed; the issue status remains the source of truth for the attempt lifecycle.
+
 Possible honest states:
 
 | State | Meaning |
