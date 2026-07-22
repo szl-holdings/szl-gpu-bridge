@@ -17,6 +17,11 @@ from frontier_contract import (
     validate_v2_spec,
     verify_envelope,
 )
+from nemo_v3_contract import (
+    NEMO_V3_KIND,
+    NEMO_V3_PAYLOAD_TYPE,
+    validate_nemo_v3_spec,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -42,21 +47,28 @@ def main(spec_path: str) -> int:
     try:
         envelope = json.loads(pathlib.Path(spec_path).read_text(encoding="utf-8-sig"))
         pin = load_pin(ROOT / "keys" / "engine_pubkey.json")
-        spec, _, payload_type = verify_envelope(envelope, pin)
+        spec, _, payload_type = verify_envelope(
+            envelope,
+            pin,
+            allowed_payload_types=(V1_PAYLOAD_TYPE, V2_PAYLOAD_TYPE, NEMO_V3_PAYLOAD_TYPE),
+        )
     except Exception as exc:  # noqa: BLE001
         return refuse(spec_path, f"envelope verification failed: {exc}")
 
     if payload_type == V1_PAYLOAD_TYPE and spec.get("kind") == "unsloth-qlora-sft-v1":
         runner = ROOT / "runjob.py"
-    elif (
-        payload_type == V2_PAYLOAD_TYPE
-        and spec.get("kind") == "unsloth-frontier-sft-v2"
-    ):
+    elif payload_type == V2_PAYLOAD_TYPE and spec.get("kind") == "unsloth-frontier-sft-v2":
         try:
             validate_v2_spec(spec)
         except ContractError as exc:
             return refuse(spec_path, f"v2 contract invalid: {exc}", verified=spec)
         runner = ROOT / "runjob_frontier.py"
+    elif payload_type == NEMO_V3_PAYLOAD_TYPE and spec.get("kind") == NEMO_V3_KIND:
+        try:
+            validate_nemo_v3_spec(spec)
+        except ContractError as exc:
+            return refuse(spec_path, f"Nemo v3 contract invalid: {exc}", verified=spec)
+        runner = ROOT / "runjob_nemo_v3.py"
     else:
         return refuse(
             spec_path,
