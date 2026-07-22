@@ -6,7 +6,7 @@
 #      installed package snapshot used by receipts.
 #   2. Bakes the engine pubkey pin (the ONLY job-spec signer this laptop obeys).
 #   3. Generates the laptop's ed25519 signing key (never leaves the machine).
-#   4. Installs the verify-first dispatcher plus v1/v2 runners.
+#   4. Installs the verify-first dispatcher plus v1/v2 and governed Nemo-v3 runners.
 #   5. Registers a scheduled task that polls the public queue and runs jobs.
 # It installs no remote-control software and opens no inbound ports.
 
@@ -25,8 +25,6 @@ $EnginePin = @'
   "publicKeySpkiBase64": "MCowBQYDK2VwAyEArBOmZZSDK+n7Qq1HJYbqNuX9YymnsRWbzSGHHnhsERM="
 }
 '@
-# self-check BEFORE writing: keyId must equal sha256(SPKI)[:16] or this file
-# could install a mislabeled trust root (fail closed, install nothing).
 $PinObj = $EnginePin | ConvertFrom-Json
 $SpkiBytes = [Convert]::FromBase64String($PinObj.publicKeySpkiBase64)
 $Sha = [System.Security.Cryptography.SHA256]::Create()
@@ -56,14 +54,10 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
 # Windows compatibility constraints follow the upstream Unsloth lane:
 # torch cu124-class; triton-windows required; two known-bad bitsandbytes
 # Windows versions excluded. Exact resolved versions are frozen below and their
-# sha256 is embedded in every v2 training receipt. This is honest evidence, not
-# a claim that floating upstream resolution is reproducible forever.
+# sha256 is embedded in every training receipt.
 & $Pip install --upgrade pip
 & $Pip install torch --index-url https://download.pytorch.org/whl/cu124
 & $Pip install "triton-windows" "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0" xformers
-# Pin the fast-moving public interfaces used by the v2 contract. Lower-level GPU
-# wheels remain hardware-resolved; the exact resolved environment is frozen and
-# hashed immediately after installation.
 & $Pip install `
   "unsloth==2026.7.4" `
   "huggingface_hub[cli]==1.24.0" `
@@ -111,26 +105,36 @@ Write-Host ">>> ANNOUNCE THIS KEYID TO THE CLOUD SESSION: $LapKeyId <<<" -Foregr
 Write-Host "    (the cloud pins it before trusting any receipt from this laptop)"
 Write-Host ""
 
-# ---- 4. fetch dispatcher, both runners, helpers, and schemas ----------------
+# ---- 4. fetch dispatcher, all runners, helpers, and schemas -----------------
 $Files = @(
   @("laptop/daemon.ps1", "$Root\daemon.ps1"),
   @("laptop/dispatcher.py", "$Root\dispatcher.py"),
   @("laptop/frontier_contract.py", "$Root\frontier_contract.py"),
   @("laptop/frontier_runtime.py", "$Root\frontier_runtime.py"),
   @("laptop/frontier_job.py", "$Root\frontier_job.py"),
+  @("laptop/nemo_v3_contract.py", "$Root\nemo_v3_contract.py"),
   @("laptop/runjob.py", "$Root\runjob.py"),
   @("laptop/runjob_frontier.py", "$Root\runjob_frontier.py"),
+  @("laptop/runjob_nemo_v3.py", "$Root\runjob_nemo_v3.py"),
   @("schema/jobspec.v1.json", "$Root\schema\jobspec.v1.json"),
-  @("schema/jobspec.v2.json", "$Root\schema\jobspec.v2.json")
+  @("schema/jobspec.v2.json", "$Root\schema\jobspec.v2.json"),
+  @("schema/nemo-v3-jobspec.v1.json", "$Root\schema\nemo-v3-jobspec.v1.json")
 )
 foreach ($Pair in $Files) {
   Invoke-WebRequest "$Repo/$($Pair[0])" -OutFile $Pair[1]
 }
-& $Py -m py_compile "$Root\dispatcher.py" "$Root\frontier_contract.py" "$Root\frontier_runtime.py" "$Root\frontier_job.py" "$Root\runjob.py" "$Root\runjob_frontier.py"
+& $Py -m py_compile `
+  "$Root\dispatcher.py" `
+  "$Root\frontier_contract.py" `
+  "$Root\frontier_runtime.py" `
+  "$Root\frontier_job.py" `
+  "$Root\nemo_v3_contract.py" `
+  "$Root\runjob.py" `
+  "$Root\runjob_frontier.py" `
+  "$Root\runjob_nemo_v3.py"
 if ($LASTEXITCODE -ne 0) { throw "downloaded bridge Python failed compilation" }
 
-# GGUF jobs are accepted only when a real llama-cli is discoverable for reload
-# smoke. The frontier runner also searches existing szl-forge/llama.cpp paths.
+# GGUF jobs are accepted only when a real llama-cli is discoverable for reload smoke.
 $Llama = Get-Command llama-cli.exe -ErrorAction SilentlyContinue
 if (-not $Llama) {
   Write-Host "llama-cli not on PATH — adapter/merged jobs remain available; GGUF jobs will return signed BLOCKED until llama-cli is installed." -ForegroundColor Yellow
