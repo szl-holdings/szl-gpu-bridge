@@ -21,7 +21,9 @@ def pinned(path: str, *, name: str | None = None, ids: list[str] | None = None):
     value = {"path": path, "sha256": "a" * 64, "bytes": 100}
     if name is not None:
         assert ids
-        value.update({"name": name, "recordIds": ids, "recordIdsSha256": record_ids_sha256(ids)})
+        value.update(
+            {"name": name, "recordIds": ids, "recordIdsSha256": record_ids_sha256(ids)}
+        )
     return value
 
 
@@ -32,7 +34,11 @@ def valid_spec():
         "kind": "szl-nemo-governed-v3",
         "createdAt": now.isoformat().replace("+00:00", "Z"),
         "expiresAt": (now + timedelta(hours=12)).isoformat().replace("+00:00", "Z"),
-        "source": {"repoId": "szl-holdings/a11oy", "revision": "1" * 40, "licenseId": "apache-2.0"},
+        "source": {
+            "repoId": "szl-holdings/a11oy",
+            "revision": "1" * 40,
+            "licenseId": "apache-2.0",
+        },
         "base": {
             "repoId": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
             "revision": "2" * 40,
@@ -45,9 +51,21 @@ def valid_spec():
             "rightsBasis": "PROJECT_AUTHORED_SCENARIOS",
             "train": pinned("model_release/szl-nemo-v3/train.jsonl"),
             "holdouts": [
-                pinned("model_release/szl-nemo-v3/holdout-original-v2.jsonl", name="original-v2", ids=["eval:a", "eval:b"]),
-                pinned("model_release/szl-nemo-v3/holdout-shadow-v2.jsonl", name="shadow-v2", ids=["shadow:a"]),
-                pinned("model_release/szl-nemo-v3/holdout-challenge-v3.jsonl", name="challenge-v3", ids=["challenge:a"]),
+                pinned(
+                    "model_release/szl-nemo-v3/holdout-original-v2.jsonl",
+                    name="original-v2",
+                    ids=["eval:a", "eval:b"],
+                ),
+                pinned(
+                    "model_release/szl-nemo-v3/holdout-shadow-v2.jsonl",
+                    name="shadow-v2",
+                    ids=["shadow:a"],
+                ),
+                pinned(
+                    "model_release/szl-nemo-v3/holdout-challenge-v3.jsonl",
+                    name="challenge-v3",
+                    ids=["challenge:a"],
+                ),
             ],
             "preregistration": pinned("model_release/szl-nemo-v3/preregistration.json"),
         },
@@ -137,25 +155,37 @@ class NemoV3ContractTests(unittest.TestCase):
         except ImportError:
             self.skipTest("PyNaCl not installed")
         key = SigningKey.generate()
-        spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(key.verify_key)
+        spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(
+            key.verify_key
+        )
         key_id = hashlib.sha256(spki).hexdigest()[:16]
-        payload = json.dumps(valid_spec(), sort_keys=True, separators=(",", ":")).encode()
+        payload = json.dumps(
+            valid_spec(), sort_keys=True, separators=(",", ":")
+        ).encode()
         signature = key.sign(pae(NEMO_V3_PAYLOAD_TYPE, payload)).signature
         envelope = {
             "payloadType": NEMO_V3_PAYLOAD_TYPE,
             "payload": base64.b64encode(payload).decode(),
             "publicKeySpkiBase64": base64.b64encode(spki).decode(),
-            "signatures": [{"keyid": key_id, "sig": base64.b64encode(signature).decode()}],
+            "signatures": [
+                {"keyid": key_id, "sig": base64.b64encode(signature).decode()}
+            ],
         }
         pin = {"keyId": key_id, "publicKeySpkiBase64": envelope["publicKeySpkiBase64"]}
-        observed, exact, payload_type = verify_envelope(envelope, pin, allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,))
+        observed, exact, payload_type = verify_envelope(
+            envelope, pin, allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,)
+        )
         self.assertEqual(observed, valid_spec())
         self.assertEqual(exact, payload)
         self.assertEqual(payload_type, NEMO_V3_PAYLOAD_TYPE)
         tampered = dict(envelope)
-        tampered["payload"] = base64.b64encode(payload.replace(b"governed", b"untrusted", 1)).decode()
+        tampered["payload"] = base64.b64encode(
+            payload.replace(b"governed", b"untrusted", 1)
+        ).decode()
         with self.assertRaisesRegex(ContractError, "verification failed"):
-            verify_envelope(tampered, pin, allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,))
+            verify_envelope(
+                tampered, pin, allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,)
+            )
 
 
 if __name__ == "__main__":

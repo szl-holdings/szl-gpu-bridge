@@ -37,8 +37,19 @@ from frontier_job import (
     upload_receipt,
     write_json,
 )
-from frontier_runtime import artifact_manifest, is_degenerate_text, manifest_digest, normalize_conversation, sha256_file, stack_fingerprint
-from nemo_v3_contract import NEMO_V3_PAYLOAD_TYPE, record_ids_sha256, validate_nemo_v3_spec
+from frontier_runtime import (
+    artifact_manifest,
+    is_degenerate_text,
+    manifest_digest,
+    normalize_conversation,
+    sha256_file,
+    stack_fingerprint,
+)
+from nemo_v3_contract import (
+    NEMO_V3_PAYLOAD_TYPE,
+    record_ids_sha256,
+    validate_nemo_v3_spec,
+)
 
 
 def _raw_url(repo_id: str, revision: str, path: str) -> str:
@@ -47,15 +58,25 @@ def _raw_url(repo_id: str, revision: str, path: str) -> str:
     return f"https://raw.githubusercontent.com/{urllib.parse.quote(owner, safe='')}/{urllib.parse.quote(name, safe='')}/{revision}/{parts}"
 
 
-def _download_pinned(spec: dict[str, Any], descriptor: dict[str, Any], target: pathlib.Path) -> pathlib.Path:
+def _download_pinned(
+    spec: dict[str, Any], descriptor: dict[str, Any], target: pathlib.Path
+) -> pathlib.Path:
     request = urllib.request.Request(
-        _raw_url(spec["source"]["repoId"], spec["source"]["revision"], descriptor["path"]),
-        headers={"User-Agent": "szl-gpu-bridge-nemo-v3/1.0", "Cache-Control": "no-cache"},
+        _raw_url(
+            spec["source"]["repoId"], spec["source"]["revision"], descriptor["path"]
+        ),
+        headers={
+            "User-Agent": "szl-gpu-bridge-nemo-v3/1.0",
+            "Cache-Control": "no-cache",
+        },
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
     total = 0
-    with urllib.request.urlopen(request, timeout=90) as response, target.open("xb") as output:
+    with (
+        urllib.request.urlopen(request, timeout=90) as response,
+        target.open("xb") as output,
+    ):
         if response.status != 200:
             raise RuntimeError(f"source download returned HTTP {response.status}")
         while True:
@@ -74,7 +95,9 @@ def _download_pinned(spec: dict[str, Any], descriptor: dict[str, Any], target: p
 
 def _load_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         if not line.strip():
             continue
         value = json.loads(line)
@@ -95,8 +118,13 @@ def _validate_train(rows: list[dict[str, Any]], maximum: int) -> None:
         if not isinstance(record_id, str) or not record_id or record_id in ids:
             raise ValueError(f"training row {index} has invalid or duplicate record_id")
         ids.add(record_id)
-        if row.get("rights_basis") != "PROJECT_AUTHORED_SCENARIOS" or row.get("split") != "TRAIN":
-            raise ValueError(f"training row {record_id} is not rights-admitted TRAIN data")
+        if (
+            row.get("rights_basis") != "PROJECT_AUTHORED_SCENARIOS"
+            or row.get("split") != "TRAIN"
+        ):
+            raise ValueError(
+                f"training row {record_id} is not rights-admitted TRAIN data"
+            )
         messages = row.get("messages")
         normalize_conversation(messages, require_final_assistant=True)
 
@@ -113,30 +141,47 @@ def _validate_holdout(rows: list[dict[str, Any]], descriptor: dict[str, Any]) ->
         if row.get("split") not in {"EVAL", "SHADOW_EVAL", "CHALLENGE_EVAL"}:
             raise ValueError(f"holdout row {record_id} has an invalid split")
         messages = row.get("messages")
-        if not isinstance(messages, list) or not messages or messages[-1].get("role") != "user":
-            raise ValueError(f"holdout row {record_id} must end with an unanswered user message")
+        if (
+            not isinstance(messages, list)
+            or not messages
+            or messages[-1].get("role") != "user"
+        ):
+            raise ValueError(
+                f"holdout row {record_id} must end with an unanswered user message"
+            )
         expected = row.get("expected")
         if not isinstance(expected, dict):
             raise ValueError(f"holdout row {record_id} has no rubric")
         for key in ("required_terms", "forbidden_terms"):
             terms = expected.get(key)
-            if not isinstance(terms, list) or not all(isinstance(term, str) and term for term in terms):
+            if not isinstance(terms, list) or not all(
+                isinstance(term, str) and term for term in terms
+            ):
                 raise ValueError(f"holdout row {record_id} has an invalid {key}")
-    if ids != descriptor["recordIds"] or record_ids_sha256(ids) != descriptor["recordIdsSha256"]:
+    if (
+        ids != descriptor["recordIds"]
+        or record_ids_sha256(ids) != descriptor["recordIdsSha256"]
+    ):
         raise ValueError(f"holdout identity/order mismatch for {descriptor['name']}")
 
 
 def _gpu_state() -> dict[str, Any]:
-    output = subprocess.check_output(
-        [
-            "nvidia-smi",
-            "--query-gpu=name,memory.free,utilization.gpu,temperature.gpu",
-            "--format=csv,noheader,nounits",
-        ],
-        text=True,
-        timeout=20,
-    ).strip().splitlines()[0]
-    name, free_mib, utilization, temperature = [item.strip() for item in output.split(",", 3)]
+    output = (
+        subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.free,utilization.gpu,temperature.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            timeout=20,
+        )
+        .strip()
+        .splitlines()[0]
+    )
+    name, free_mib, utilization, temperature = [
+        item.strip() for item in output.split(",", 3)
+    ]
     return {
         "name": name,
         "free_vram_gb": int(free_mib) / 1024.0,
@@ -150,18 +195,37 @@ def _admit_gpu(spec: dict[str, Any], stage: str) -> dict[str, Any]:
     state = _gpu_state()
     gates = spec["gates"]
     if state["free_vram_gb"] < gates["minFreeVramGb"]:
-        blocked(spec, f"gate:{stage}:vram", f"free VRAM {state['free_vram_gb']:.2f} GB below {gates['minFreeVramGb']} GB", extra=state)
+        blocked(
+            spec,
+            f"gate:{stage}:vram",
+            f"free VRAM {state['free_vram_gb']:.2f} GB below {gates['minFreeVramGb']} GB",
+            extra=state,
+        )
     if state["utilization_pct"] > gates["maxUtilizationPct"]:
-        blocked(spec, f"gate:{stage}:utilization", f"GPU utilization {state['utilization_pct']}% exceeds {gates['maxUtilizationPct']}%", extra=state)
+        blocked(
+            spec,
+            f"gate:{stage}:utilization",
+            f"GPU utilization {state['utilization_pct']}% exceeds {gates['maxUtilizationPct']}%",
+            extra=state,
+        )
     if state["temperature_c"] > gates["maxTemperatureC"]:
-        blocked(spec, f"gate:{stage}:temperature", f"GPU temperature {state['temperature_c']} C exceeds {gates['maxTemperatureC']} C", extra=state)
+        blocked(
+            spec,
+            f"gate:{stage}:temperature",
+            f"GPU temperature {state['temperature_c']} C exceeds {gates['maxTemperatureC']} C",
+            extra=state,
+        )
     return state
 
 
-def _generate(model: Any, tokenizer: Any, messages: list[dict[str, Any]], max_new_tokens: int) -> str:
+def _generate(
+    model: Any, tokenizer: Any, messages: list[dict[str, Any]], max_new_tokens: int
+) -> str:
     import torch
 
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
     encoded = tokenizer(prompt, return_tensors="pt")
     encoded = {key: value.to(model.device) for key, value in encoded.items()}
     with torch.no_grad():
@@ -175,7 +239,9 @@ def _generate(model: Any, tokenizer: Any, messages: list[dict[str, Any]], max_ne
     return tokenizer.decode(output[0][start:], skip_special_tokens=True)
 
 
-def _evaluate_suite(model: Any, tokenizer: Any, rows: list[dict[str, Any]], max_new_tokens: int) -> tuple[list[dict[str, Any]], int]:
+def _evaluate_suite(
+    model: Any, tokenizer: Any, rows: list[dict[str, Any]], max_new_tokens: int
+) -> tuple[list[dict[str, Any]], int]:
     results: list[dict[str, Any]] = []
     passes = 0
     for row in rows:
@@ -202,7 +268,9 @@ def _evaluate_suite(model: Any, tokenizer: Any, rows: list[dict[str, Any]], max_
     return results, passes
 
 
-def _result_receipt(spec: dict[str, Any], exact_payload: bytes, *, state: str, evidence: dict[str, Any]) -> dict[str, Any]:
+def _result_receipt(
+    spec: dict[str, Any], exact_payload: bytes, *, state: str, evidence: dict[str, Any]
+) -> dict[str, Any]:
     return {
         "kind": "szl-nemo-v3-governed-training",
         "v": 1,
@@ -215,7 +283,12 @@ def _result_receipt(spec: dict[str, Any], exact_payload: bytes, *, state: str, e
         "signed_job_payload_sha256": hashlib.sha256(exact_payload).hexdigest(),
         "training_rights_basis": spec["dataset"]["rightsBasis"],
         "evaluation": evidence,
-        "effects": {"candidate_uploaded": False, "published": False, "deployed": False, "promoted": False},
+        "effects": {
+            "candidate_uploaded": False,
+            "published": False,
+            "deployed": False,
+            "promoted": False,
+        },
         "decision": (
             "SEPARATE_PROMOTION_REVIEW_REQUIRED"
             if state == "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW"
@@ -240,11 +313,17 @@ def main(spec_path: str) -> int:
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         return 3
 
-    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+    if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(
+        timezone.utc
+    ):
         blocked(spec, "expiry", f"job expired at {spec['expiresAt']}")
     free_disk_gb = shutil.disk_usage(str(ROOT)).free / 1e9
     if free_disk_gb < spec["gates"]["minFreeDiskGb"]:
-        blocked(spec, "gate:disk", f"free disk {free_disk_gb:.1f} GB below {spec['gates']['minFreeDiskGb']} GB")
+        blocked(
+            spec,
+            "gate:disk",
+            f"free disk {free_disk_gb:.1f} GB below {spec['gates']['minFreeDiskGb']} GB",
+        )
     initial_gpu = _admit_gpu(spec, "initial")
 
     job_root = ROOT / "jobs" / spec["jobId"]
@@ -255,16 +334,27 @@ def main(spec_path: str) -> int:
         path.mkdir(parents=True, exist_ok=True)
 
     try:
-        train_path = _download_pinned(spec, spec["dataset"]["train"], source_root / "train.jsonl")
-        prereg_path = _download_pinned(spec, spec["dataset"]["preregistration"], source_root / "preregistration.json")
+        train_path = _download_pinned(
+            spec, spec["dataset"]["train"], source_root / "train.jsonl"
+        )
+        prereg_path = _download_pinned(
+            spec,
+            spec["dataset"]["preregistration"],
+            source_root / "preregistration.json",
+        )
         prereg = json.loads(prereg_path.read_text(encoding="utf-8"))
-        if not isinstance(prereg, dict) or prereg.get("schema") != "szl.nemo-v3-preregistration/v1":
+        if (
+            not isinstance(prereg, dict)
+            or prereg.get("schema") != "szl.nemo-v3-preregistration/v1"
+        ):
             raise ValueError("preregistration schema mismatch")
         train_rows = _load_jsonl(train_path)
         _validate_train(train_rows, spec["gates"]["maxDatasetRows"])
         holdout_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
         for descriptor in spec["dataset"]["holdouts"]:
-            path = _download_pinned(spec, descriptor, source_root / f"{descriptor['name']}.jsonl")
+            path = _download_pinned(
+                spec, descriptor, source_root / f"{descriptor['name']}.jsonl"
+            )
             rows = _load_jsonl(path)
             _validate_holdout(rows, descriptor)
             holdout_rows.append((descriptor, rows))
@@ -279,7 +369,9 @@ def main(spec_path: str) -> int:
             repo_type="model",
         )
     except Exception as exc:  # noqa: BLE001
-        blocked(spec, "gate:base-license", f"pinned base license verification failed: {exc}")
+        blocked(
+            spec, "gate:base-license", f"pinned base license verification failed: {exc}"
+        )
 
     started = time.monotonic()
     recipe = spec["recipe"]
@@ -310,26 +402,46 @@ def main(spec_path: str) -> int:
             lora_dropout=recipe["loraDropout"],
             bias="none",
             target_modules=recipe["targetModules"],
-            use_gradient_checkpointing=_gradient_checkpointing(recipe["gradientCheckpointing"]),
+            use_gradient_checkpointing=_gradient_checkpointing(
+                recipe["gradientCheckpointing"]
+            ),
             random_state=recipe["seed"],
             max_seq_length=recipe["maxSeqLength"],
             use_rslora=True,
             loftq_config=None,
         )
         full_train = Dataset.from_list(train_rows)
-        split = full_train.train_test_split(test_size=min(0.15, max(1 / len(full_train), 0.05)), seed=recipe["seed"])
+        split = full_train.train_test_split(
+            test_size=min(0.15, max(1 / len(full_train), 0.05)), seed=recipe["seed"]
+        )
 
         class GateCallback(TrainerCallback):
             def on_log(self, args, state, control, logs=None, **kwargs):
                 logs = logs or {}
                 loss = logs.get("loss")
                 if isinstance(loss, (int, float)) and not math.isfinite(loss):
-                    blocked(spec, "train:non-finite-loss", f"non-finite loss at step {state.global_step}")
-                if time.monotonic() - started > spec["gates"]["maxWallclockMinutes"] * 60:
-                    blocked(spec, "train:wallclock", "signed maximum wall-clock duration exceeded")
+                    blocked(
+                        spec,
+                        "train:non-finite-loss",
+                        f"non-finite loss at step {state.global_step}",
+                    )
+                if (
+                    time.monotonic() - started
+                    > spec["gates"]["maxWallclockMinutes"] * 60
+                ):
+                    blocked(
+                        spec,
+                        "train:wallclock",
+                        "signed maximum wall-clock duration exceeded",
+                    )
                 observed = _gpu_state()
                 if observed["temperature_c"] > spec["gates"]["maxTemperatureC"]:
-                    blocked(spec, "train:temperature", "GPU temperature exceeded signed maximum", extra=observed)
+                    blocked(
+                        spec,
+                        "train:temperature",
+                        "GPU temperature exceeded signed maximum",
+                        extra=observed,
+                    )
                 return control
 
         frontier_recipe = {
@@ -351,23 +463,40 @@ def main(spec_path: str) -> int:
         )
         train_output = trainer.train()
         eval_raw = trainer.evaluate()
-        if not math.isfinite(float(train_output.training_loss)) or not math.isfinite(float(eval_raw.get("eval_loss", float("nan")))):
-            blocked(spec, "eval:non-finite-loss", "training or validation loss is non-finite")
+        if not math.isfinite(float(train_output.training_loss)) or not math.isfinite(
+            float(eval_raw.get("eval_loss", float("nan")))
+        ):
+            blocked(
+                spec,
+                "eval:non-finite-loss",
+                "training or validation loss is non-finite",
+            )
 
         adapter_dir = release_root / "adapter"
         model.save_pretrained(str(adapter_dir))
         tokenizer.save_pretrained(str(adapter_dir))
         adapter_files = artifact_manifest(adapter_dir)
-        if not any(item["path"] == "adapter_model.safetensors" for item in adapter_files):
+        if not any(
+            item["path"] == "adapter_model.safetensors" for item in adapter_files
+        ):
             blocked(spec, "artifact:safetensors", "adapter_model.safetensors is absent")
-        if any(item["path"].endswith((".bin", ".pt", ".pth", ".pkl", ".pickle")) for item in adapter_files):
-            blocked(spec, "artifact:pickle", "candidate contains a pickle-compatible artifact")
+        if any(
+            item["path"].endswith((".bin", ".pt", ".pth", ".pkl", ".pickle"))
+            for item in adapter_files
+        ):
+            blocked(
+                spec,
+                "artifact:pickle",
+                "candidate contains a pickle-compatible artifact",
+            )
 
         FastLanguageModel.for_inference(model)
         suite_results: dict[str, Any] = {}
         total = total_passes = total_degenerate = 0
         for descriptor, rows in holdout_rows:
-            results, passes = _evaluate_suite(model, tokenizer, rows, spec["evaluation"]["maxNewTokens"])
+            results, passes = _evaluate_suite(
+                model, tokenizer, rows, spec["evaluation"]["maxNewTokens"]
+            )
             degenerate = sum(int(item["degenerate"]) for item in results)
             suite_results[descriptor["name"]] = {
                 "rows": len(rows),
@@ -390,7 +519,12 @@ def main(spec_path: str) -> int:
                 "degenerate": total_degenerate,
                 "suites": suite_results,
             }
-            receipt = _result_receipt(spec, exact_payload, state="EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED", evidence=evidence)
+            receipt = _result_receipt(
+                spec,
+                exact_payload,
+                state="EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED",
+                evidence=evidence,
+            )
             signed = sign_receipt(receipt)
             write_json(job_root / "receipts" / "nemo-v3-terminal.signed.json", signed)
             upload_receipt(signed, "nemo-v3-terminal.signed.json", spec)
@@ -415,7 +549,12 @@ def main(spec_path: str) -> int:
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "preregistration_sha256": sha256_file(prereg_path),
         }
-        receipt = _result_receipt(spec, exact_payload, state="QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW", evidence=evidence)
+        receipt = _result_receipt(
+            spec,
+            exact_payload,
+            state="QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW",
+            evidence=evidence,
+        )
         signed = sign_receipt(receipt)
         write_json(job_root / "receipts" / "nemo-v3-qualified.signed.json", signed)
         upload_receipt(signed, "nemo-v3-qualified.signed.json", spec)
@@ -428,6 +567,7 @@ def main(spec_path: str) -> int:
         gc.collect()
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:

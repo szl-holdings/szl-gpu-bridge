@@ -50,14 +50,21 @@ def main(spec_path: str) -> int:
         spec, _, payload_type = verify_envelope(
             envelope,
             pin,
-            allowed_payload_types=(V1_PAYLOAD_TYPE, V2_PAYLOAD_TYPE, NEMO_V3_PAYLOAD_TYPE),
+            allowed_payload_types=(
+                V1_PAYLOAD_TYPE,
+                V2_PAYLOAD_TYPE,
+                NEMO_V3_PAYLOAD_TYPE,
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         return refuse(spec_path, f"envelope verification failed: {exc}")
 
     if payload_type == V1_PAYLOAD_TYPE and spec.get("kind") == "unsloth-qlora-sft-v1":
         runner = ROOT / "runjob.py"
-    elif payload_type == V2_PAYLOAD_TYPE and spec.get("kind") == "unsloth-frontier-sft-v2":
+    elif (
+        payload_type == V2_PAYLOAD_TYPE
+        and spec.get("kind") == "unsloth-frontier-sft-v2"
+    ):
         try:
             validate_v2_spec(spec)
         except ContractError as exc:
