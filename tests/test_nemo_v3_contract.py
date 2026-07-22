@@ -159,9 +159,8 @@ class NemoV3ContractTests(unittest.TestCase):
             key.verify_key
         )
         key_id = hashlib.sha256(spki).hexdigest()[:16]
-        payload = json.dumps(
-            valid_spec(), sort_keys=True, separators=(",", ":")
-        ).encode()
+        spec = valid_spec()
+        payload = json.dumps(spec, sort_keys=True, separators=(",", ":")).encode()
         signature = key.sign(pae(NEMO_V3_PAYLOAD_TYPE, payload)).signature
         envelope = {
             "payloadType": NEMO_V3_PAYLOAD_TYPE,
@@ -175,7 +174,7 @@ class NemoV3ContractTests(unittest.TestCase):
         observed, exact, payload_type = verify_envelope(
             envelope, pin, allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,)
         )
-        self.assertEqual(observed, valid_spec())
+        self.assertEqual(observed, spec)
         self.assertEqual(exact, payload)
         self.assertEqual(payload_type, NEMO_V3_PAYLOAD_TYPE)
         tampered = dict(envelope)
