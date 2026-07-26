@@ -7,11 +7,17 @@ import unittest
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
 
+import nemo_v3_status  # noqa: E402
 from nemo_v3_contract import record_ids_sha256, validate_nemo_v3_spec  # noqa: E402
 
 SPEC_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
+EXPECTED_QUEUE_PAYLOAD_SHA256 = (
+    "8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055"
+)
+EXPECTED_ENGINE_KEY_ID = "5c6cf59741ade920"
 
 
 class ReviewedNemoV3SpecTests(unittest.TestCase):
@@ -102,11 +108,28 @@ class ReviewedNemoV3SpecTests(unittest.TestCase):
         self.assertFalse(self.spec["outputs"]["publishCandidate"])
         self.assertTrue(self.spec["outputs"]["private"])
 
-    def test_unsigned_reviewed_spec_is_not_a_queue_job(self) -> None:
+    def test_reviewed_plaintext_spec_is_distinct_from_exact_signed_queue(self) -> None:
         queued = ROOT / "queue" / "pending" / f"{self.spec['jobId']}.json"
-        self.assertFalse(
-            queued.exists(),
-            "the reviewed plaintext spec must never be treated as a signed queue envelope",
+        self.assertTrue(
+            queued.is_file(),
+            "the exact reviewed attempt must have an engine-signed queue envelope",
+        )
+        envelope = json.loads(queued.read_text(encoding="utf-8"))
+        self.assertNotEqual(
+            envelope,
+            self.spec,
+            "the reviewed plaintext spec must never be substituted for a DSSE envelope",
+        )
+        self.assertEqual(len(envelope.get("signatures", [])), 1)
+
+        evidence = nemo_v3_status.verify_queue(self.spec, ROOT)
+        self.assertTrue(evidence.present)
+        self.assertTrue(evidence.valid, evidence.error)
+        self.assertEqual(evidence.payload_sha256, EXPECTED_QUEUE_PAYLOAD_SHA256)
+        self.assertEqual(evidence.engine_key_id, EXPECTED_ENGINE_KEY_ID)
+        self.assertEqual(
+            evidence.path,
+            f"queue/pending/{self.spec['jobId']}.json",
         )
 
 
