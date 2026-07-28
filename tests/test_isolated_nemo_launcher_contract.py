@@ -82,13 +82,26 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.assertIn(package, dockerfile)
         self.assertIn('"--gpus", "all"', build)
         self.assertIn('"--network", "none"', build)
+        self.assertIn('"--interactive"', build)
         self.assertIn("torch.cuda.is_available()", build)
         self.assertIn("$ObservedImageId", build)
+        self.assertIn("$ImageMetadataText | ConvertFrom-Json", build)
+        self.assertIn(
+            "Config.Labels.'org.opencontainers.image.revision'",
+            build,
+        )
+        self.assertNotIn("{{index .Config.Labels", build)
+        self.assertIn("$SmokeProgram | & $Docker @SmokeArguments", build)
+        self.assertIn('$ObservedImageId,\n  "-"', build)
         self.assertIn('"SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt', build)
         self.assertIn("$SmokeLines.Count -ne 1", build)
         self.assertIn("$SmokeLines[0].Substring($SmokePrefix.Length)", build)
         self.assertIn("$ExpectedPackages", build)
         self.assertIn("$ObservedPackage -ne $ExpectedPackages[$Name]", build)
+        self.assertLess(
+            dockerfile.index("RUN python -m pip install"),
+            dockerfile.index("ARG BRIDGE_REVISION"),
+        )
 
     def test_training_receipt_requires_trusted_finalization(self) -> None:
         self.assertIn('"SZL_RECEIPT_TRANSPORT=local-unsigned-outbox"', self.source)

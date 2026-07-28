@@ -1,11 +1,6 @@
 # syntax=docker/dockerfile:1.7
 FROM pytorch/pytorch@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385
 
-ARG BRIDGE_REVISION
-LABEL org.opencontainers.image.title="SZL Nemo v3 governed training environment" \
-      org.opencontainers.image.revision="${BRIDGE_REVISION}" \
-      org.opencontainers.image.source="https://github.com/szl-holdings/szl-gpu-bridge"
-
 ENV HF_HUB_DISABLE_TELEMETRY=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -24,5 +19,10 @@ RUN python -m pip install --no-cache-dir \
       "unsloth-zoo==2026.7.4" \
       "xformers==0.0.32.post2" \
     && python -m pip check
+
+ARG BRIDGE_REVISION
+LABEL org.opencontainers.image.title="SZL Nemo v3 governed training environment" \
+      org.opencontainers.image.revision="${BRIDGE_REVISION}" \
+      org.opencontainers.image.source="https://github.com/szl-holdings/szl-gpu-bridge"
 
 ENTRYPOINT ["python"]
