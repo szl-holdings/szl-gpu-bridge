@@ -174,6 +174,10 @@ Receipts are uploaded to the private dataset `SZLHOLDINGS/szl-training-receipts`
 
 A terminal failure remains quarantined. It may inform a new preregistered v4 experiment, but it must not be silently retried, signed as a release, uploaded as a candidate, or promoted.
 
-Once trusted finalization uploads and immutably reads back a terminal evaluation
-receipt, it records the exact job ID as consumed. An unsigned intent, local file,
-container exit, or upload without immutable readback does not consume the attempt.
+Failures before the durable claim is created do not consume the attempt. Once the
+launcher creates that claim immediately before Docker starts, the exact job ID is
+replay-blocked even if the container exits, emits only an unsigned intent, or
+trusted finalization is interrupted. Immutable readback adds the terminal-ledger
+record; it does not establish first consumption. Do not delete a claim or
+automatically retry a claimed job. Owner recovery must classify the interrupted
+attempt and, if a new experiment is justified, issue a separately signed job ID.
