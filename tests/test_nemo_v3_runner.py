@@ -58,9 +58,7 @@ class NemoV3RunnerTests(unittest.TestCase):
             write.call_args.args[0],
             job_root / "receipts" / "nemo-v3-terminal.signed.json",
         )
-        upload.assert_called_once_with(
-            signed, "nemo-v3-terminal.signed.json", spec
-        )
+        upload.assert_called_once_with(signed, "nemo-v3-terminal.signed.json", spec)
 
 
 if __name__ == "__main__":
