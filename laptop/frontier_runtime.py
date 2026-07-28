@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import os
 import pathlib
 import platform
 import re
@@ -132,6 +133,21 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
             ]
         ),
     }
+    image_reference = os.environ.get("SZL_CONTAINER_IMAGE_REFERENCE")
+    image_id = os.environ.get("SZL_CONTAINER_IMAGE_ID")
+    if image_reference or image_id:
+        if not image_reference or not image_id:
+            raise RuntimeError("container image evidence is incomplete")
+        if not re.fullmatch(r"(?:[^@\s]+@)?sha256:[0-9a-f]{64}", image_reference):
+            raise RuntimeError("container image reference is not immutable")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+            raise RuntimeError("container image ID is not immutable")
+        evidence["containerImage"] = {
+            "reference": image_reference,
+            "id": image_id,
+        }
+    else:
+        evidence["containerImage"] = None
     lock_path = pathlib.Path(__file__).resolve().parent / "stack-freeze.txt"
     if lock_path.exists():
         evidence["stackFreeze"] = {

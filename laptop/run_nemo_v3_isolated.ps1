@@ -8,7 +8,7 @@ param(
   [string]$BridgeRevision,
 
   [Parameter(Mandatory = $true)]
-  [ValidatePattern('^[^@\s]+@sha256:[0-9a-f]{64}$')]
+  [ValidatePattern('^(?:[^@\s]+@)?sha256:[0-9a-f]{64}$')]
   [string]$Image,
 
   [Parameter(Mandatory = $true)]
@@ -27,6 +27,17 @@ if ($env:HF_TOKEN -or $env:HUGGING_FACE_HUB_TOKEN -or $env:GH_TOKEN) {
 
 $Docker = (Get-Command docker.exe -ErrorAction Stop).Source
 $Git = (Get-Command git.exe -ErrorAction Stop).Source
+$ObservedImageId = (& $Docker image inspect --format "{{.Id}}" $Image).Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  $ObservedImageId -notmatch '^sha256:[0-9a-f]{64}$'
+) {
+  throw "container image is not locally available by an immutable identifier: $Image"
+}
+if ($Image.StartsWith("sha256:") -and $ObservedImageId -ne $Image) {
+  throw "local image identifier drifted: $ObservedImageId != $Image"
+}
+
 $ObservedRevision = (& $Git -C $BridgeSource rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $ObservedRevision -ne $BridgeRevision) {
   throw "bridge source is not the exact approved revision: $ObservedRevision"
@@ -133,6 +144,8 @@ $Arguments = @(
   "--env", "SZL_INPUT_CACHE=/inputs",
   "--env", "SZL_RECEIPT_TRANSPORT=local-unsigned-outbox",
   "--env", "SZL_EXECUTION_ISOLATION=credentialless-networkless-container",
+  "--env", "SZL_CONTAINER_IMAGE_REFERENCE=$Image",
+  "--env", "SZL_CONTAINER_IMAGE_ID=$ObservedImageId",
   "--env", "HF_HUB_OFFLINE=1",
   "--env", "TRANSFORMERS_OFFLINE=1",
   "--env", "HF_DATASETS_OFFLINE=1",
