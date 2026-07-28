@@ -57,12 +57,22 @@ if (
 ) {
   throw "built image did not resolve to an immutable local image ID"
 }
-$ObservedRevisionLabel = (
-  & $Docker image inspect `
-    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' `
-    $ObservedImageId
-).Trim()
-if ($LASTEXITCODE -ne 0 -or $ObservedRevisionLabel -ne $BridgeRevision) {
+$ImageMetadataText = (& $Docker image inspect $ObservedImageId) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+  throw "built image metadata could not be inspected"
+}
+try {
+  $ImageMetadata = @($ImageMetadataText | ConvertFrom-Json)
+} catch {
+  throw "built image metadata was not valid JSON"
+}
+if ($ImageMetadata.Count -ne 1) {
+  throw "built image metadata did not resolve exactly one image"
+}
+$ObservedRevisionLabel = [string](
+  $ImageMetadata[0].Config.Labels.'org.opencontainers.image.revision'
+)
+if ($ObservedRevisionLabel -ne $BridgeRevision) {
   throw "built image revision label does not match exact bridge revision"
 }
 
@@ -102,6 +112,7 @@ print("SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt)
 $SmokeArguments = @(
   "run",
   "--rm",
+  "--interactive",
   "--gpus", "all",
   "--network", "none",
   "--read-only",
@@ -111,9 +122,9 @@ $SmokeArguments = @(
   "--tmpfs", "/root/.cache:rw,noexec,nosuid,size=1073741824",
   "--entrypoint", "python",
   $ObservedImageId,
-  "-c", $SmokeProgram
+  "-"
 )
-$SmokeOutput = (& $Docker @SmokeArguments) -join "`n"
+$SmokeOutput = ($SmokeProgram | & $Docker @SmokeArguments) -join "`n"
 if ($LASTEXITCODE -ne 0) {
   throw "offline CUDA import smoke failed"
 }
