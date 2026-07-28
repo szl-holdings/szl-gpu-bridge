@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "laptop"))
@@ -26,6 +27,7 @@ from frontier_runtime import (  # noqa: E402
     manifest_digest,
     normalize_conversation,
     prompt_messages,
+    stack_fingerprint,
 )
 
 
@@ -183,6 +185,34 @@ class ContractTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
+    def test_stack_fingerprint_records_immutable_container_identity(self):
+        image_id = f"sha256:{'a' * 64}"
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SZL_CONTAINER_IMAGE_REFERENCE": image_id,
+                "SZL_CONTAINER_IMAGE_ID": image_id,
+            },
+            clear=False,
+        ):
+            evidence = stack_fingerprint(packages=())
+        self.assertEqual(
+            evidence["containerImage"],
+            {"reference": image_id, "id": image_id},
+        )
+
+    def test_stack_fingerprint_refuses_partial_container_identity(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SZL_CONTAINER_IMAGE_REFERENCE": f"sha256:{'a' * 64}",
+                "SZL_CONTAINER_IMAGE_ID": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "incomplete"):
+                stack_fingerprint(packages=())
+
     def test_chat_template_evidence(self):
         tokenizer = SimpleNamespace(
             chat_template="{% generation %}{{ x }}{% endgeneration %}"

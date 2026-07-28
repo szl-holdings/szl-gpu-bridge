@@ -123,8 +123,29 @@ laptop/run_nemo_v3_isolated.ps1
 ```
 
 It requires both the bridge Git commit and container image by immutable digest.
-It refuses a dirty bridge checkout, a stale outbox, an unverified prefetch receipt,
-an image tag without `@sha256:...`, or any host shell containing HF/GitHub tokens.
+The image may be a registry manifest reference (`name@sha256:...`) or the exact
+local Docker image ID (`sha256:...`) emitted by
+`laptop/build_nemo_v3_image.ps1`. The latter keeps the reviewed training
+environment private on the owner GPU host while remaining content-addressed.
+The launcher inspects the image locally and records both the supplied reference
+and observed image ID in the unsigned receipt intent. It refuses a dirty bridge
+checkout, a stale outbox, an unverified prefetch receipt, a mutable image tag,
+an unavailable or mismatched image ID, or any host shell containing HF/GitHub
+tokens.
+
+Build and CUDA-smoke the training image from the exact clean bridge revision:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+  -File .\laptop\build_nemo_v3_image.ps1 `
+  -BridgeRevision (git rev-parse HEAD) `
+  -BridgeSource (Get-Location).Path
+```
+
+The build uses a digest-pinned PyTorch CUDA 12.8 base, exact direct training
+package versions, and no bridge source or credentials. It writes a non-secret
+receipt under `C:\szl-bridge\image-receipts` only after the immutable image ID,
+source-revision label, offline import smoke, and CUDA device probe all pass.
 
 The trusted helper programs are:
 
