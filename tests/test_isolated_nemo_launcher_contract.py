@@ -28,6 +28,13 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertNotIn("laptop_key.pem", self.source)
         self.assertNotIn("laptop_pubkey.json", self.source)
 
+    def test_sandbox_can_write_only_the_selected_job_state(self) -> None:
+        self.assertIn(
+            '"type=bind,src=$JobRoot,dst=/bridge/jobs/$JobId"',
+            self.source,
+        )
+        self.assertNotIn('"type=bind,src=$Jobs,dst=/bridge/jobs"', self.source)
+
     def test_image_and_source_are_immutable_identifiers(self) -> None:
         self.assertIn(
             "[ValidatePattern('^[^@\\s]+@sha256:[0-9a-f]{64}$')]",
