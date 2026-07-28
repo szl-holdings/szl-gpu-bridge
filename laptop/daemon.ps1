@@ -1,6 +1,11 @@
 # daemon.ps1 — poll the public queue, verify-first, dispatch, and ledger.
 # Runs as a scheduled task (see bootstrap.ps1). Single-flight and fail-closed.
 
+param(
+  [ValidatePattern('^job-[A-Za-z0-9][A-Za-z0-9._-]*$')]
+  [string]$OnlyJobId = ""
+)
+
 $ErrorActionPreference = "Stop"
 $Root = "C:\szl-bridge"
 $Log = "$Root\logs\daemon.log"
@@ -30,7 +35,15 @@ try {
   # reads; no repository credential or inbound laptop access is required.
   $bust = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   $resp = Invoke-RestMethod -Uri "$Api`?t=$bust" -Headers @{ "User-Agent" = "szl-gpu-bridge-daemon"; "Accept" = "application/vnd.github+json" }
-  $files = @($resp | Where-Object { $_.name -like "job-*.json" } | Sort-Object name)
+  $allFiles = @($resp | Where-Object { $_.name -like "job-*.json" } | Sort-Object name)
+  if ([string]::IsNullOrWhiteSpace($OnlyJobId)) {
+    $files = $allFiles
+  } else {
+    $files = @($allFiles | Where-Object { $_.name -eq "${OnlyJobId}.json" })
+    if (-not $seen[$OnlyJobId] -and $files.Count -ne 1) {
+      throw "requested job is not present in the public queue: $OnlyJobId"
+    }
+  }
   Log "poll: $($files.Count) pending spec(s)"
 
   foreach ($f in $files) {

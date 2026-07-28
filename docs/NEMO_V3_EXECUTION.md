@@ -78,6 +78,17 @@ Review the generated diff. It must contain only the signed queue envelope. Open 
 
 After merge, the scheduled owner host polls the public queue, verifies the exact DSSE bytes before reading job fields, and executes at most one attempt.
 
+An approved external dispatch lane must select this attempt explicitly:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+  -File C:\szl-bridge\daemon.ps1 `
+  -OnlyJobId job-2026-nemo-v3-governed-attempt-1
+```
+
+Targeted mode refuses a missing job and never dispatches a different pending
+queue entry. The scheduled task keeps its default all-pending polling behavior.
+
 ## 4. Observe the measured result
 
 The workflow `Nemo v3 Governed Attempt Status` runs every 15 minutes and updates the deterministic issue:
