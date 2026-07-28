@@ -31,6 +31,10 @@ cloud/verify-receipt.mjs ◄─────────────────�
 - **Inbound jobs:** public HTTPS polling only; no laptop GitHub credential and no inbound port.
 - **Outbound results:** the host uses its local Hugging Face authentication. Tokens and private keys are never committed or sent through the queue.
 - **Trust roots:** the host trusts one baked engine public key. The cloud trusts the separately announced laptop receipt key. An unverifiable claim is treated as no claim.
+- **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
+  ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
+  signing/upload are separate processes; the execution sandbox receives neither a
+  credential nor a signing key.
 
 ## Frontier training contract v2
 
@@ -120,6 +124,9 @@ If Hub authentication or `llama-cli` is unavailable, affected jobs do not silent
 | `laptop/dispatcher.py` | verify envelope, validate contract, select allowlisted runner |
 | `laptop/runjob.py` | legacy v1 runner |
 | `laptop/runjob_frontier.py` | v2 train/evaluate/export/reload/publish runner |
+| `laptop/prefetch_nemo_v3.py` | verify and cache exact Nemo inputs without executing repository code |
+| `laptop/run_nemo_v3_isolated.ps1` | launch the digest-pinned, networkless, keyless GPU sandbox |
+| `laptop/finalize_nemo_v3_receipt.py` | validate, sign, upload, and immutably read back one fresh receipt intent |
 | `laptop/frontier_contract.py` | pure verify-first contract enforcement |
 | `laptop/frontier_runtime.py` | evidence, dataset, artifact, and model-card helpers |
 | `docs/FRONTIER_TRAINING_V2.md` | v2 architecture and release law |

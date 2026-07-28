@@ -8,6 +8,7 @@ import gc
 import hashlib
 import inspect
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -25,6 +26,9 @@ from frontier_runtime import (
 )
 
 ROOT = pathlib.Path(__file__).resolve().parent
+RECEIPT_TRANSPORT_ENV = "SZL_RECEIPT_TRANSPORT"
+UNSIGNED_OUTBOX_TRANSPORT = "local-unsigned-outbox"
+RECEIPT_PENDING_FINALIZATION_EXIT_CODE = 7
 
 
 def now_iso() -> str:
@@ -64,6 +68,32 @@ def write_json(path: pathlib.Path, value: Any) -> None:
     path.write_text(
         json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def deliver_receipt(receipt: dict[str, Any], name: str, spec: dict[str, Any]) -> int:
+    """Finalize normally, or emit an unsigned intent for an isolated executor."""
+    transport = os.environ.get(RECEIPT_TRANSPORT_ENV, "").strip()
+    if transport == UNSIGNED_OUTBOX_TRANSPORT:
+        intent_name = name.removesuffix(".signed.json") + ".intent.json"
+        intent = {
+            "kind": "szl-receipt-signing-intent",
+            "v": 1,
+            "jobId": spec["jobId"],
+            "requestedReceiptName": name,
+            "receipt": receipt,
+            "transport": UNSIGNED_OUTBOX_TRANSPORT,
+        }
+        write_json(
+            ROOT / "jobs" / spec["jobId"] / "receipt-outbox" / intent_name,
+            intent,
+        )
+        return RECEIPT_PENDING_FINALIZATION_EXIT_CODE
+    if transport:
+        raise RuntimeError(f"unsupported receipt transport: {transport}")
+
+    signed = sign_receipt(receipt)
+    upload_receipt(signed, name, spec)
+    return 0
 
 
 def upload_receipt(signed: dict[str, Any], name: str, spec: dict[str, Any]) -> Any:
@@ -108,9 +138,7 @@ def blocked(
             "note": "a refused or failed job is a result, never a success to infer",
         },
     }
-    signed = sign_receipt(receipt)
-    upload_receipt(signed, "blocked_receipt.signed.json", spec)
-    raise SystemExit(0)
+    raise SystemExit(deliver_receipt(receipt, "blocked_receipt.signed.json", spec))
 
 
 def probe_vram_gb() -> float:

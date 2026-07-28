@@ -15,6 +15,7 @@ import gc
 import hashlib
 import json
 import math
+import os
 import pathlib
 import shutil
 import subprocess
@@ -32,10 +33,8 @@ from frontier_job import (
     _gradient_checkpointing,
     _verify_hub_license,
     blocked,
+    deliver_receipt,
     now_iso,
-    sign_receipt,
-    upload_receipt,
-    write_json,
 )
 from frontier_runtime import (
     artifact_manifest,
@@ -51,6 +50,16 @@ from nemo_v3_contract import (
     validate_nemo_v3_spec,
 )
 
+ISOLATION_MARKER = "credentialless-networkless-container"
+SENSITIVE_ENVIRONMENT_NAMES = {
+    "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
+    "ACTIONS_RUNTIME_TOKEN",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "HF_TOKEN",
+    "HUGGING_FACE_HUB_TOKEN",
+}
+
 
 def _raw_url(repo_id: str, revision: str, path: str) -> str:
     owner, name = repo_id.split("/", 1)
@@ -61,6 +70,22 @@ def _raw_url(repo_id: str, revision: str, path: str) -> str:
 def _download_pinned(
     spec: dict[str, Any], descriptor: dict[str, Any], target: pathlib.Path
 ) -> pathlib.Path:
+    input_cache = os.environ.get("SZL_INPUT_CACHE", "").strip()
+    if input_cache:
+        cached = pathlib.Path(input_cache) / descriptor["path"]
+        if not cached.is_file():
+            raise RuntimeError(f"pinned offline input is absent: {descriptor['path']}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cached, target)
+        digest = sha256_file(target)
+        total = target.stat().st_size
+        if total != descriptor["bytes"] or digest != descriptor["sha256"]:
+            raise RuntimeError(
+                f"pinned offline input mismatch for {descriptor['path']}: "
+                f"bytes={total}, sha256={digest}"
+            )
+        return target
+
     request = urllib.request.Request(
         _raw_url(
             spec["source"]["repoId"], spec["source"]["revision"], descriptor["path"]
@@ -297,23 +322,39 @@ def _result_receipt(
     }
 
 
+def _require_remote_code_isolation(spec: dict[str, Any]) -> None:
+    if not spec["base"]["trustRemoteCode"]:
+        return
+    if os.environ.get("SZL_EXECUTION_ISOLATION") != ISOLATION_MARKER:
+        raise RuntimeError("trusted remote code requires the isolated container lane")
+    if os.environ.get("SZL_RECEIPT_TRANSPORT") != "local-unsigned-outbox":
+        raise RuntimeError("isolated remote code must emit an unsigned receipt intent")
+    for name in SENSITIVE_ENVIRONMENT_NAMES:
+        if os.environ.get(name):
+            raise RuntimeError(
+                f"isolated remote code received sensitive environment: {name}"
+            )
+    for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE"):
+        if os.environ.get(name) != "1":
+            raise RuntimeError(f"isolated remote code requires {name}=1")
+    if (ROOT / "keys" / "laptop_key.pem").exists():
+        raise RuntimeError("isolated remote code can access the laptop signing key")
+
+
 def _complete_terminal_evaluation_failure(
     spec: dict[str, Any],
     exact_payload: bytes,
     job_root: pathlib.Path,
     evidence: dict[str, Any],
 ) -> int:
-    """Publish a signed terminal failure and tell the daemon not to retry it."""
+    """Emit a terminal failure for upload, with no automatic retry."""
     receipt = _result_receipt(
         spec,
         exact_payload,
         state="EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED",
         evidence=evidence,
     )
-    signed = sign_receipt(receipt)
-    write_json(job_root / "receipts" / "nemo-v3-terminal.signed.json", signed)
-    upload_receipt(signed, "nemo-v3-terminal.signed.json", spec)
-    return 0
+    return deliver_receipt(receipt, "nemo-v3-terminal.signed.json", spec)
 
 
 def main(spec_path: str) -> int:
@@ -331,6 +372,12 @@ def main(spec_path: str) -> int:
         return 3
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         return 3
+
+    try:
+        _require_remote_code_isolation(spec)
+    except RuntimeError as exc:
+        print(f"LOCAL ISOLATION REQUIRED: {exc}")
+        return 4
 
     if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(
         timezone.utc
@@ -567,10 +614,7 @@ def main(spec_path: str) -> int:
             state="QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW",
             evidence=evidence,
         )
-        signed = sign_receipt(receipt)
-        write_json(job_root / "receipts" / "nemo-v3-qualified.signed.json", signed)
-        upload_receipt(signed, "nemo-v3-qualified.signed.json", spec)
-        return 0
+        return deliver_receipt(receipt, "nemo-v3-qualified.signed.json", spec)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001

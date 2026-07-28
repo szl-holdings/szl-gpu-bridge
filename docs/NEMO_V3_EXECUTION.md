@@ -76,9 +76,13 @@ queue/pending/job-2026-nemo-v3-governed-attempt-1.json
 
 Review the generated diff. It must contain only the signed queue envelope. Open a protected pull request; do not push directly to protected `main`, weaken checks, or expose the private key.
 
-After merge, the scheduled owner host polls the public queue, verifies the exact DSSE bytes before reading job fields, and executes at most one attempt.
+The Nemo v3 base sets `trustRemoteCode=true`. For this job, the ordinary scheduled
+host process is intentionally insufficient: the runner refuses execution unless it
+is inside the credentialless, networkless container lane described below. A normal
+daemon poll leaves the job unconsumed and returns an honest local-policy failure.
 
-An approved external dispatch lane must select this attempt explicitly:
+An approved external dispatch lane must select this attempt explicitly. For jobs
+that do not execute remote repository code, targeted daemon mode is:
 
 ```powershell
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
@@ -88,6 +92,44 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
 
 Targeted mode refuses a missing job and never dispatches a different pending
 queue entry. The scheduled task keeps its default all-pending polling behavior.
+
+### Credential-separated container lane
+
+Nemo v3 uses three separate trust zones:
+
+1. **Authenticated prefetch** verifies the engine-signed envelope, downloads the
+   exact model revision and the five hash-pinned project inputs, and records a
+   prefetch receipt. It does not import or execute model repository code.
+2. **GPU execution** runs the exact bridge revision in a digest-pinned container
+   with `--network none`, a read-only root filesystem, all Linux capabilities
+   dropped, and no Hugging Face token, GitHub token, or laptop signing key. The
+   container can emit only an unsigned receipt intent.
+3. **Trusted finalization** validates the fresh intent against the exact signed
+   job and candidate artifact manifest, signs it outside the sandbox, uploads it,
+   reads it back from the immutable Hub commit, and only then writes the local
+   one-attempt ledger.
+
+The isolated launcher is:
+
+```text
+laptop/run_nemo_v3_isolated.ps1
+```
+
+It requires both the bridge Git commit and container image by immutable digest.
+It refuses a dirty bridge checkout, a stale outbox, an unverified prefetch receipt,
+an image tag without `@sha256:...`, or any host shell containing HF/GitHub tokens.
+
+The trusted helper programs are:
+
+```text
+laptop/prefetch_nemo_v3.py
+laptop/finalize_nemo_v3_receipt.py
+```
+
+Do not mount `laptop_key.pem`, a Hugging Face credential, a GitHub credential, the
+Docker socket, or a host profile directory into the training container. A green
+container exit is not terminal evidence: code 7 means a fresh intent is waiting
+for trusted signing and immutable readback.
 
 ## 4. Observe the measured result
 
@@ -125,6 +167,6 @@ Receipts are uploaded to the private dataset `SZLHOLDINGS/szl-training-receipts`
 
 A terminal failure remains quarantined. It may inform a new preregistered v4 experiment, but it must not be silently retried, signed as a release, uploaded as a candidate, or promoted.
 
-Once the runner uploads a signed terminal evaluation-failure receipt, it exits
-successfully to the local daemon. The daemon records the exact job ID as consumed,
-preventing its polling loop from silently rerunning the governed attempt.
+Once trusted finalization uploads and immutably reads back a terminal evaluation
+receipt, it records the exact job ID as consumed. An unsigned intent, local file,
+container exit, or upload without immutable readback does not consume the attempt.
