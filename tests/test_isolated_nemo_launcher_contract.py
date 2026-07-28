@@ -47,6 +47,15 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertIn('"SZL_RECEIPT_TRANSPORT=local-unsigned-outbox"', self.source)
         self.assertIn("$ExitCode -ne 7", self.source)
 
+    def test_attempt_is_atomically_claimed_before_docker_starts(self) -> None:
+        self.assertIn("[System.IO.FileMode]::CreateNew", self.source)
+        self.assertIn('"szl-nemo-v3-attempt-claim"', self.source)
+        self.assertIn("jobEnvelopeSha256", self.source)
+        self.assertLess(
+            self.source.index("[System.IO.FileMode]::CreateNew"),
+            self.source.index("& $Docker @Arguments"),
+        )
+
     def test_bootstrap_pins_resolvable_unsloth_dependencies(self) -> None:
         bootstrap = (ROOT / "laptop" / "bootstrap.ps1").read_text(encoding="utf-8")
         self.assertIn('"unsloth==2026.7.4"', bootstrap)

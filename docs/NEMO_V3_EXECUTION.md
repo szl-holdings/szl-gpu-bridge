@@ -36,6 +36,13 @@ Set the GitHub Actions repository variable `SZL_LAPTOP_RECEIPT_KEY_ID` in `szl-h
 
 Until that variable is enrolled, a mathematically valid receipt is reported as `AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT` and is not trusted as an owner-host result.
 
+The isolated launcher creates `C:\szl-bridge\control\attempt-claims\<jobId>.json`
+atomically immediately before Docker starts. That durable claim binds the exact
+signed job envelope, bridge revision, image digest, and claim time. Its presence
+is the authoritative one-attempt replay barrier: automatic dispatches fail
+closed and cannot start the GPU job again, even if final receipt upload or
+terminal-ledger publication is interrupted.
+
 ## 2. Review the exact attempt
 
 From a clean checkout at protected `main`:
@@ -167,6 +174,10 @@ Receipts are uploaded to the private dataset `SZLHOLDINGS/szl-training-receipts`
 
 A terminal failure remains quarantined. It may inform a new preregistered v4 experiment, but it must not be silently retried, signed as a release, uploaded as a candidate, or promoted.
 
-Once trusted finalization uploads and immutably reads back a terminal evaluation
-receipt, it records the exact job ID as consumed. An unsigned intent, local file,
-container exit, or upload without immutable readback does not consume the attempt.
+The attempt becomes durably claimed, and therefore unavailable for automatic
+retry, when the launcher atomically creates the pre-execution claim immediately
+before Docker starts. Trusted finalization later records terminal receipt
+publication and immutable readback; that later record is not the replay barrier.
+Validation failures before the claim exists do not consume the attempt. An
+unsigned intent, container exit, or interrupted upload after the claim exists
+remains quarantined and still does not authorize a retry.
