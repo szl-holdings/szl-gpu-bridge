@@ -174,6 +174,10 @@ Receipts are uploaded to the private dataset `SZLHOLDINGS/szl-training-receipts`
 
 A terminal failure remains quarantined. It may inform a new preregistered v4 experiment, but it must not be silently retried, signed as a release, uploaded as a candidate, or promoted.
 
-Once trusted finalization uploads and immutably reads back a terminal evaluation
-receipt, it records the exact job ID as consumed. An unsigned intent, local file,
-container exit, or upload without immutable readback does not consume the attempt.
+The attempt becomes durably claimed, and therefore unavailable for automatic
+retry, when the launcher atomically creates the pre-execution claim immediately
+before Docker starts. Trusted finalization later records terminal receipt
+publication and immutable readback; that later record is not the replay barrier.
+Validation failures before the claim exists do not consume the attempt. An
+unsigned intent, container exit, or interrupted upload after the claim exists
+remains quarantined and still does not authorize a retry.
