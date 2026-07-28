@@ -128,10 +128,14 @@ local Docker image ID (`sha256:...`) emitted by
 `laptop/build_nemo_v3_image.ps1`. The latter keeps the reviewed training
 environment private on the owner GPU host while remaining content-addressed.
 The launcher inspects the image locally and records both the supplied reference
-and observed image ID in the unsigned receipt intent. It refuses a dirty bridge
-checkout, a stale outbox, an unverified prefetch receipt, a mutable image tag,
-an unavailable or mismatched image ID, or any host shell containing HF/GitHub
-tokens.
+and observed image ID in the unsigned receipt intent. For an exact local image
+ID, it also requires the build receipt emitted below, checks the image revision
+label and Dockerfile hash against the exact bridge revision, and binds those
+digests into the durable pre-execution claim. Trusted finalization requires the
+receipt stack identity to equal that claim before signing. It refuses a dirty
+bridge checkout, a stale outbox, an unverified prefetch receipt, a mutable image
+tag, an unavailable or mismatched image ID, an absent or mismatched local build
+receipt, or any host shell containing HF/GitHub tokens.
 
 Build and CUDA-smoke the training image from the exact clean bridge revision:
 

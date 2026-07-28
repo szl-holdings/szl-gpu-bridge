@@ -129,6 +129,26 @@ $Smoke = $SmokeLines[0].Substring($SmokePrefix.Length) | ConvertFrom-Json
 if ($Smoke.cuda_available -ne $true) {
   throw "CUDA smoke did not report an available device"
 }
+$ExpectedPackages = [ordered]@{
+  "bitsandbytes" = "0.50.0"
+  "datasets" = "4.3.0"
+  "huggingface-hub" = "1.24.0"
+  "peft" = "0.19.1"
+  "pynacl" = "1.6.2"
+  "trl" = "0.24.0"
+  "unsloth" = "2026.7.4"
+  "unsloth-zoo" = "2026.7.4"
+  "xformers" = "0.0.32.post2"
+}
+foreach ($Name in $ExpectedPackages.Keys) {
+  $ObservedPackage = $Smoke.packages.PSObject.Properties[$Name].Value
+  if ($ObservedPackage -ne $ExpectedPackages[$Name]) {
+    throw (
+      "offline CUDA smoke package mismatch: " +
+      "$Name=$ObservedPackage expected=$($ExpectedPackages[$Name])"
+    )
+  }
+}
 
 if (-not (Test-Path -LiteralPath $ReceiptRoot -PathType Container)) {
   New-Item -ItemType Directory -Path $ReceiptRoot -Force | Out-Null

@@ -131,6 +131,10 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 "jobEnvelopeSha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
                 "bridgeRevision": "a" * 40,
                 "trainingImage": "unsloth/unsloth@sha256:" + "b" * 64,
+                "observedImageId": "sha256:" + "c" * 64,
+                "observedRevisionLabel": "a" * 40,
+                "imageBuildReceiptSha256": None,
+                "imageDockerfileSha256": None,
                 "githubRunId": "123",
                 "claimedAt": now.isoformat().replace("+00:00", "Z"),
             }
@@ -142,7 +146,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 spec,
                 now,
             )
-            claim["trainingImage"] = "sha256:" + "c" * 64
+            claim["trainingImage"] = claim["observedImageId"]
+            claim["imageBuildReceiptSha256"] = "d" * 64
+            claim["imageDockerfileSha256"] = "e" * 64
             claim_path.write_text(json.dumps(claim), encoding="utf-8")
             observed_local_image = finalize_nemo_v3_receipt.validate_attempt_claim(
                 claim_path,
@@ -156,6 +162,127 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             "unsloth/unsloth@sha256:" + "b" * 64,
         )
         self.assertEqual(observed_local_image, claim)
+
+    def test_attempt_claim_rejects_local_image_without_build_binding(self) -> None:
+        now = datetime.now(timezone.utc)
+        spec = {"jobId": "job-test"}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            spec_path = root / "job.json"
+            spec_path.write_bytes(b'{"signed":"envelope"}\n')
+            claim_path = root / "claim.json"
+            claim_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "szl-nemo-v3-attempt-claim",
+                        "v": 1,
+                        "jobId": "job-test",
+                        "jobEnvelopeSha256": hashlib.sha256(
+                            spec_path.read_bytes()
+                        ).hexdigest(),
+                        "bridgeRevision": "a" * 40,
+                        "trainingImage": "sha256:" + "b" * 64,
+                        "observedImageId": "sha256:" + "b" * 64,
+                        "observedRevisionLabel": "a" * 40,
+                        "imageBuildReceiptSha256": None,
+                        "imageDockerfileSha256": None,
+                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "approved build binding"):
+                finalize_nemo_v3_receipt.validate_attempt_claim(
+                    claim_path,
+                    spec_path,
+                    spec,
+                    now,
+                )
+
+    def test_trusted_finalizer_binds_receipt_stack_to_exact_claim(self) -> None:
+        now = datetime.now(timezone.utc)
+        exact_payload = b"signed-job"
+        spec = {
+            "jobId": "job-test",
+            "outputs": {"candidateId": "candidate-test"},
+            "source": {"repoId": "szl-holdings/a11oy", "revision": "a" * 40},
+            "base": {
+                "repoId": "nvidia/model",
+                "revision": "b" * 40,
+                "licenseId": "test-license",
+            },
+            "dataset": {"rightsBasis": "project-authored"},
+            "evaluation": {"requiredPassRate": 1.0},
+        }
+        claim = {
+            "trainingImage": "sha256:" + "c" * 64,
+            "observedImageId": "sha256:" + "c" * 64,
+            "observedRevisionLabel": "d" * 40,
+            "imageBuildReceiptSha256": "e" * 64,
+            "imageDockerfileSha256": "f" * 64,
+        }
+        container_image = finalize_nemo_v3_receipt.claim_container_image(claim)
+        receipt = {
+            "kind": "szl-nemo-v3-governed-training",
+            "v": 1,
+            "jobId": spec["jobId"],
+            "candidateId": spec["outputs"]["candidateId"],
+            "state": "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED",
+            "at": now.isoformat().replace("+00:00", "Z"),
+            "source": spec["source"],
+            "base": spec["base"],
+            "signed_job_payload_sha256": hashlib.sha256(exact_payload).hexdigest(),
+            "training_rights_basis": spec["dataset"]["rightsBasis"],
+            "evaluation": {
+                "state": "FAIL",
+                "stack": {"containerImage": container_image},
+            },
+            "effects": {
+                "candidate_uploaded": False,
+                "published": False,
+                "deployed": False,
+                "promoted": False,
+            },
+            "decision": "TERMINAL_FAILURE_NO_AUTOMATIC_RETRY",
+        }
+        intent = {
+            "kind": "szl-receipt-signing-intent",
+            "v": 1,
+            "jobId": spec["jobId"],
+            "requestedReceiptName": "nemo-v3-terminal.signed.json",
+            "receipt": receipt,
+            "transport": "local-unsigned-outbox",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            path = root / "terminal.intent.json"
+            path.write_text(json.dumps(intent), encoding="utf-8")
+            observed, state, requested_name = finalize_nemo_v3_receipt.validate_intent(
+                path,
+                spec,
+                exact_payload,
+                now - timedelta(seconds=1),
+                root,
+                claim,
+            )
+            self.assertEqual(observed, receipt)
+            self.assertEqual(state, "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED")
+            self.assertEqual(requested_name, "nemo-v3-terminal.signed.json")
+
+            receipt["evaluation"]["stack"]["containerImage"]["id"] = (
+                "sha256:" + "0" * 64
+            )
+            path.write_text(json.dumps(intent), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "trusted claim"):
+                finalize_nemo_v3_receipt.validate_intent(
+                    path,
+                    spec,
+                    exact_payload,
+                    now - timedelta(seconds=1),
+                    root,
+                    claim,
+                )
 
     def test_attempt_claim_rejects_a_mutable_training_image(self) -> None:
         now = datetime.now(timezone.utc)
@@ -176,6 +303,10 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                         ).hexdigest(),
                         "bridgeRevision": "a" * 40,
                         "trainingImage": "szl-nemo-v3:local",
+                        "observedImageId": "sha256:" + "b" * 64,
+                        "observedRevisionLabel": "a" * 40,
+                        "imageBuildReceiptSha256": None,
+                        "imageDockerfileSha256": None,
                         "claimedAt": now.isoformat().replace("+00:00", "Z"),
                     }
                 ),
@@ -207,6 +338,10 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                         "jobEnvelopeSha256": "0" * 64,
                         "bridgeRevision": "a" * 40,
                         "trainingImage": "unsloth/unsloth@sha256:" + "b" * 64,
+                        "observedImageId": "sha256:" + "c" * 64,
+                        "observedRevisionLabel": "a" * 40,
+                        "imageBuildReceiptSha256": None,
+                        "imageDockerfileSha256": None,
                         "claimedAt": now.isoformat().replace("+00:00", "Z"),
                     }
                 ),

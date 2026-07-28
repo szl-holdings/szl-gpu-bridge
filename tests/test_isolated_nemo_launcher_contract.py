@@ -47,7 +47,19 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("$ObservedImageId -ne $Image", self.source)
+        self.assertIn("$ObservedRevisionLabel -ne $BridgeRevision", self.source)
+        self.assertIn("$BuildReceipt.imageId -ne $ObservedImageId", self.source)
+        self.assertIn(
+            "$BuildReceipt.dockerfileSha256 -ne $ImageDockerfileSha256",
+            self.source,
+        )
+        self.assertIn("imageBuildReceiptSha256 = $ImageBuildReceiptSha256", self.source)
+        self.assertIn("observedImageId = $ObservedImageId", self.source)
         self.assertIn('"SZL_CONTAINER_IMAGE_ID=$ObservedImageId"', self.source)
+        self.assertIn(
+            '"SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"',
+            self.source,
+        )
 
     def test_image_build_is_digest_pinned_and_cuda_smoked(self) -> None:
         dockerfile = (ROOT / "laptop" / "Dockerfile.nemo-v3").read_text(
@@ -75,6 +87,8 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertIn('"SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt', build)
         self.assertIn("$SmokeLines.Count -ne 1", build)
         self.assertIn("$SmokeLines[0].Substring($SmokePrefix.Length)", build)
+        self.assertIn("$ExpectedPackages", build)
+        self.assertIn("$ObservedPackage -ne $ExpectedPackages[$Name]", build)
 
     def test_training_receipt_requires_trusted_finalization(self) -> None:
         self.assertIn('"SZL_RECEIPT_TRANSPORT=local-unsigned-outbox"', self.source)

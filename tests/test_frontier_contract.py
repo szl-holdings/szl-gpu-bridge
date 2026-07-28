@@ -192,13 +192,24 @@ class RuntimeEvidenceTests(unittest.TestCase):
             {
                 "SZL_CONTAINER_IMAGE_REFERENCE": image_id,
                 "SZL_CONTAINER_IMAGE_ID": image_id,
+                "SZL_CONTAINER_IMAGE_REVISION": "b" * 40,
+                "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "c" * 64,
+                "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "d" * 64,
             },
             clear=False,
         ):
             evidence = stack_fingerprint(packages=())
         self.assertEqual(
             evidence["containerImage"],
-            {"reference": image_id, "id": image_id},
+            {
+                "reference": image_id,
+                "id": image_id,
+                "revision": "b" * 40,
+                "localBuild": {
+                    "receiptSha256": "c" * 64,
+                    "dockerfileSha256": "d" * 64,
+                },
+            },
         )
 
     def test_stack_fingerprint_refuses_partial_container_identity(self):
@@ -207,10 +218,28 @@ class RuntimeEvidenceTests(unittest.TestCase):
             {
                 "SZL_CONTAINER_IMAGE_REFERENCE": f"sha256:{'a' * 64}",
                 "SZL_CONTAINER_IMAGE_ID": "",
+                "SZL_CONTAINER_IMAGE_REVISION": "",
+                "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "",
+                "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "",
             },
             clear=False,
         ):
             with self.assertRaisesRegex(RuntimeError, "incomplete"):
+                stack_fingerprint(packages=())
+
+    def test_stack_fingerprint_refuses_partial_local_build_identity(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SZL_CONTAINER_IMAGE_REFERENCE": f"sha256:{'a' * 64}",
+                "SZL_CONTAINER_IMAGE_ID": f"sha256:{'a' * 64}",
+                "SZL_CONTAINER_IMAGE_REVISION": "b" * 40,
+                "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "c" * 64,
+                "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "local-build evidence"):
                 stack_fingerprint(packages=())
 
     def test_chat_template_evidence(self):
