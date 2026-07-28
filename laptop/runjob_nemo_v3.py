@@ -297,6 +297,25 @@ def _result_receipt(
     }
 
 
+def _complete_terminal_evaluation_failure(
+    spec: dict[str, Any],
+    exact_payload: bytes,
+    job_root: pathlib.Path,
+    evidence: dict[str, Any],
+) -> int:
+    """Publish a signed terminal failure and tell the daemon not to retry it."""
+    receipt = _result_receipt(
+        spec,
+        exact_payload,
+        state="EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED",
+        evidence=evidence,
+    )
+    signed = sign_receipt(receipt)
+    write_json(job_root / "receipts" / "nemo-v3-terminal.signed.json", signed)
+    upload_receipt(signed, "nemo-v3-terminal.signed.json", spec)
+    return 0
+
+
 def main(spec_path: str) -> int:
     envelope = json.loads(pathlib.Path(spec_path).read_text(encoding="utf-8-sig"))
     pin = load_pin(ROOT / "keys" / "engine_pubkey.json")
@@ -519,16 +538,9 @@ def main(spec_path: str) -> int:
                 "degenerate": total_degenerate,
                 "suites": suite_results,
             }
-            receipt = _result_receipt(
-                spec,
-                exact_payload,
-                state="EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED",
-                evidence=evidence,
+            return _complete_terminal_evaluation_failure(
+                spec, exact_payload, job_root, evidence
             )
-            signed = sign_receipt(receipt)
-            write_json(job_root / "receipts" / "nemo-v3-terminal.signed.json", signed)
-            upload_receipt(signed, "nemo-v3-terminal.signed.json", spec)
-            return 6
 
         final_gpu = _gpu_state()
         evidence = {
