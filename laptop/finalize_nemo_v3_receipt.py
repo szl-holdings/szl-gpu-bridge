@@ -172,7 +172,7 @@ def validate_attempt_claim(
         or len(bridge_revision) != 40
         or any(character not in "0123456789abcdef" for character in bridge_revision)
         or not isinstance(training_image, str)
-        or re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", training_image) is None
+        or re.fullmatch(r"(?:[^@\s]+@)?sha256:[0-9a-f]{64}", training_image) is None
     ):
         raise ValueError("one-attempt claim has no immutable execution identity")
     return claim

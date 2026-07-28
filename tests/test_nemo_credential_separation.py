@@ -142,8 +142,53 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 spec,
                 now,
             )
+            claim["trainingImage"] = "sha256:" + "c" * 64
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
+            observed_local_image = finalize_nemo_v3_receipt.validate_attempt_claim(
+                claim_path,
+                spec_path,
+                spec,
+                now,
+            )
 
-        self.assertEqual(observed, claim)
+        self.assertEqual(
+            observed["trainingImage"],
+            "unsloth/unsloth@sha256:" + "b" * 64,
+        )
+        self.assertEqual(observed_local_image, claim)
+
+    def test_attempt_claim_rejects_a_mutable_training_image(self) -> None:
+        now = datetime.now(timezone.utc)
+        spec = {"jobId": "job-test"}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            spec_path = root / "job.json"
+            spec_path.write_bytes(b'{"signed":"envelope"}\n')
+            claim_path = root / "claim.json"
+            claim_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "szl-nemo-v3-attempt-claim",
+                        "v": 1,
+                        "jobId": "job-test",
+                        "jobEnvelopeSha256": hashlib.sha256(
+                            spec_path.read_bytes()
+                        ).hexdigest(),
+                        "bridgeRevision": "a" * 40,
+                        "trainingImage": "szl-nemo-v3:local",
+                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "immutable execution identity"):
+                finalize_nemo_v3_receipt.validate_attempt_claim(
+                    claim_path,
+                    spec_path,
+                    spec,
+                    now,
+                )
 
     def test_attempt_claim_rejects_a_different_signed_envelope(self) -> None:
         now = datetime.now(timezone.utc)
