@@ -119,7 +119,7 @@ def queue_path(spec: dict[str, Any], root: pathlib.Path = ROOT) -> pathlib.Path:
 def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEvidence:
     path = queue_path(spec, root)
     if not path.is_file():
-        return QueueEvidence(False, False, str(path.relative_to(root)))
+        return QueueEvidence(False, False, path.relative_to(root).as_posix())
     try:
         envelope = json.loads(path.read_text(encoding="utf-8"))
         pin = json.loads((root / "keys" / "engine_pubkey.json").read_text(encoding="utf-8"))
@@ -139,7 +139,7 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
         return QueueEvidence(
             True,
             True,
-            str(path.relative_to(root)),
+            path.relative_to(root).as_posix(),
             hashlib.sha256(exact_payload).hexdigest(),
             str(pin.get("keyId") or ""),
         )
@@ -147,7 +147,7 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
         return QueueEvidence(
             True,
             False,
-            str(path.relative_to(root)),
+            path.relative_to(root).as_posix(),
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -361,7 +361,7 @@ def evaluate(
         "status": status,
         "terminal": terminal,
         "reviewed_spec": {
-            "path": str((root / SPEC_PATH.relative_to(ROOT)).relative_to(root)),
+            "path": (root / SPEC_PATH.relative_to(ROOT)).relative_to(root).as_posix(),
             "sha256": hashlib.sha256(signer_canonicalize(spec).encode("utf-8")).hexdigest(),
             "source_revision": spec["source"]["revision"],
             "base_repo_id": spec["base"]["repoId"],
