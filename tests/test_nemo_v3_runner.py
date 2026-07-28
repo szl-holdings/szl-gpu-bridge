@@ -50,9 +50,7 @@ class NemoV3RunnerTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         receipt = sign.call_args.args[0]
-        self.assertEqual(
-            receipt["state"], "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED"
-        )
+        self.assertEqual(receipt["state"], "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED")
         self.assertEqual(receipt["decision"], "TERMINAL_FAILURE_NO_AUTOMATIC_RETRY")
         self.assertEqual(
             write.call_args.args[0],
