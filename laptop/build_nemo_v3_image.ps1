@@ -76,7 +76,7 @@ if not torch.cuda.is_available():
     raise SystemExit("CUDA is not available inside the immutable image")
 
 properties = torch.cuda.get_device_properties(0)
-print(json.dumps({
+receipt = json.dumps({
     "cuda_available": True,
     "cuda_runtime": torch.version.cuda,
     "gpu_name": properties.name,
@@ -96,7 +96,8 @@ print(json.dumps({
             "xformers",
         )
     },
-}, sort_keys=True))
+}, sort_keys=True)
+print("SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt)
 '@
 $SmokeArguments = @(
   "run",
@@ -116,7 +117,15 @@ $SmokeOutput = (& $Docker @SmokeArguments) -join "`n"
 if ($LASTEXITCODE -ne 0) {
   throw "offline CUDA import smoke failed"
 }
-$Smoke = $SmokeOutput.Trim() | ConvertFrom-Json
+$SmokePrefix = "SZL_NEMO_IMAGE_SMOKE_JSON="
+$SmokeLines = @(
+  $SmokeOutput -split "`r?`n" |
+    Where-Object { $_.StartsWith($SmokePrefix) }
+)
+if ($SmokeLines.Count -ne 1) {
+  throw "offline CUDA smoke did not emit exactly one marked JSON record"
+}
+$Smoke = $SmokeLines[0].Substring($SmokePrefix.Length) | ConvertFrom-Json
 if ($Smoke.cuda_available -ne $true) {
   throw "CUDA smoke did not report an available device"
 }

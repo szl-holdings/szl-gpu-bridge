@@ -72,6 +72,9 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertIn('"--network", "none"', build)
         self.assertIn("torch.cuda.is_available()", build)
         self.assertIn("$ObservedImageId", build)
+        self.assertIn('"SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt', build)
+        self.assertIn("$SmokeLines.Count -ne 1", build)
+        self.assertIn("$SmokeLines[0].Substring($SmokePrefix.Length)", build)
 
     def test_training_receipt_requires_trusted_finalization(self) -> None:
         self.assertIn('"SZL_RECEIPT_TRANSPORT=local-unsigned-outbox"', self.source)
