@@ -122,11 +122,12 @@ The isolated launcher is:
 laptop/run_nemo_v3_isolated.ps1
 ```
 
-It requires both the bridge Git commit and container image by immutable digest.
-The image may be a registry manifest reference (`name@sha256:...`) or the exact
-local Docker image ID (`sha256:...`) emitted by
-`laptop/build_nemo_v3_image.ps1`. The latter keeps the reviewed training
-environment private on the owner GPU host while remaining content-addressed.
+It requires both the bridge Git commit and the exact local Docker image ID
+(`sha256:...`) emitted by `laptop/build_nemo_v3_image.ps1`. Registry manifest
+references are refused because no signed job or repository allowlist authorizes
+a registry image for this one-attempt lane. The local ID keeps the reviewed
+training environment private on the owner GPU host while remaining
+content-addressed.
 The launcher inspects the image locally and records both the supplied reference
 and observed image ID in the unsigned receipt intent. For an exact local image
 ID, it also requires the build receipt emitted below, checks the image revision

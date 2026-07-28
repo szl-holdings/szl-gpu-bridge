@@ -37,9 +37,10 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
 
     def test_image_and_source_are_immutable_identifiers(self) -> None:
         self.assertIn(
-            "[ValidatePattern('^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$')]",
+            "[ValidatePattern('^sha256:[0-9a-f]{64}$')]",
             self.source,
         )
+        self.assertNotIn("[^@\\s]+@", self.source)
         self.assertIn("[ValidatePattern('^[0-9a-f]{40}$')]", self.source)
         self.assertIn("$ObservedRevision -ne $BridgeRevision", self.source)
         self.assertIn(

@@ -141,8 +141,8 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
     if image_reference or image_id:
         if not image_reference or not image_id or not image_revision:
             raise RuntimeError("container image evidence is incomplete")
-        if not re.fullmatch(r"(?:[^@\s]+@)?sha256:[0-9a-f]{64}", image_reference):
-            raise RuntimeError("container image reference is not immutable")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_reference):
+            raise RuntimeError("container image reference is not an approved local ID")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
             raise RuntimeError("container image ID is not immutable")
         if not re.fullmatch(r"[0-9a-f]{40}", image_revision):

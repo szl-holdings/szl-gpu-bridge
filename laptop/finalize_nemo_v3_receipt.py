@@ -186,23 +186,20 @@ def validate_attempt_claim(
         or len(bridge_revision) != 40
         or any(character not in "0123456789abcdef" for character in bridge_revision)
         or not isinstance(training_image, str)
-        or re.fullmatch(r"(?:[^@\s]+@)?sha256:[0-9a-f]{64}", training_image) is None
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", training_image) is None
         or not isinstance(observed_image_id, str)
         or re.fullmatch(r"sha256:[0-9a-f]{64}", observed_image_id) is None
         or observed_revision_label != bridge_revision
     ):
         raise ValueError("one-attempt claim has no immutable execution identity")
-    if training_image.startswith("sha256:"):
-        if (
-            observed_image_id != training_image
-            or not isinstance(build_receipt_sha256, str)
-            or re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256) is None
-            or not isinstance(dockerfile_sha256, str)
-            or re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256) is None
-        ):
-            raise ValueError("local image claim has no approved build binding")
-    elif build_receipt_sha256 is not None or dockerfile_sha256 is not None:
-        raise ValueError("registry image claim has unexpected local-build evidence")
+    if (
+        observed_image_id != training_image
+        or not isinstance(build_receipt_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256) is None
+        or not isinstance(dockerfile_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256) is None
+    ):
+        raise ValueError("local image claim has no approved build binding")
     return claim
 
 

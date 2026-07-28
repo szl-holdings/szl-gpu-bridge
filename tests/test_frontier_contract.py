@@ -242,6 +242,23 @@ class RuntimeEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "local-build evidence"):
                 stack_fingerprint(packages=())
 
+    def test_stack_fingerprint_refuses_registry_digest_reference(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SZL_CONTAINER_IMAGE_REFERENCE": (
+                    f"registry.example/image@sha256:{'a' * 64}"
+                ),
+                "SZL_CONTAINER_IMAGE_ID": f"sha256:{'b' * 64}",
+                "SZL_CONTAINER_IMAGE_REVISION": "c" * 40,
+                "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "d" * 64,
+                "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "e" * 64,
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "approved local ID"):
+                stack_fingerprint(packages=())
+
     def test_chat_template_evidence(self):
         tokenizer = SimpleNamespace(
             chat_template="{% generation %}{{ x }}{% endgeneration %}"
