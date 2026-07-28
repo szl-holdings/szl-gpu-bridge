@@ -62,8 +62,8 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
   "unsloth==2026.7.4" `
   "huggingface_hub[cli]==1.24.0" `
   "PyNaCl==1.6.2" `
-  "datasets==5.0.0" `
-  "trl==1.8.0" `
+  "datasets==4.3.0" `
+  "trl==0.24.0" `
   "peft==0.19.1"
 if ($LASTEXITCODE -ne 0) { throw "training dependency installation failed" }
 & $Pip freeze --all | Set-Content -Path "$Root\stack-freeze.txt" -Encoding utf8
@@ -113,6 +113,9 @@ $Files = @(
   @("laptop/frontier_runtime.py", "$Root\frontier_runtime.py"),
   @("laptop/frontier_job.py", "$Root\frontier_job.py"),
   @("laptop/nemo_v3_contract.py", "$Root\nemo_v3_contract.py"),
+  @("laptop/prefetch_nemo_v3.py", "$Root\prefetch_nemo_v3.py"),
+  @("laptop/finalize_nemo_v3_receipt.py", "$Root\finalize_nemo_v3_receipt.py"),
+  @("laptop/run_nemo_v3_isolated.ps1", "$Root\run_nemo_v3_isolated.ps1"),
   @("laptop/runjob.py", "$Root\runjob.py"),
   @("laptop/runjob_frontier.py", "$Root\runjob_frontier.py"),
   @("laptop/runjob_nemo_v3.py", "$Root\runjob_nemo_v3.py"),
@@ -129,6 +132,8 @@ foreach ($Pair in $Files) {
   "$Root\frontier_runtime.py" `
   "$Root\frontier_job.py" `
   "$Root\nemo_v3_contract.py" `
+  "$Root\prefetch_nemo_v3.py" `
+  "$Root\finalize_nemo_v3_receipt.py" `
   "$Root\runjob.py" `
   "$Root\runjob_frontier.py" `
   "$Root\runjob_nemo_v3.py"

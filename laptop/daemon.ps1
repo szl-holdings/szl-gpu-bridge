@@ -58,6 +58,7 @@ try {
     # reading kind/jobId/output fields. Exit codes:
     #   0 = receipts uploaded (success or honest signed BLOCKED)
     #   3 = permanently refused (bad signature/schema/unsupported signed contract)
+    #   7 = unsigned receipt intent awaits trusted signing/upload/readback
     # other = local infrastructure failure (retry next cycle)
     & $Py "$Root\dispatcher.py" $specPath *>> $Log
     $code = $LASTEXITCODE
