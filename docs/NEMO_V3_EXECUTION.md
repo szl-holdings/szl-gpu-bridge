@@ -113,3 +113,7 @@ Receipts are uploaded to the private dataset `SZLHOLDINGS/szl-training-receipts`
 - a distinct approval and publication receipt.
 
 A terminal failure remains quarantined. It may inform a new preregistered v4 experiment, but it must not be silently retried, signed as a release, uploaded as a candidate, or promoted.
+
+Once the runner uploads a signed terminal evaluation-failure receipt, it exits
+successfully to the local daemon. The daemon records the exact job ID as consumed,
+preventing its polling loop from silently rerunning the governed attempt.
