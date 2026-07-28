@@ -75,6 +75,9 @@ foreach ($Directory in @($Jobs, $Control)) {
     New-Item -ItemType Directory -Path $Directory | Out-Null
   }
 }
+if (-not (Test-Path -LiteralPath $JobRoot)) {
+  New-Item -ItemType Directory -Path $JobRoot | Out-Null
+}
 if (
   (Test-Path -LiteralPath $Outbox) -and
   @(Get-ChildItem -LiteralPath $Outbox -Filter "*.intent.json").Count -gt 0
@@ -99,6 +102,9 @@ foreach ($Name in $SourceFiles) {
 }
 New-Item -ItemType Directory -Path (Join-Path $SandboxSource "keys") | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $SandboxSource "jobs") | Out-Null
+New-Item `
+  -ItemType Directory `
+  -Path (Join-Path $SandboxSource "jobs\$JobId") | Out-Null
 Copy-Item `
   -LiteralPath $EngineKey `
   -Destination (Join-Path $SandboxSource "keys\engine_pubkey.json")
@@ -118,7 +124,7 @@ $Arguments = @(
   "--pids-limit", "2048",
   "--shm-size", "8g",
   "--mount", "type=bind,src=$SandboxSource,dst=/bridge,readonly",
-  "--mount", "type=bind,src=$Jobs,dst=/bridge/jobs",
+  "--mount", "type=bind,src=$JobRoot,dst=/bridge/jobs/$JobId",
   "--mount", "type=bind,src=$JobSpec,dst=/job/spec.json,readonly",
   "--mount", "type=bind,src=$InputCache,dst=/inputs,readonly",
   "--mount", "type=bind,src=$HfCache,dst=/root/.cache/huggingface/hub,readonly",
