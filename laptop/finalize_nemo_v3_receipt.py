@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -55,7 +56,7 @@ def validate_intent(
     exact_payload: bytes,
     not_before: datetime,
     bridge_root: pathlib.Path,
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], str, str]:
     intent = json.loads(intent_path.read_text(encoding="utf-8-sig"))
     if (
         intent.get("kind") != "szl-receipt-signing-intent"
@@ -84,7 +85,7 @@ def validate_intent(
             or requested_name != "blocked_receipt.signed.json"
         ):
             raise ValueError("blocked receipt intent is incomplete")
-        return receipt, "BLOCKED"
+        return receipt, "BLOCKED", requested_name
 
     if receipt.get("kind") != "szl-nemo-v3-governed-training":
         raise ValueError("receipt intent kind is not admitted")
@@ -142,7 +143,39 @@ def validate_intent(
             raise ValueError("terminal evaluation receipt is inconsistent")
     else:
         raise ValueError("Nemo receipt intent is not terminal")
-    return receipt, state
+    return receipt, state, requested_name
+
+
+def validate_attempt_claim(
+    claim_path: pathlib.Path,
+    spec_path: pathlib.Path,
+    spec: dict[str, Any],
+    not_before: datetime,
+) -> dict[str, Any]:
+    claim = json.loads(claim_path.read_text(encoding="utf-8-sig"))
+    if (
+        claim.get("kind") != "szl-nemo-v3-attempt-claim"
+        or claim.get("v") != 1
+        or claim.get("jobId") != spec["jobId"]
+    ):
+        raise ValueError("one-attempt claim contract is invalid")
+    expected_envelope_sha256 = hashlib.sha256(spec_path.read_bytes()).hexdigest()
+    if claim.get("jobEnvelopeSha256") != expected_envelope_sha256:
+        raise ValueError("one-attempt claim does not bind the signed job envelope")
+    claimed_at = parse_timestamp(claim.get("claimedAt"))
+    if claimed_at != not_before:
+        raise ValueError("one-attempt claim timestamp does not bind this execution")
+    bridge_revision = claim.get("bridgeRevision")
+    training_image = claim.get("trainingImage")
+    if (
+        not isinstance(bridge_revision, str)
+        or len(bridge_revision) != 40
+        or any(character not in "0123456789abcdef" for character in bridge_revision)
+        or not isinstance(training_image, str)
+        or re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", training_image) is None
+    ):
+        raise ValueError("one-attempt claim has no immutable execution identity")
+    return claim
 
 
 def immutable_readback(
@@ -177,6 +210,7 @@ def main() -> int:
     parser.add_argument("--engine-key", type=pathlib.Path, required=True)
     parser.add_argument("--bridge-root", type=pathlib.Path, required=True)
     parser.add_argument("--not-before", required=True)
+    parser.add_argument("--claim", type=pathlib.Path, required=True)
     parser.add_argument("--ledger", type=pathlib.Path, required=True)
     args = parser.parse_args()
 
@@ -197,11 +231,13 @@ def main() -> int:
     if spec["jobId"] in seen:
         raise RuntimeError("one-attempt job is already present in the terminal ledger")
 
-    receipt, state = validate_intent(
+    not_before = parse_timestamp(args.not_before)
+    validate_attempt_claim(args.claim, args.spec, spec, not_before)
+    receipt, state, requested_name = validate_intent(
         args.intent,
         spec,
         exact_payload,
-        parse_timestamp(args.not_before),
+        not_before,
         args.bridge_root,
     )
 
@@ -210,16 +246,13 @@ def main() -> int:
     body = base64.b64decode(signed["bodyBase64"], validate=True)
     if body != canonicalize(receipt).encode("utf-8"):
         raise RuntimeError("trusted signer did not preserve canonical receipt bytes")
-    result = frontier_job.upload_receipt(
-        signed, args.intent.name.replace(".intent.json", ".signed.json"), spec
-    )
+    result = frontier_job.upload_receipt(signed, requested_name, spec)
     revision = getattr(result, "oid", None)
     if not revision:
         raise RuntimeError("receipt upload returned no immutable revision")
 
-    signed_name = args.intent.name.replace(".intent.json", ".signed.json")
-    local_path = args.bridge_root / "jobs" / spec["jobId"] / "receipts" / signed_name
-    remote_path = f"{spec['jobId']}/{signed_name}"
+    local_path = args.bridge_root / "jobs" / spec["jobId"] / "receipts" / requested_name
+    remote_path = f"{spec['jobId']}/{requested_name}"
     digest = immutable_readback(
         local_path,
         spec["outputs"]["receiptsRepoId"],

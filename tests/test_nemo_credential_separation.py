@@ -63,7 +63,7 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             root = pathlib.Path(temporary)
             path = root / "blocked_receipt.intent.json"
             path.write_text(json.dumps(intent), encoding="utf-8")
-            observed, state = finalize_nemo_v3_receipt.validate_intent(
+            observed, state, requested_name = finalize_nemo_v3_receipt.validate_intent(
                 path,
                 {"jobId": "job-test"},
                 b"signed-job",
@@ -73,6 +73,7 @@ class NemoCredentialSeparationTests(unittest.TestCase):
 
         self.assertEqual(observed, receipt)
         self.assertEqual(state, "BLOCKED")
+        self.assertEqual(requested_name, "blocked_receipt.signed.json")
 
     def test_trusted_finalizer_rejects_stale_intent(self) -> None:
         now = datetime.now(timezone.utc)
@@ -103,6 +104,76 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     b"signed-job",
                     now,
                     root,
+                )
+
+    def test_trusted_finalizer_uploads_only_the_validated_requested_name(self) -> None:
+        source = (ROOT / "laptop" / "finalize_nemo_v3_receipt.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "frontier_job.upload_receipt(signed, requested_name, spec)",
+            source,
+        )
+        self.assertNotIn("args.intent.name.replace", source)
+
+    def test_attempt_claim_binds_exact_signed_envelope_and_execution(self) -> None:
+        now = datetime.now(timezone.utc)
+        spec = {"jobId": "job-test"}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            spec_path = root / "job.json"
+            spec_path.write_bytes(b'{"signed":"envelope"}\n')
+            claim_path = root / "claim.json"
+            claim = {
+                "kind": "szl-nemo-v3-attempt-claim",
+                "v": 1,
+                "jobId": "job-test",
+                "jobEnvelopeSha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
+                "bridgeRevision": "a" * 40,
+                "trainingImage": "unsloth/unsloth@sha256:" + "b" * 64,
+                "githubRunId": "123",
+                "claimedAt": now.isoformat().replace("+00:00", "Z"),
+            }
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
+
+            observed = finalize_nemo_v3_receipt.validate_attempt_claim(
+                claim_path,
+                spec_path,
+                spec,
+                now,
+            )
+
+        self.assertEqual(observed, claim)
+
+    def test_attempt_claim_rejects_a_different_signed_envelope(self) -> None:
+        now = datetime.now(timezone.utc)
+        spec = {"jobId": "job-test"}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            spec_path = root / "job.json"
+            spec_path.write_bytes(b'{"signed":"changed"}\n')
+            claim_path = root / "claim.json"
+            claim_path.write_text(
+                json.dumps(
+                    {
+                        "kind": "szl-nemo-v3-attempt-claim",
+                        "v": 1,
+                        "jobId": "job-test",
+                        "jobEnvelopeSha256": "0" * 64,
+                        "bridgeRevision": "a" * 40,
+                        "trainingImage": "unsloth/unsloth@sha256:" + "b" * 64,
+                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "signed job envelope"):
+                finalize_nemo_v3_receipt.validate_attempt_claim(
+                    claim_path,
+                    spec_path,
+                    spec,
+                    now,
                 )
 
 

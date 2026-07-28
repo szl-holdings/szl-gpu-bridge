@@ -64,13 +64,14 @@ $Jobs = Join-Path $BridgeRoot "jobs"
 $JobRoot = Join-Path $Jobs $JobId
 $Outbox = Join-Path $JobRoot "receipt-outbox"
 $Control = Join-Path $BridgeRoot "control"
+$Claims = Join-Path $Control "attempt-claims"
 foreach ($NewDirectory in @($SandboxSource, $SandboxWork)) {
   if (Test-Path -LiteralPath $NewDirectory) {
     throw "one-attempt sandbox path already exists: $NewDirectory"
   }
   New-Item -ItemType Directory -Path $NewDirectory | Out-Null
 }
-foreach ($Directory in @($Jobs, $Control)) {
+foreach ($Directory in @($Jobs, $Control, $Claims)) {
   if (-not (Test-Path -LiteralPath $Directory)) {
     New-Item -ItemType Directory -Path $Directory | Out-Null
   }
@@ -109,7 +110,59 @@ Copy-Item `
   -LiteralPath $EngineKey `
   -Destination (Join-Path $SandboxSource "keys\engine_pubkey.json")
 
-$NotBefore = [DateTimeOffset]::UtcNow.ToString("o")
+$Ledger = Join-Path $Jobs "seen.txt"
+if (Test-Path -LiteralPath $Ledger -PathType Leaf) {
+  $Seen = @(
+    Get-Content -LiteralPath $Ledger |
+      ForEach-Object { ($_ -split "#", 2)[0].Trim() } |
+      Where-Object { $_ }
+  )
+  if ($JobId -in $Seen) {
+    throw "one-attempt job is already present in the terminal ledger"
+  }
+}
+
+# This durable CreateNew claim is the authoritative replay barrier. It is
+# written only after source, prefetch, and sandbox preparation pass, but before
+# Docker can start the GPU attempt. A crash after this point remains fail-closed
+# and requires explicit owner recovery; an automatic retry cannot consume a
+# second attempt.
+$ClaimedAt = [DateTimeOffset]::UtcNow.ToString("o")
+$ClaimPath = Join-Path $Claims "$JobId.json"
+$Claim = [ordered]@{
+  kind = "szl-nemo-v3-attempt-claim"
+  v = 1
+  jobId = $JobId
+  jobEnvelopeSha256 = (
+    (Get-FileHash -LiteralPath $JobSpec -Algorithm SHA256).Hash.ToLowerInvariant()
+  )
+  bridgeRevision = $BridgeRevision
+  trainingImage = $Image
+  githubRunId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { $null }
+  claimedAt = $ClaimedAt
+}
+$ClaimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes(
+  (($Claim | ConvertTo-Json -Depth 4) + "`n")
+)
+$ClaimStream = $null
+try {
+  $ClaimStream = [System.IO.File]::Open(
+    $ClaimPath,
+    [System.IO.FileMode]::CreateNew,
+    [System.IO.FileAccess]::Write,
+    [System.IO.FileShare]::None
+  )
+  $ClaimStream.Write($ClaimBytes, 0, $ClaimBytes.Length)
+  $ClaimStream.Flush($true)
+} catch [System.IO.IOException] {
+  throw "one-attempt claim already exists or could not be created: $ClaimPath"
+} finally {
+  if ($null -ne $ClaimStream) {
+    $ClaimStream.Dispose()
+  }
+}
+
+$NotBefore = $ClaimedAt
 $NotBeforePath = Join-Path $Control "$JobId-not-before.txt"
 Set-Content -LiteralPath $NotBeforePath -Value $NotBefore -Encoding ascii
 

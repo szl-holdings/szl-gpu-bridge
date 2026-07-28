@@ -36,6 +36,13 @@ Set the GitHub Actions repository variable `SZL_LAPTOP_RECEIPT_KEY_ID` in `szl-h
 
 Until that variable is enrolled, a mathematically valid receipt is reported as `AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT` and is not trusted as an owner-host result.
 
+The isolated launcher creates `C:\szl-bridge\control\attempt-claims\<jobId>.json`
+atomically immediately before Docker starts. That durable claim binds the exact
+signed job envelope, bridge revision, image digest, and claim time. Its presence
+is the authoritative one-attempt replay barrier: automatic dispatches fail
+closed and cannot start the GPU job again, even if final receipt upload or
+terminal-ledger publication is interrupted.
+
 ## 2. Review the exact attempt
 
 From a clean checkout at protected `main`:
