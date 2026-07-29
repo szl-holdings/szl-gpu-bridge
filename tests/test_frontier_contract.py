@@ -25,6 +25,7 @@ from frontier_runtime import (  # noqa: E402
     extract_json_object,
     is_degenerate_text,
     manifest_digest,
+    model_card,
     normalize_conversation,
     prompt_messages,
     stack_fingerprint,
@@ -185,6 +186,19 @@ class ContractTests(unittest.TestCase):
 
 
 class RuntimeEvidenceTests(unittest.TestCase):
+    def test_model_card_preserves_checkpoint_bucket_metadata(self):
+        card = model_card(
+            valid_spec(),
+            training_metrics={"loss": 0.1},
+            eval_metrics={"heldOutLoss": 0.2},
+            artifacts=[],
+            chat_template={"sha256": "d" * 64},
+        )
+        self.assertIn(
+            "buckets:\n- SZLHOLDINGS/szl-training-working-set\nlibrary_name: peft",
+            card,
+        )
+
     def test_stack_fingerprint_records_immutable_container_identity(self):
         image_id = f"sha256:{'a' * 64}"
         with mock.patch.dict(
