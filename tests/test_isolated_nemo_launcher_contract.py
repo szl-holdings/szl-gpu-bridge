@@ -136,6 +136,23 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source.index("& $Docker @Arguments"),
         )
 
+    def test_exact_container_compiles_source_before_attempt_claim(self) -> None:
+        for fragment in (
+            "$CompatibilityArguments = @(",
+            '"--network", "none"',
+            '"--read-only"',
+            '"--cap-drop", "ALL"',
+            '"--security-opt", "no-new-privileges:true"',
+            '"PYTHONPYCACHEPREFIX=/tmp/pycache"',
+            '"-m", "compileall", "-q", "-f", "/bridge"',
+            "container-runtime source compatibility gate failed",
+        ):
+            self.assertIn(fragment, self.source)
+        self.assertLess(
+            self.source.index("& $Docker @CompatibilityArguments"),
+            self.source.index("[System.IO.FileMode]::CreateNew"),
+        )
+
     def test_bootstrap_pins_resolvable_unsloth_dependencies(self) -> None:
         bootstrap = (ROOT / "laptop" / "bootstrap.ps1").read_text(encoding="utf-8")
         self.assertIn('"unsloth==2026.7.4"', bootstrap)
