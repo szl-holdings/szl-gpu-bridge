@@ -276,11 +276,20 @@ def verify_receipt(
 def default_receipt_loader(
     spec: dict[str, Any], token: str
 ) -> tuple[str, dict[str, Any]] | None:
+    token = token.strip()
+    if not token:
+        raise StatusError(
+            "HF_TOKEN is required to inspect the private authoritative receipt repository"
+        )
+
     from huggingface_hub import HfApi, hf_hub_download
 
-    api = HfApi(token=token or None)
+    api = HfApi(token=token)
     if not api.repo_exists(RECEIPTS_REPO, repo_type="dataset"):
-        return None
+        raise StatusError(
+            "the authoritative receipt repository is not visible with the configured "
+            "HF_TOKEN"
+        )
     files = set(api.list_repo_files(RECEIPTS_REPO, repo_type="dataset"))
     prefix = f"{spec['jobId']}/"
     found = [prefix + name for name in TERMINAL_FILENAMES if prefix + name in files]
@@ -292,7 +301,7 @@ def default_receipt_loader(
         repo_id=RECEIPTS_REPO,
         repo_type="dataset",
         filename=found[0],
-        token=token or None,
+        token=token,
         force_download=True,
     )
     return found[0], json.loads(pathlib.Path(local).read_text(encoding="utf-8"))
