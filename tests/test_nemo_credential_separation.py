@@ -323,9 +323,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     claim,
                 )
 
-            receipt["evaluation"]["stack"]["containerImage"]["id"] = (
-                claim["observedImageId"]
-            )
+            receipt["evaluation"]["stack"]["containerImage"]["id"] = claim[
+                "observedImageId"
+            ]
             receipt["evaluation"]["stack"]["launcherSha256"] = "0" * 64
             path.write_text(json.dumps(intent), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "receipt launcher"):

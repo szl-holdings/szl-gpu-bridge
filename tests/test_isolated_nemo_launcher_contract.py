@@ -50,7 +50,9 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             "$InvokedLauncherSha256 -ne $ApprovedLauncherSha256",
             self.source,
         )
-        self.assertIn("$ImageMetadataText = & $Docker image inspect $Image", self.source)
+        self.assertIn(
+            "$ImageMetadataText = & $Docker image inspect $Image", self.source
+        )
         self.assertIn("$ImageMetadataText | ConvertFrom-Json", self.source)
         self.assertIn("$ImageMetadata.Count -ne 1", self.source)
         self.assertIn("$ObservedImageId -ne $Image", self.source)
