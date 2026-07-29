@@ -83,6 +83,33 @@ test('Nemo v3 signer refuses publication and holdout drift', () => {
   assert.throws(() => validateNemoV3Spec(threshold), /all exact holdouts/);
 });
 
+test('Nemo v3 successor requires fail-closed predecessor lineage', () => {
+  const successor = spec();
+  successor.jobId = 'job-2026-nemo-v3-governed-successor-2';
+  successor.lineage = {
+    predecessorJobId: 'job-2026-nemo-v3-governed-attempt-1',
+    predecessorClaimSha256: 'a'.repeat(64),
+    predecessorEnvelopeSha256: 'b'.repeat(64),
+    predecessorBridgeRevision: 'c'.repeat(40),
+    predecessorImageId: `sha256:${'d'.repeat(64)}`,
+    predecessorClaimedAt: '2026-07-29T16:41:34.8842570+00:00',
+    incidentUrl: 'https://github.com/szl-holdings/szl-gpu-bridge/issues/4#issuecomment-5120817312',
+    failurePhase: 'PRE_TRAINING_RUNTIME_SOURCE_PARSE',
+    successorGeneration: 2,
+    automaticRetry: false,
+    trainingStarted: false,
+    modelRepositoryCodeImported: false,
+    holdoutsAccessed: false,
+    candidateProduced: false,
+    receiptIntentProduced: false,
+    terminalLedgerWritten: false,
+    scienceInputsReused: true,
+  };
+  assert.equal(validateNemoV3Spec(successor), NEMO_V3_PAYLOAD_TYPE);
+  successor.lineage.automaticRetry = true;
+  assert.throws(() => validateNemoV3Spec(successor), /automaticRetry/);
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
