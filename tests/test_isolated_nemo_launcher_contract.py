@@ -48,6 +48,12 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("$ObservedImageId -ne $Image", self.source)
+        self.assertIn("$ImageMetadataText | ConvertFrom-Json", self.source)
+        self.assertIn(
+            "Config.Labels.'org.opencontainers.image.revision'",
+            self.source,
+        )
+        self.assertNotIn("{{index .Config.Labels", self.source)
         self.assertIn("$ObservedRevisionLabel -ne $BridgeRevision", self.source)
         self.assertIn("$BuildReceipt.imageId -ne $ObservedImageId", self.source)
         self.assertIn(

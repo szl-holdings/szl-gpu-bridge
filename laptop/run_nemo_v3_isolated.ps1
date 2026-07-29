@@ -38,12 +38,22 @@ if (
 if ($ObservedImageId -ne $Image) {
   throw "local image identifier drifted: $ObservedImageId != $Image"
 }
-$ObservedRevisionLabel = (
-  & $Docker image inspect `
-    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' `
-    $ObservedImageId
-).Trim()
-if ($LASTEXITCODE -ne 0 -or $ObservedRevisionLabel -ne $BridgeRevision) {
+$ImageMetadataText = (& $Docker image inspect $ObservedImageId) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+  throw "container image metadata could not be inspected"
+}
+try {
+  $ImageMetadata = @($ImageMetadataText | ConvertFrom-Json)
+} catch {
+  throw "container image metadata was not valid JSON"
+}
+if ($ImageMetadata.Count -ne 1) {
+  throw "container image metadata did not resolve exactly one image"
+}
+$ObservedRevisionLabel = [string](
+  $ImageMetadata[0].Config.Labels.'org.opencontainers.image.revision'
+)
+if ($ObservedRevisionLabel -ne $BridgeRevision) {
   throw "container image revision label does not match exact bridge revision"
 }
 
