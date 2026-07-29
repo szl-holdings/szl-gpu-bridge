@@ -348,6 +348,8 @@ def _complete_terminal_evaluation_failure(
     evidence: dict[str, Any],
 ) -> int:
     """Emit a terminal failure for upload, with no automatic retry."""
+    evidence = dict(evidence)
+    evidence["stack"] = stack_fingerprint()
     receipt = _result_receipt(
         spec,
         exact_payload,

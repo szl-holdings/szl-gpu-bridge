@@ -80,6 +80,7 @@ class NemoV3RunnerTests(unittest.TestCase):
         receipt, name, delivered_spec = deliver.call_args.args
         self.assertEqual(receipt["state"], "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED")
         self.assertEqual(receipt["decision"], "TERMINAL_FAILURE_NO_AUTOMATIC_RETRY")
+        self.assertIn("stack", receipt["evaluation"])
         self.assertEqual(name, "nemo-v3-terminal.signed.json")
         self.assertIs(delivered_spec, spec)
 

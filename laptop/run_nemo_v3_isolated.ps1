@@ -8,7 +8,7 @@ param(
   [string]$BridgeRevision,
 
   [Parameter(Mandatory = $true)]
-  [ValidatePattern('^[^@\s]+@sha256:[0-9a-f]{64}$')]
+  [ValidatePattern('^sha256:[0-9a-f]{64}$')]
   [string]$Image,
 
   [Parameter(Mandatory = $true)]
@@ -16,7 +16,8 @@ param(
 
   [string]$BridgeRoot = "C:\szl-bridge",
   [string]$HfCache = "C:\szl-bridge-cache\huggingface\hub",
-  [string]$InputCache = "C:\szl-bridge-cache\inputs"
+  [string]$InputCache = "C:\szl-bridge-cache\inputs",
+  [string]$ImageReceiptRoot = "C:\szl-bridge\image-receipts"
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +28,25 @@ if ($env:HF_TOKEN -or $env:HUGGING_FACE_HUB_TOKEN -or $env:GH_TOKEN) {
 
 $Docker = (Get-Command docker.exe -ErrorAction Stop).Source
 $Git = (Get-Command git.exe -ErrorAction Stop).Source
+$ObservedImageId = (& $Docker image inspect --format "{{.Id}}" $Image).Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  $ObservedImageId -notmatch '^sha256:[0-9a-f]{64}$'
+) {
+  throw "container image is not locally available by an immutable identifier: $Image"
+}
+if ($ObservedImageId -ne $Image) {
+  throw "local image identifier drifted: $ObservedImageId != $Image"
+}
+$ObservedRevisionLabel = (
+  & $Docker image inspect `
+    --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' `
+    $ObservedImageId
+).Trim()
+if ($LASTEXITCODE -ne 0 -or $ObservedRevisionLabel -ne $BridgeRevision) {
+  throw "container image revision label does not match exact bridge revision"
+}
+
 $ObservedRevision = (& $Git -C $BridgeSource rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $ObservedRevision -ne $BridgeRevision) {
   throw "bridge source is not the exact approved revision: $ObservedRevision"
@@ -34,6 +54,59 @@ if ($LASTEXITCODE -ne 0 -or $ObservedRevision -ne $BridgeRevision) {
 if (& $Git -C $BridgeSource status --porcelain --untracked-files=no) {
   throw "bridge source has tracked modifications"
 }
+
+$Dockerfile = Join-Path $BridgeSource "laptop\Dockerfile.nemo-v3"
+$ImageReceipt = Join-Path `
+  $ImageReceiptRoot `
+  "nemo-v3-image-$BridgeRevision.json"
+foreach ($Required in @($Dockerfile, $ImageReceipt)) {
+  if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
+    throw "trusted local-image build input is missing: $Required"
+  }
+}
+$ImageDockerfileSha256 = (
+  Get-FileHash -LiteralPath $Dockerfile -Algorithm SHA256
+).Hash.ToLowerInvariant()
+$ExpectedBaseImage = (
+  "pytorch/pytorch@sha256:" +
+  "417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385"
+)
+$BuildReceipt = Get-Content -LiteralPath $ImageReceipt -Raw | ConvertFrom-Json
+if (
+  $BuildReceipt.schema -ne "szl-nemo-v3-image-build-receipt-v1" -or
+  $BuildReceipt.bridgeRevision -ne $BridgeRevision -or
+  $BuildReceipt.baseImage -ne $ExpectedBaseImage -or
+  $BuildReceipt.imageId -ne $ObservedImageId -or
+  $BuildReceipt.observedRevisionLabel -ne $ObservedRevisionLabel -or
+  $BuildReceipt.dockerfileSha256 -ne $ImageDockerfileSha256 -or
+  $BuildReceipt.smoke.cuda_available -ne $true -or
+  -not ($BuildReceipt.smoke.gpu_name -is [string]) -or
+  -not $BuildReceipt.smoke.gpu_name.Trim() -or
+  -not ($BuildReceipt.smoke.cuda_runtime -is [string]) -or
+  -not $BuildReceipt.smoke.cuda_runtime.Trim()
+) {
+  throw "local image build receipt does not bind the approved image and revision"
+}
+$ExpectedPackages = [ordered]@{
+  "bitsandbytes" = "0.50.0"
+  "datasets" = "4.3.0"
+  "huggingface-hub" = "1.24.0"
+  "peft" = "0.19.1"
+  "pynacl" = "1.6.2"
+  "trl" = "0.24.0"
+  "unsloth" = "2026.7.4"
+  "unsloth-zoo" = "2026.7.4"
+  "xformers" = "0.0.32.post2"
+}
+foreach ($Name in $ExpectedPackages.Keys) {
+  $ObservedPackage = $BuildReceipt.smoke.packages.PSObject.Properties[$Name].Value
+  if ($ObservedPackage -ne $ExpectedPackages[$Name]) {
+    throw "local image build receipt has an unapproved package version: $Name"
+  }
+}
+$ImageBuildReceiptSha256 = (
+  Get-FileHash -LiteralPath $ImageReceipt -Algorithm SHA256
+).Hash.ToLowerInvariant()
 
 $JobSpec = Join-Path $BridgeSource "queue\pending\$JobId.json"
 $EngineKey = Join-Path $BridgeSource "keys\engine_pubkey.json"
@@ -138,6 +211,10 @@ $Claim = [ordered]@{
   )
   bridgeRevision = $BridgeRevision
   trainingImage = $Image
+  observedImageId = $ObservedImageId
+  observedRevisionLabel = $ObservedRevisionLabel
+  imageBuildReceiptSha256 = $ImageBuildReceiptSha256
+  imageDockerfileSha256 = $ImageDockerfileSha256
   githubRunId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { $null }
   claimedAt = $ClaimedAt
 }
@@ -166,6 +243,22 @@ $NotBefore = $ClaimedAt
 $NotBeforePath = Join-Path $Control "$JobId-not-before.txt"
 Set-Content -LiteralPath $NotBeforePath -Value $NotBefore -Encoding ascii
 
+$ImageEvidenceArguments = @(
+  "--env", "SZL_CONTAINER_IMAGE_REVISION=$ObservedRevisionLabel"
+)
+if ($ImageBuildReceiptSha256) {
+  $ImageEvidenceArguments += @(
+    "--env",
+    "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"
+  )
+}
+if ($ImageDockerfileSha256) {
+  $ImageEvidenceArguments += @(
+    "--env",
+    "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256=$ImageDockerfileSha256"
+  )
+}
+
 $Arguments = @(
   "run",
   "--rm",
@@ -186,6 +279,9 @@ $Arguments = @(
   "--env", "SZL_INPUT_CACHE=/inputs",
   "--env", "SZL_RECEIPT_TRANSPORT=local-unsigned-outbox",
   "--env", "SZL_EXECUTION_ISOLATION=credentialless-networkless-container",
+  "--env", "SZL_CONTAINER_IMAGE_REFERENCE=$Image",
+  "--env", "SZL_CONTAINER_IMAGE_ID=$ObservedImageId"
+) + $ImageEvidenceArguments + @(
   "--env", "HF_HUB_OFFLINE=1",
   "--env", "TRANSFORMERS_OFFLINE=1",
   "--env", "HF_DATASETS_OFFLINE=1",

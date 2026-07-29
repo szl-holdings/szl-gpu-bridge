@@ -56,6 +56,7 @@ def validate_intent(
     exact_payload: bytes,
     not_before: datetime,
     bridge_root: pathlib.Path,
+    attempt_claim: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str, str]:
     intent = json.loads(intent_path.read_text(encoding="utf-8-sig"))
     if (
@@ -89,6 +90,8 @@ def validate_intent(
 
     if receipt.get("kind") != "szl-nemo-v3-governed-training":
         raise ValueError("receipt intent kind is not admitted")
+    if attempt_claim is None:
+        raise ValueError("Nemo receipt has no trusted attempt claim")
     if receipt.get("candidateId") != spec["outputs"]["candidateId"]:
         raise ValueError("receipt candidate does not match the signed job")
     if receipt.get("source") != spec["source"]:
@@ -117,6 +120,13 @@ def validate_intent(
     evaluation = receipt.get("evaluation")
     if not isinstance(evaluation, dict):
         raise ValueError("receipt evaluation evidence is missing")
+    expected_container_image = claim_container_image(attempt_claim)
+    stack = evaluation.get("stack")
+    observed_container_image = (
+        stack.get("containerImage") if isinstance(stack, dict) else None
+    )
+    if observed_container_image != expected_container_image:
+        raise ValueError("receipt container image does not match the trusted claim")
     if state == "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW":
         if (
             requested_name != "nemo-v3-qualified.signed.json"
@@ -167,15 +177,45 @@ def validate_attempt_claim(
         raise ValueError("one-attempt claim timestamp does not bind this execution")
     bridge_revision = claim.get("bridgeRevision")
     training_image = claim.get("trainingImage")
+    observed_image_id = claim.get("observedImageId")
+    observed_revision_label = claim.get("observedRevisionLabel")
+    build_receipt_sha256 = claim.get("imageBuildReceiptSha256")
+    dockerfile_sha256 = claim.get("imageDockerfileSha256")
     if (
         not isinstance(bridge_revision, str)
         or len(bridge_revision) != 40
         or any(character not in "0123456789abcdef" for character in bridge_revision)
         or not isinstance(training_image, str)
-        or re.fullmatch(r"[^@\s]+@sha256:[0-9a-f]{64}", training_image) is None
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", training_image) is None
+        or not isinstance(observed_image_id, str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", observed_image_id) is None
+        or observed_revision_label != bridge_revision
     ):
         raise ValueError("one-attempt claim has no immutable execution identity")
+    if (
+        observed_image_id != training_image
+        or not isinstance(build_receipt_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256) is None
+        or not isinstance(dockerfile_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256) is None
+    ):
+        raise ValueError("local image claim has no approved build binding")
     return claim
+
+
+def claim_container_image(claim: dict[str, Any]) -> dict[str, Any]:
+    """Return the exact trusted image identity that a receipt must reproduce."""
+    result: dict[str, Any] = {
+        "reference": claim["trainingImage"],
+        "id": claim["observedImageId"],
+        "revision": claim["observedRevisionLabel"],
+    }
+    if claim.get("imageBuildReceiptSha256"):
+        result["localBuild"] = {
+            "receiptSha256": claim["imageBuildReceiptSha256"],
+            "dockerfileSha256": claim["imageDockerfileSha256"],
+        }
+    return result
 
 
 def immutable_readback(
@@ -232,13 +272,14 @@ def main() -> int:
         raise RuntimeError("one-attempt job is already present in the terminal ledger")
 
     not_before = parse_timestamp(args.not_before)
-    validate_attempt_claim(args.claim, args.spec, spec, not_before)
+    attempt_claim = validate_attempt_claim(args.claim, args.spec, spec, not_before)
     receipt, state, requested_name = validate_intent(
         args.intent,
         spec,
         exact_payload,
         not_before,
         args.bridge_root,
+        attempt_claim,
     )
 
     frontier_job.ROOT = args.bridge_root

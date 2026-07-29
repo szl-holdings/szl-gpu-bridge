@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import os
 import pathlib
 import platform
 import re
@@ -132,6 +133,41 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
             ]
         ),
     }
+    image_reference = os.environ.get("SZL_CONTAINER_IMAGE_REFERENCE")
+    image_id = os.environ.get("SZL_CONTAINER_IMAGE_ID")
+    image_revision = os.environ.get("SZL_CONTAINER_IMAGE_REVISION")
+    build_receipt_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256")
+    dockerfile_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256")
+    if image_reference or image_id:
+        if not image_reference or not image_id or not image_revision:
+            raise RuntimeError("container image evidence is incomplete")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_reference):
+            raise RuntimeError("container image reference is not an approved local ID")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+            raise RuntimeError("container image ID is not immutable")
+        if not re.fullmatch(r"[0-9a-f]{40}", image_revision):
+            raise RuntimeError("container image revision is not immutable")
+        if bool(build_receipt_sha256) != bool(dockerfile_sha256):
+            raise RuntimeError("container local-build evidence is incomplete")
+        container_image = {
+            "reference": image_reference,
+            "id": image_id,
+            "revision": image_revision,
+        }
+        if build_receipt_sha256:
+            if not re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256):
+                raise RuntimeError("container image build receipt is not immutable")
+            if not re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256 or ""):
+                raise RuntimeError("container image Dockerfile is not immutable")
+            container_image["localBuild"] = {
+                "receiptSha256": build_receipt_sha256,
+                "dockerfileSha256": dockerfile_sha256,
+            }
+        evidence["containerImage"] = container_image
+    else:
+        if image_revision or build_receipt_sha256 or dockerfile_sha256:
+            raise RuntimeError("container image evidence is incomplete")
+        evidence["containerImage"] = None
     lock_path = pathlib.Path(__file__).resolve().parent / "stack-freeze.txt"
     if lock_path.exists():
         evidence["stackFreeze"] = {

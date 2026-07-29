@@ -122,9 +122,35 @@ The isolated launcher is:
 laptop/run_nemo_v3_isolated.ps1
 ```
 
-It requires both the bridge Git commit and container image by immutable digest.
-It refuses a dirty bridge checkout, a stale outbox, an unverified prefetch receipt,
-an image tag without `@sha256:...`, or any host shell containing HF/GitHub tokens.
+It requires both the bridge Git commit and the exact local Docker image ID
+(`sha256:...`) emitted by `laptop/build_nemo_v3_image.ps1`. Registry manifest
+references are refused because no signed job or repository allowlist authorizes
+a registry image for this one-attempt lane. The local ID keeps the reviewed
+training environment private on the owner GPU host while remaining
+content-addressed.
+The launcher inspects the image locally and records both the supplied reference
+and observed image ID in the unsigned receipt intent. For an exact local image
+ID, it also requires the build receipt emitted below, checks the image revision
+label and Dockerfile hash against the exact bridge revision, and binds those
+digests into the durable pre-execution claim. Trusted finalization requires the
+receipt stack identity to equal that claim before signing. It refuses a dirty
+bridge checkout, a stale outbox, an unverified prefetch receipt, a mutable image
+tag, an unavailable or mismatched image ID, an absent or mismatched local build
+receipt, or any host shell containing HF/GitHub tokens.
+
+Build and CUDA-smoke the training image from the exact clean bridge revision:
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+  -File .\laptop\build_nemo_v3_image.ps1 `
+  -BridgeRevision (git rev-parse HEAD) `
+  -BridgeSource (Get-Location).Path
+```
+
+The build uses a digest-pinned PyTorch CUDA 12.8 base, exact direct training
+package versions, and no bridge source or credentials. It writes a non-secret
+receipt under `C:\szl-bridge\image-receipts` only after the immutable image ID,
+source-revision label, offline import smoke, and CUDA device probe all pass.
 
 The trusted helper programs are:
 

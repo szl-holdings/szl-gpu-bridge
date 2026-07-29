@@ -37,11 +37,72 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
 
     def test_image_and_source_are_immutable_identifiers(self) -> None:
         self.assertIn(
-            "[ValidatePattern('^[^@\\s]+@sha256:[0-9a-f]{64}$')]",
+            "[ValidatePattern('^sha256:[0-9a-f]{64}$')]",
             self.source,
         )
+        self.assertNotIn("[^@\\s]+@", self.source)
         self.assertIn("[ValidatePattern('^[0-9a-f]{40}$')]", self.source)
         self.assertIn("$ObservedRevision -ne $BridgeRevision", self.source)
+        self.assertIn(
+            'image inspect --format "{{.Id}}" $Image',
+            self.source,
+        )
+        self.assertIn("$ObservedImageId -ne $Image", self.source)
+        self.assertIn("$ObservedRevisionLabel -ne $BridgeRevision", self.source)
+        self.assertIn("$BuildReceipt.imageId -ne $ObservedImageId", self.source)
+        self.assertIn(
+            "$BuildReceipt.dockerfileSha256 -ne $ImageDockerfileSha256",
+            self.source,
+        )
+        self.assertIn("imageBuildReceiptSha256 = $ImageBuildReceiptSha256", self.source)
+        self.assertIn("observedImageId = $ObservedImageId", self.source)
+        self.assertIn('"SZL_CONTAINER_IMAGE_ID=$ObservedImageId"', self.source)
+        self.assertIn(
+            '"SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"',
+            self.source,
+        )
+
+    def test_image_build_is_digest_pinned_and_cuda_smoked(self) -> None:
+        dockerfile = (ROOT / "laptop" / "Dockerfile.nemo-v3").read_text(
+            encoding="utf-8"
+        )
+        build = (ROOT / "laptop" / "build_nemo_v3_image.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "pytorch/pytorch@sha256:"
+            "417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385",
+            dockerfile,
+        )
+        for package in (
+            "unsloth==2026.7.4",
+            "unsloth-zoo==2026.7.4",
+            "bitsandbytes==0.50.0",
+            "xformers==0.0.32.post2",
+        ):
+            self.assertIn(package, dockerfile)
+        self.assertIn('"--gpus", "all"', build)
+        self.assertIn('"--network", "none"', build)
+        self.assertIn('"--interactive"', build)
+        self.assertIn("torch.cuda.is_available()", build)
+        self.assertIn("$ObservedImageId", build)
+        self.assertIn("$ImageMetadataText | ConvertFrom-Json", build)
+        self.assertIn(
+            "Config.Labels.'org.opencontainers.image.revision'",
+            build,
+        )
+        self.assertNotIn("{{index .Config.Labels", build)
+        self.assertIn("$SmokeProgram | & $Docker @SmokeArguments", build)
+        self.assertIn('$ObservedImageId,\n  "-"', build)
+        self.assertIn('"SZL_NEMO_IMAGE_SMOKE_JSON=" + receipt', build)
+        self.assertIn("$SmokeLines.Count -ne 1", build)
+        self.assertIn("$SmokeLines[0].Substring($SmokePrefix.Length)", build)
+        self.assertIn("$ExpectedPackages", build)
+        self.assertIn("$ObservedPackage -ne $ExpectedPackages[$Name]", build)
+        self.assertLess(
+            dockerfile.index("RUN python -m pip install"),
+            dockerfile.index("ARG BRIDGE_REVISION"),
+        )
 
     def test_training_receipt_requires_trusted_finalization(self) -> None:
         self.assertIn('"SZL_RECEIPT_TRANSPORT=local-unsigned-outbox"', self.source)
@@ -63,6 +124,12 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertIn('"trl==0.24.0"', bootstrap)
         self.assertNotIn('"datasets==5.0.0"', bootstrap)
         self.assertNotIn('"trl==1.8.0"', bootstrap)
+
+    def test_container_identity_is_recorded_in_stack_evidence(self) -> None:
+        runtime = (ROOT / "laptop" / "frontier_runtime.py").read_text(encoding="utf-8")
+        self.assertIn('"SZL_CONTAINER_IMAGE_REFERENCE"', runtime)
+        self.assertIn('"SZL_CONTAINER_IMAGE_ID"', runtime)
+        self.assertIn('evidence["containerImage"]', runtime)
 
 
 if __name__ == "__main__":
