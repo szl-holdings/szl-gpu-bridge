@@ -37,6 +37,7 @@ _ALLOWED_TOP = {
     "outputs",
     "evaluation",
     "notes",
+    "lineage",
 }
 
 
@@ -138,7 +139,7 @@ def _pinned_file(
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ContractError("Nemo v3 spec must be an object")
-    required = _ALLOWED_TOP - {"notes"}
+    required = _ALLOWED_TOP - {"notes", "lineage"}
     missing = required - spec.keys()
     extra = spec.keys() - _ALLOWED_TOP
     if missing:
@@ -153,6 +154,78 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     expires = _timestamp(spec.get("expiresAt"), "expiresAt")
     if expires <= created:
         raise ContractError("expiresAt must be later than createdAt")
+
+    if "lineage" in spec:
+        lineage_fields = {
+            "predecessorJobId",
+            "predecessorClaimSha256",
+            "predecessorEnvelopeSha256",
+            "predecessorBridgeRevision",
+            "predecessorImageId",
+            "predecessorClaimedAt",
+            "incidentUrl",
+            "failurePhase",
+            "successorGeneration",
+            "automaticRetry",
+            "trainingStarted",
+            "modelRepositoryCodeImported",
+            "holdoutsAccessed",
+            "candidateProduced",
+            "receiptIntentProduced",
+            "terminalLedgerWritten",
+            "scienceInputsReused",
+        }
+        lineage = _object(spec, "lineage", lineage_fields, lineage_fields)
+        predecessor = lineage["predecessorJobId"]
+        if not isinstance(predecessor, str) or not _JOB.fullmatch(predecessor):
+            raise ContractError("lineage.predecessorJobId is invalid")
+        if predecessor == spec["jobId"]:
+            raise ContractError("successor jobId must differ from its predecessor")
+        _sha256(lineage["predecessorClaimSha256"], "lineage.predecessorClaimSha256")
+        _sha256(
+            lineage["predecessorEnvelopeSha256"],
+            "lineage.predecessorEnvelopeSha256",
+        )
+        _revision(
+            lineage["predecessorBridgeRevision"],
+            "lineage.predecessorBridgeRevision",
+            exact40=True,
+        )
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", lineage["predecessorImageId"]):
+            raise ContractError("lineage.predecessorImageId must be an exact image ID")
+        _timestamp(lineage["predecessorClaimedAt"], "lineage.predecessorClaimedAt")
+        if not re.fullmatch(
+            r"https://github\.com/szl-holdings/szl-gpu-bridge/issues/"
+            r"[0-9]+#issuecomment-[0-9]+",
+            lineage["incidentUrl"],
+        ):
+            raise ContractError(
+                "lineage.incidentUrl must identify the recorded incident"
+            )
+        if lineage["failurePhase"] != "PRE_TRAINING_RUNTIME_SOURCE_PARSE":
+            raise ContractError(
+                "lineage.failurePhase is not an admitted recovery phase"
+            )
+        if (
+            not isinstance(lineage["successorGeneration"], int)
+            or lineage["successorGeneration"] < 2
+        ):
+            raise ContractError("lineage.successorGeneration must be at least 2")
+        expected_boundaries = {
+            "automaticRetry": False,
+            "trainingStarted": False,
+            "modelRepositoryCodeImported": False,
+            "holdoutsAccessed": False,
+            "candidateProduced": False,
+            "receiptIntentProduced": False,
+            "terminalLedgerWritten": False,
+            "scienceInputsReused": True,
+        }
+        for field, expected in expected_boundaries.items():
+            if lineage[field] is not expected:
+                raise ContractError(
+                    f"lineage.{field} must remain {str(expected).lower()}"
+                )
 
     source = _object(
         spec,

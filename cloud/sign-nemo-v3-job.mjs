@@ -69,6 +69,54 @@ function validatePinnedFile(value, name, records = false) {
   }
 }
 
+function validateLineage(spec) {
+  if (spec.lineage === undefined) return;
+  const lineage = object(spec.lineage, 'lineage');
+  const fields = [
+    'predecessorJobId', 'predecessorClaimSha256', 'predecessorEnvelopeSha256',
+    'predecessorBridgeRevision', 'predecessorImageId', 'predecessorClaimedAt',
+    'incidentUrl', 'failurePhase', 'successorGeneration', 'automaticRetry',
+    'trainingStarted', 'modelRepositoryCodeImported', 'holdoutsAccessed',
+    'candidateProduced', 'receiptIntentProduced', 'terminalLedgerWritten',
+    'scienceInputsReused',
+  ];
+  const keys = Object.keys(lineage).sort();
+  if (JSON.stringify(keys) !== JSON.stringify([...fields].sort())) {
+    throw new Error('lineage fields must be exact');
+  }
+  if (!JOB.test(lineage.predecessorJobId ?? '') || lineage.predecessorJobId === spec.jobId) {
+    throw new Error('lineage predecessor jobId invalid');
+  }
+  if (!SHA256.test(lineage.predecessorClaimSha256 ?? '') || !SHA256.test(lineage.predecessorEnvelopeSha256 ?? '')) {
+    throw new Error('lineage predecessor digests invalid');
+  }
+  if (!/^[0-9a-f]{40}$/.test(lineage.predecessorBridgeRevision ?? '')
+      || !/^sha256:[0-9a-f]{64}$/.test(lineage.predecessorImageId ?? '')) {
+    throw new Error('lineage predecessor execution identity invalid');
+  }
+  if (!Number.isFinite(new Date(lineage.predecessorClaimedAt).getTime())
+      || !/^https:\/\/github\.com\/szl-holdings\/szl-gpu-bridge\/issues\/[0-9]+#issuecomment-[0-9]+$/.test(lineage.incidentUrl ?? '')) {
+    throw new Error('lineage predecessor evidence invalid');
+  }
+  if (lineage.failurePhase !== 'PRE_TRAINING_RUNTIME_SOURCE_PARSE'
+      || !Number.isInteger(lineage.successorGeneration) || lineage.successorGeneration < 2) {
+    throw new Error('lineage recovery phase invalid');
+  }
+  const boundaries = {
+    automaticRetry: false,
+    trainingStarted: false,
+    modelRepositoryCodeImported: false,
+    holdoutsAccessed: false,
+    candidateProduced: false,
+    receiptIntentProduced: false,
+    terminalLedgerWritten: false,
+    scienceInputsReused: true,
+  };
+  for (const [field, expected] of Object.entries(boundaries)) {
+    if (lineage[field] !== expected) throw new Error(`lineage ${field} boundary invalid`);
+  }
+}
+
 export function validateNemoV3Spec(spec) {
   object(spec, 'spec');
   if (spec.kind !== 'szl-nemo-governed-v3') throw new Error('bad kind');
@@ -76,6 +124,7 @@ export function validateNemoV3Spec(spec) {
   const created = new Date(spec.createdAt).getTime();
   const expires = new Date(spec.expiresAt).getTime();
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
+  validateLineage(spec);
 
   object(spec.source, 'source');
   if (spec.source.repoId !== 'szl-holdings/a11oy' || spec.source.licenseId !== 'apache-2.0' || !/^[0-9a-f]{40}$/.test(spec.source.revision ?? '')) {

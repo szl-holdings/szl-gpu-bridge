@@ -6,6 +6,7 @@ queue envelope, and an optional laptop-signed terminal receipt. It performs no
 training, signing, queue mutation, candidate upload, publication, deployment, or
 promotion. Missing evidence remains an explicit waiting state.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -98,15 +99,45 @@ def signer_canonicalize(value: Any) -> str:
     if isinstance(value, dict):
         if not all(isinstance(key, str) for key in value):
             raise StatusError("jobspec object keys must be strings")
-        return "{" + ",".join(
-            f"{json.dumps(key, ensure_ascii=False)}:{signer_canonicalize(value[key])}"
-            for key in sorted(value)
-        ) + "}"
+        return (
+            "{"
+            + ",".join(
+                f"{json.dumps(key, ensure_ascii=False)}:{signer_canonicalize(value[key])}"
+                for key in sorted(value)
+            )
+            + "}"
+        )
     raise StatusError(f"unsupported jobspec value type {type(value).__name__}")
 
 
-def load_reviewed_spec(root: pathlib.Path = ROOT) -> dict[str, Any]:
-    path = root / SPEC_PATH.relative_to(ROOT)
+def resolve_spec_path(
+    root: pathlib.Path,
+    spec_path: pathlib.Path | str = SPEC_PATH,
+) -> pathlib.Path:
+    candidate = pathlib.Path(spec_path)
+    if candidate.is_absolute():
+        try:
+            candidate = candidate.relative_to(ROOT)
+        except ValueError as exc:
+            raise StatusError(
+                "reviewed spec must be inside the bridge repository"
+            ) from exc
+    resolved_root = root.resolve()
+    resolved = (resolved_root / candidate).resolve()
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError as exc:
+        raise StatusError("reviewed spec path escapes the bridge repository") from exc
+    if resolved.parent.name != "jobspecs":
+        raise StatusError("reviewed spec must be directly under jobspecs/")
+    return resolved
+
+
+def load_reviewed_spec(
+    root: pathlib.Path = ROOT,
+    spec_path: pathlib.Path | str = SPEC_PATH,
+) -> dict[str, Any]:
+    path = resolve_spec_path(root, spec_path)
     value = json.loads(path.read_text(encoding="utf-8"))
     validate_nemo_v3_spec(value)
     return value
@@ -122,7 +153,9 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
         return QueueEvidence(False, False, path.relative_to(root).as_posix())
     try:
         envelope = json.loads(path.read_text(encoding="utf-8"))
-        pin = json.loads((root / "keys" / "engine_pubkey.json").read_text(encoding="utf-8"))
+        pin = json.loads(
+            (root / "keys" / "engine_pubkey.json").read_text(encoding="utf-8")
+        )
         signed_spec, exact_payload, payload_type = verify_envelope(
             envelope,
             pin,
@@ -135,7 +168,9 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
             raise StatusError("signed queue payload differs from the reviewed jobspec")
         canonical = signer_canonicalize(spec).encode("utf-8")
         if exact_payload != canonical:
-            raise StatusError("signed queue bytes are not the canonical reviewed jobspec")
+            raise StatusError(
+                "signed queue bytes are not the canonical reviewed jobspec"
+            )
         return QueueEvidence(
             True,
             True,
@@ -195,7 +230,9 @@ def verify_receipt(
         except StatusError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise StatusError(f"laptop receipt signature verification failed: {exc}") from exc
+            raise StatusError(
+                f"laptop receipt signature verification failed: {exc}"
+            ) from exc
         receipt = json.loads(body)
         if not isinstance(receipt, dict):
             raise StatusError("signed receipt body is not an object")
@@ -208,22 +245,33 @@ def verify_receipt(
         signed_job_sha = receipt.get("signed_job_payload_sha256")
         if signed_job_sha is not None:
             if signed_job_sha != queue.payload_sha256:
-                raise StatusError("receipt does not bind the exact signed queue payload")
+                raise StatusError(
+                    "receipt does not bind the exact signed queue payload"
+                )
             payload_binding = "EXACT_SIGNED_PAYLOAD_SHA256"
 
         kind = receipt.get("kind")
         state = str(receipt.get("state") or receipt.get("verdict") or "UNKNOWN")
         if kind == "szl-nemo-v3-governed-training":
             effects = receipt.get("effects")
-            if not isinstance(effects, dict) or set(effects) != {
-                "candidate_uploaded",
-                "published",
-                "deployed",
-                "promoted",
-            } or any(value is not False for value in effects.values()):
-                raise StatusError("receipt effects do not preserve the no-publication boundary")
+            if (
+                not isinstance(effects, dict)
+                or set(effects)
+                != {
+                    "candidate_uploaded",
+                    "published",
+                    "deployed",
+                    "promoted",
+                }
+                or any(value is not False for value in effects.values())
+            ):
+                raise StatusError(
+                    "receipt effects do not preserve the no-publication boundary"
+                )
             if payload_binding != "EXACT_SIGNED_PAYLOAD_SHA256":
-                raise StatusError("Nemo terminal receipt lacks exact queue payload binding")
+                raise StatusError(
+                    "Nemo terminal receipt lacks exact queue payload binding"
+                )
             if state == "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW":
                 evaluation = receipt.get("evaluation") or {}
                 if (
@@ -233,7 +281,9 @@ def verify_receipt(
                     or evaluation.get("passes") != evaluation.get("rows")
                     or receipt.get("decision") != "SEPARATE_PROMOTION_REVIEW_REQUIRED"
                 ):
-                    raise StatusError("qualified receipt does not prove the preregistered all-pass gate")
+                    raise StatusError(
+                        "qualified receipt does not prove the preregistered all-pass gate"
+                    )
             elif state != "EVALUATION_FAILED_NOT_PROMOTED_NOT_SIGNED":
                 raise StatusError(f"unsupported Nemo terminal state {state!r}")
         elif kind == "szl-frontier-training-blocked":
@@ -310,13 +360,15 @@ def default_receipt_loader(
 def evaluate(
     *,
     root: pathlib.Path = ROOT,
+    spec_path: pathlib.Path | str = SPEC_PATH,
     expected_laptop_key_id: str = "",
     hf_token: str = "",
     receipt_loader: Callable[[dict[str, Any], str], tuple[str, dict[str, Any]] | None]
     | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    spec = load_reviewed_spec(root)
+    reviewed_path = resolve_spec_path(root, spec_path)
+    spec = load_reviewed_spec(root, spec_path)
     queue = verify_queue(spec, root)
     now = now or datetime.now(timezone.utc)
     expires = datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00"))
@@ -345,7 +397,11 @@ def evaluate(
     if queue.present and not queue.valid:
         status = "INVALID_QUEUE_ENVELOPE"
     elif not queue.present:
-        status = "EXPIRED_AWAITING_ENGINE_SIGNATURE" if now > expires else "AWAITING_ENGINE_SIGNATURE"
+        status = (
+            "EXPIRED_AWAITING_ENGINE_SIGNATURE"
+            if now > expires
+            else "AWAITING_ENGINE_SIGNATURE"
+        )
     elif receipt.error and not receipt.present:
         status = "RECEIPT_DISCOVERY_ERROR"
     elif not receipt.present:
@@ -370,8 +426,10 @@ def evaluate(
         "status": status,
         "terminal": terminal,
         "reviewed_spec": {
-            "path": (root / SPEC_PATH.relative_to(ROOT)).relative_to(root).as_posix(),
-            "sha256": hashlib.sha256(signer_canonicalize(spec).encode("utf-8")).hexdigest(),
+            "path": reviewed_path.relative_to(root.resolve()).as_posix(),
+            "sha256": hashlib.sha256(
+                signer_canonicalize(spec).encode("utf-8")
+            ).hexdigest(),
             "source_revision": spec["source"]["revision"],
             "base_repo_id": spec["base"]["repoId"],
             "base_revision": spec["base"]["revision"],
@@ -395,19 +453,32 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", default="reports/nemo-v3-attempt-status.json")
     parser.add_argument(
+        "--spec",
+        default=SPEC_PATH.relative_to(ROOT).as_posix(),
+        help="reviewed jobspec path under jobspecs/",
+    )
+    parser.add_argument(
         "--expect-laptop-keyid",
         default=os.environ.get("SZL_LAPTOP_RECEIPT_KEY_ID") or "",
     )
     args = parser.parse_args()
     report = evaluate(
+        spec_path=args.spec,
         expected_laptop_key_id=args.expect_laptop_keyid,
         hf_token=os.environ.get("HF_TOKEN") or os.environ.get("HF_ORG_TOKEN") or "",
     )
     path = pathlib.Path(args.report)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
-    return 1 if report["status"].startswith("INVALID_") or report["status"] == "RECEIPT_DISCOVERY_ERROR" else 0
+    return (
+        1
+        if report["status"].startswith("INVALID_")
+        or report["status"] == "RECEIPT_DISCOVERY_ERROR"
+        else 0
+    )
 
 
 if __name__ == "__main__":

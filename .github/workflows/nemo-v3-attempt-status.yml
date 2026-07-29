@@ -5,13 +5,17 @@ on:
     branches: [main]
     paths:
       - jobspecs/nemo-v3-20260722-reviewed.json
+      - jobspecs/nemo-v3-20260729-successor-2-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
+      - queue/pending/job-2026-nemo-v3-governed-successor-2.json
+      - schema/nemo-v3-jobspec.v1.json
       - cloud/nemo_v3_status.py
       - cloud/sign-nemo-v3-job.mjs
       - cloud/verify-receipt.mjs
       - laptop/nemo_v3_contract.py
       - laptop/runjob_nemo_v3.py
       - tests/test_reviewed_nemo_v3_spec.py
+      - tests/test_reviewed_nemo_v3_successor_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -35,8 +39,6 @@ env:
   HF_TOKEN: ${{ secrets.HF_TOKEN || secrets.HF_ORG_TOKEN || secrets.HF_ORG_TOKEN1 }}
   GH_TOKEN: ${{ github.token }}
   SZL_LAPTOP_RECEIPT_KEY_ID: ${{ vars.SZL_LAPTOP_RECEIPT_KEY_ID }}
-  REPORT_PATH: reports/nemo-v3-attempt-status.json
-  REPORT_TITLE: '[nemo-v3-attempt] governed single attempt'
 
 jobs:
   status:
@@ -49,6 +51,28 @@ jobs:
        github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - attempt_id: predecessor
+            spec_path: jobspecs/nemo-v3-20260722-reviewed.json
+            report_path: reports/nemo-v3-attempt-status.json
+            report_title: '[nemo-v3-attempt] governed single attempt'
+            report_marker: szl-nemo-v3-governed-attempt
+            report_heading: SZL-Nemo v3 governed single attempt
+          - attempt_id: successor-2
+            spec_path: jobspecs/nemo-v3-20260729-successor-2-reviewed.json
+            report_path: reports/nemo-v3-successor-2-status.json
+            report_title: '[nemo-v3-successor-2] governed successor generation'
+            report_marker: szl-nemo-v3-governed-successor-2
+            report_heading: SZL-Nemo v3 governed successor generation 2
+    env:
+      SPEC_PATH: ${{ matrix.spec_path }}
+      REPORT_PATH: ${{ matrix.report_path }}
+      REPORT_TITLE: ${{ matrix.report_title }}
+      REPORT_MARKER: ${{ matrix.report_marker }}
+      REPORT_HEADING: ${{ matrix.report_heading }}
     steps:
       - name: Checkout the exact protected controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,6 +102,7 @@ jobs:
             laptop/frontier_contract.py \
             laptop/nemo_v3_contract.py \
             tests/test_reviewed_nemo_v3_spec.py \
+            tests/test_reviewed_nemo_v3_successor_spec.py \
             tests/test_nemo_v3_status.py
           python -m unittest discover -s tests -p 'test_*nemo_v3*.py' -v
           node --check cloud/sign-nemo-v3-job.mjs
@@ -89,7 +114,9 @@ jobs:
         shell: bash
         run: |
           set +e
-          python cloud/nemo_v3_status.py --report "$REPORT_PATH"
+          python cloud/nemo_v3_status.py \
+            --spec "$SPEC_PATH" \
+            --report "$REPORT_PATH"
           code=$?
           echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
           exit 0
@@ -98,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nemo-v3-governed-attempt-${{ github.run_id }}
+          name: nemo-v3-${{ matrix.attempt_id }}-${{ github.run_id }}
           path: ${{ env.REPORT_PATH }}
           if-no-files-found: error
           retention-days: 90
@@ -112,12 +139,12 @@ jobs:
           status="$(python -c 'import json,os; print(json.load(open(os.environ["REPORT_PATH"]))["status"])')"
           terminal="$(python -c 'import json,os; print(str(json.load(open(os.environ["REPORT_PATH"]))["terminal"]).lower())')"
           {
-            echo '<!-- szl-nemo-v3-governed-attempt -->'
-            echo '# SZL-Nemo v3 governed single attempt'
+            echo "<!-- ${REPORT_MARKER} -->"
+            echo "# ${REPORT_HEADING}"
             echo
             echo "- Status: **${status}**"
             echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo '- Reviewed spec: `jobspecs/nemo-v3-20260722-reviewed.json`'
+            echo "- Reviewed spec: \`${SPEC_PATH}\`"
             echo '- Queue authorization: pinned engine DSSE only'
             echo '- Receipt authorization: enrolled owner-laptop keyId only'
             echo

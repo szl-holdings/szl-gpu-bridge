@@ -120,7 +120,49 @@
         "requireExactRecordOrder": {"const": true}
       }
     },
-    "notes": {"type": "string"}
+    "notes": {"type": "string"},
+    "lineage": {
+      "type": "object",
+      "required": [
+        "predecessorJobId",
+        "predecessorClaimSha256",
+        "predecessorEnvelopeSha256",
+        "predecessorBridgeRevision",
+        "predecessorImageId",
+        "predecessorClaimedAt",
+        "incidentUrl",
+        "failurePhase",
+        "successorGeneration",
+        "automaticRetry",
+        "trainingStarted",
+        "modelRepositoryCodeImported",
+        "holdoutsAccessed",
+        "candidateProduced",
+        "receiptIntentProduced",
+        "terminalLedgerWritten",
+        "scienceInputsReused"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "predecessorJobId": {"type": "string", "pattern": "^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$"},
+        "predecessorClaimSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "predecessorEnvelopeSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "predecessorBridgeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "predecessorImageId": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "predecessorClaimedAt": {"type": "string", "format": "date-time"},
+        "incidentUrl": {"type": "string", "pattern": "^https://github\\.com/szl-holdings/szl-gpu-bridge/issues/[0-9]+#issuecomment-[0-9]+$"},
+        "failurePhase": {"const": "PRE_TRAINING_RUNTIME_SOURCE_PARSE"},
+        "successorGeneration": {"type": "integer", "minimum": 2},
+        "automaticRetry": {"const": false},
+        "trainingStarted": {"const": false},
+        "modelRepositoryCodeImported": {"const": false},
+        "holdoutsAccessed": {"const": false},
+        "candidateProduced": {"const": false},
+        "receiptIntentProduced": {"const": false},
+        "terminalLedgerWritten": {"const": false},
+        "scienceInputsReused": {"const": true}
+      }
+    }
   },
   "$defs": {
     "pinnedFile": {

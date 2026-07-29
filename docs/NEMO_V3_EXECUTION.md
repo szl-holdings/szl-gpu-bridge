@@ -217,3 +217,26 @@ publication and immutable readback; that later record is not the replay barrier.
 Validation failures before the claim exists do not consume the attempt. An
 unsigned intent, container exit, or interrupted upload after the claim exists
 remains quarantined and still does not authorize a retry.
+
+## 6. Protected successor generation
+
+The consumed predecessor remains immutable and quarantined. Its claim is not
+deleted, renamed, or reused. The separately reviewed successor plaintext is:
+
+```text
+jobspecs/nemo-v3-20260729-successor-2-reviewed.json
+```
+
+Its machine-validated `lineage` binds the predecessor job ID, exact claim and
+queue-envelope digests, bridge revision, image ID, claim time, and incident
+record. It also records that the failure happened during pre-training runtime
+source parsing, before training, model-repository import, holdout access,
+candidate creation, receipt-intent creation, or terminal-ledger publication.
+The scientific inputs remain frozen; the job and candidate identities are new.
+
+This protected plaintext is still not executable. It requires a fresh signature
+from the offline engine key `5c6cf59741ade920`, a new protected queue envelope,
+an exact-main image build and CUDA smoke receipt, authenticated no-code prefetch,
+and the pre-claim exact-container compatibility gate. Absence of the offline
+engine private key is `AWAITING_ENGINE_SIGNATURE`, not permission to replace the
+key, reuse the predecessor envelope, or run the predecessor again.
