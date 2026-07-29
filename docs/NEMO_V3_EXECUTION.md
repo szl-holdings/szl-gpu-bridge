@@ -44,10 +44,13 @@ cannot inspect the receipt store must never report that no receipt exists.
 
 The isolated launcher creates `C:\szl-bridge\control\attempt-claims\<jobId>.json`
 atomically immediately before Docker starts. That durable claim binds the exact
-signed job envelope, bridge revision, image digest, and claim time. Its presence
-is the authoritative one-attempt replay barrier: automatic dispatches fail
-closed and cannot start the GPU job again, even if final receipt upload or
-terminal-ledger publication is interrupted.
+signed job envelope, bridge revision, SHA-256 of the launcher from that clean
+revision, image digest, and claim time. The running PowerShell script must hash
+to the exact launcher in the reviewed bridge source; the digest is reproduced
+inside the signed receipt stack. The claim's presence is the authoritative
+one-attempt replay barrier: automatic dispatches fail closed and cannot start
+the GPU job again, even if final receipt upload or terminal-ledger publication
+is interrupted.
 
 ## 2. Review the exact attempt
 

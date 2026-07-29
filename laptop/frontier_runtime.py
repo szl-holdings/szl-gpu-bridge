@@ -138,6 +138,10 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
     image_revision = os.environ.get("SZL_CONTAINER_IMAGE_REVISION")
     build_receipt_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256")
     dockerfile_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256")
+    launcher_sha256 = os.environ.get("SZL_LAUNCHER_SHA256")
+    if launcher_sha256 and not re.fullmatch(r"[0-9a-f]{64}", launcher_sha256):
+        raise RuntimeError("isolated launcher identity is not immutable")
+    evidence["launcherSha256"] = launcher_sha256 or None
     if image_reference or image_id:
         if not image_reference or not image_id or not image_revision:
             raise RuntimeError("container image evidence is incomplete")

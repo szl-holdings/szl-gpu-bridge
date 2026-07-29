@@ -43,11 +43,22 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertNotIn("[^@\\s]+@", self.source)
         self.assertIn("[ValidatePattern('^[0-9a-f]{40}$')]", self.source)
         self.assertIn("$ObservedRevision -ne $BridgeRevision", self.source)
+        self.assertIn("$PSCommandPath", self.source)
+        self.assertIn("$InvokedLauncherSha256", self.source)
+        self.assertIn("$ApprovedLauncherSha256", self.source)
         self.assertIn(
-            'image inspect --format "{{.Id}}" $Image',
+            "$InvokedLauncherSha256 -ne $ApprovedLauncherSha256",
             self.source,
         )
+        self.assertIn("$ImageMetadataText = & $Docker image inspect $Image", self.source)
+        self.assertIn("$ImageMetadataText | ConvertFrom-Json", self.source)
+        self.assertIn("$ImageMetadata.Count -ne 1", self.source)
         self.assertIn("$ObservedImageId -ne $Image", self.source)
+        self.assertIn(
+            "Config.Labels.'org.opencontainers.image.revision'",
+            self.source,
+        )
+        self.assertNotIn("{{index .Config.Labels", self.source)
         self.assertIn("$ObservedRevisionLabel -ne $BridgeRevision", self.source)
         self.assertIn("$BuildReceipt.imageId -ne $ObservedImageId", self.source)
         self.assertIn(
@@ -55,10 +66,15 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source,
         )
         self.assertIn("imageBuildReceiptSha256 = $ImageBuildReceiptSha256", self.source)
+        self.assertIn("launcherSha256 = $ApprovedLauncherSha256", self.source)
         self.assertIn("observedImageId = $ObservedImageId", self.source)
         self.assertIn('"SZL_CONTAINER_IMAGE_ID=$ObservedImageId"', self.source)
         self.assertIn(
             '"SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"',
+            self.source,
+        )
+        self.assertIn(
+            '"SZL_LAUNCHER_SHA256=$ApprovedLauncherSha256"',
             self.source,
         )
 
@@ -111,6 +127,7 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
     def test_attempt_is_atomically_claimed_before_docker_starts(self) -> None:
         self.assertIn("[System.IO.FileMode]::CreateNew", self.source)
         self.assertIn('"szl-nemo-v3-attempt-claim"', self.source)
+        self.assertIn("v = 2", self.source)
         self.assertIn("jobEnvelopeSha256", self.source)
         self.assertLess(
             self.source.index("[System.IO.FileMode]::CreateNew"),
@@ -129,7 +146,9 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         runtime = (ROOT / "laptop" / "frontier_runtime.py").read_text(encoding="utf-8")
         self.assertIn('"SZL_CONTAINER_IMAGE_REFERENCE"', runtime)
         self.assertIn('"SZL_CONTAINER_IMAGE_ID"', runtime)
+        self.assertIn('"SZL_LAUNCHER_SHA256"', runtime)
         self.assertIn('evidence["containerImage"]', runtime)
+        self.assertIn('evidence["launcherSha256"]', runtime)
 
 
 if __name__ == "__main__":
