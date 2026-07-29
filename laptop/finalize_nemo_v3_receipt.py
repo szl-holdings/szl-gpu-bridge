@@ -127,6 +127,11 @@ def validate_intent(
     )
     if observed_container_image != expected_container_image:
         raise ValueError("receipt container image does not match the trusted claim")
+    observed_launcher_sha256 = (
+        stack.get("launcherSha256") if isinstance(stack, dict) else None
+    )
+    if observed_launcher_sha256 != attempt_claim["launcherSha256"]:
+        raise ValueError("receipt launcher does not match the trusted claim")
     if state == "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW":
         if (
             requested_name != "nemo-v3-qualified.signed.json"
@@ -165,7 +170,7 @@ def validate_attempt_claim(
     claim = json.loads(claim_path.read_text(encoding="utf-8-sig"))
     if (
         claim.get("kind") != "szl-nemo-v3-attempt-claim"
-        or claim.get("v") != 1
+        or claim.get("v") != 2
         or claim.get("jobId") != spec["jobId"]
     ):
         raise ValueError("one-attempt claim contract is invalid")
@@ -181,6 +186,7 @@ def validate_attempt_claim(
     observed_revision_label = claim.get("observedRevisionLabel")
     build_receipt_sha256 = claim.get("imageBuildReceiptSha256")
     dockerfile_sha256 = claim.get("imageDockerfileSha256")
+    launcher_sha256 = claim.get("launcherSha256")
     if (
         not isinstance(bridge_revision, str)
         or len(bridge_revision) != 40
@@ -192,6 +198,11 @@ def validate_attempt_claim(
         or observed_revision_label != bridge_revision
     ):
         raise ValueError("one-attempt claim has no immutable execution identity")
+    if (
+        not isinstance(launcher_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", launcher_sha256) is None
+    ):
+        raise ValueError("one-attempt claim has no approved launcher binding")
     if (
         observed_image_id != training_image
         or not isinstance(build_receipt_sha256, str)

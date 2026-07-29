@@ -209,6 +209,7 @@ class RuntimeEvidenceTests(unittest.TestCase):
                 "SZL_CONTAINER_IMAGE_REVISION": "b" * 40,
                 "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "c" * 64,
                 "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "d" * 64,
+                "SZL_LAUNCHER_SHA256": "e" * 64,
             },
             clear=False,
         ):
@@ -225,6 +226,16 @@ class RuntimeEvidenceTests(unittest.TestCase):
                 },
             },
         )
+        self.assertEqual(evidence["launcherSha256"], "e" * 64)
+
+    def test_stack_fingerprint_refuses_mutable_launcher_identity(self):
+        with mock.patch.dict(
+            "os.environ",
+            {"SZL_LAUNCHER_SHA256": "not-a-digest"},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "launcher identity"):
+                stack_fingerprint(packages=())
 
     def test_stack_fingerprint_refuses_partial_container_identity(self):
         with mock.patch.dict(

@@ -163,6 +163,15 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertTrue(report["queue"]["valid"])
         self.assertEqual(report["queue"]["engine_key_id"], self.engine_key_id)
 
+    def test_valid_queue_without_private_receipt_token_fails_closed(self) -> None:
+        self.enqueue()
+        report = nemo_v3_status.evaluate(root=self.root, now=self.now)
+        self.assertEqual(report["status"], "RECEIPT_DISCOVERY_ERROR")
+        self.assertIn(
+            "HF_TOKEN is required",
+            report["receipt"]["error"],
+        )
+
     def test_valid_but_unenrolled_laptop_receipt_is_not_trusted(self) -> None:
         payload_sha = self.enqueue()
         signed = self.signed_receipt(

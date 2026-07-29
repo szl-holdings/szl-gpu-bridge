@@ -36,12 +36,21 @@ Set the GitHub Actions repository variable `SZL_LAPTOP_RECEIPT_KEY_ID` in `szl-h
 
 Until that variable is enrolled, a mathematically valid receipt is reported as `AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT` and is not trusted as an owner-host result.
 
+Configure the repository Actions secret `HF_TOKEN` with read access to the
+private `SZLHOLDINGS/szl-training-receipts` dataset. The status controller
+fails closed as `RECEIPT_DISCOVERY_ERROR` when the token is missing, invalid,
+or unable to see the authoritative receipt repository. A controller that
+cannot inspect the receipt store must never report that no receipt exists.
+
 The isolated launcher creates `C:\szl-bridge\control\attempt-claims\<jobId>.json`
 atomically immediately before Docker starts. That durable claim binds the exact
-signed job envelope, bridge revision, image digest, and claim time. Its presence
-is the authoritative one-attempt replay barrier: automatic dispatches fail
-closed and cannot start the GPU job again, even if final receipt upload or
-terminal-ledger publication is interrupted.
+signed job envelope, bridge revision, SHA-256 of the launcher from that clean
+revision, image digest, and claim time. The running PowerShell script must hash
+to the exact launcher in the reviewed bridge source; the digest is reproduced
+inside the signed receipt stack. The claim's presence is the authoritative
+one-attempt replay barrier: automatic dispatches fail closed and cannot start
+the GPU job again, even if final receipt upload or terminal-ledger publication
+is interrupted.
 
 ## 2. Review the exact attempt
 
@@ -179,6 +188,7 @@ Possible honest states:
 | State | Meaning |
 |---|---|
 | `AWAITING_ENGINE_SIGNATURE` | Reviewed plaintext spec exists; no executable queue envelope exists. |
+| `RECEIPT_DISCOVERY_ERROR` | The controller could not inspect the authoritative private receipt store; it made no receipt-absence claim and failed closed. |
 | `QUEUED_AWAITING_GPU_RECEIPT` | Engine-signed queue is valid; no terminal owner-host receipt is present. |
 | `AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT` | Receipt signature is valid but the owner-host key ID has not been pinned. |
 | `TERMINAL_FAILURE` | A pinned owner host signed a blocked or failed terminal result. No automatic retry is permitted. |

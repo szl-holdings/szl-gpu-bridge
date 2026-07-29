@@ -28,19 +28,9 @@ if ($env:HF_TOKEN -or $env:HUGGING_FACE_HUB_TOKEN -or $env:GH_TOKEN) {
 
 $Docker = (Get-Command docker.exe -ErrorAction Stop).Source
 $Git = (Get-Command git.exe -ErrorAction Stop).Source
-$ObservedImageId = (& $Docker image inspect --format "{{.Id}}" $Image).Trim()
-if (
-  $LASTEXITCODE -ne 0 -or
-  $ObservedImageId -notmatch '^sha256:[0-9a-f]{64}$'
-) {
-  throw "container image is not locally available by an immutable identifier: $Image"
-}
-if ($ObservedImageId -ne $Image) {
-  throw "local image identifier drifted: $ObservedImageId != $Image"
-}
-$ImageMetadataText = (& $Docker image inspect $ObservedImageId) -join "`n"
+$ImageMetadataText = & $Docker image inspect $Image
 if ($LASTEXITCODE -ne 0) {
-  throw "container image metadata could not be inspected"
+  throw "container image is not locally available by an immutable identifier: $Image"
 }
 try {
   $ImageMetadata = @($ImageMetadataText | ConvertFrom-Json)
@@ -49,6 +39,13 @@ try {
 }
 if ($ImageMetadata.Count -ne 1) {
   throw "container image metadata did not resolve exactly one image"
+}
+$ObservedImageId = [string]$ImageMetadata[0].Id
+if ($ObservedImageId -notmatch '^sha256:[0-9a-f]{64}$') {
+  throw "container image metadata has no immutable identifier"
+}
+if ($ObservedImageId -ne $Image) {
+  throw "local image identifier drifted: $ObservedImageId != $Image"
 }
 $ObservedRevisionLabel = [string](
   $ImageMetadata[0].Config.Labels.'org.opencontainers.image.revision'
@@ -63,6 +60,23 @@ if ($LASTEXITCODE -ne 0 -or $ObservedRevision -ne $BridgeRevision) {
 }
 if (& $Git -C $BridgeSource status --porcelain --untracked-files=no) {
   throw "bridge source has tracked modifications"
+}
+
+$ApprovedLauncher = Join-Path $BridgeSource "laptop\run_nemo_v3_isolated.ps1"
+if (-not (Test-Path -LiteralPath $ApprovedLauncher -PathType Leaf)) {
+  throw "approved isolated launcher is missing: $ApprovedLauncher"
+}
+if (-not $PSCommandPath) {
+  throw "isolated launcher must run from a script file"
+}
+$InvokedLauncherSha256 = (
+  Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256
+).Hash.ToLowerInvariant()
+$ApprovedLauncherSha256 = (
+  Get-FileHash -LiteralPath $ApprovedLauncher -Algorithm SHA256
+).Hash.ToLowerInvariant()
+if ($InvokedLauncherSha256 -ne $ApprovedLauncherSha256) {
+  throw "running launcher does not match the exact approved bridge source"
 }
 
 $Dockerfile = Join-Path $BridgeSource "laptop\Dockerfile.nemo-v3"
@@ -214,12 +228,13 @@ $ClaimedAt = [DateTimeOffset]::UtcNow.ToString("o")
 $ClaimPath = Join-Path $Claims "$JobId.json"
 $Claim = [ordered]@{
   kind = "szl-nemo-v3-attempt-claim"
-  v = 1
+  v = 2
   jobId = $JobId
   jobEnvelopeSha256 = (
     (Get-FileHash -LiteralPath $JobSpec -Algorithm SHA256).Hash.ToLowerInvariant()
   )
   bridgeRevision = $BridgeRevision
+  launcherSha256 = $ApprovedLauncherSha256
   trainingImage = $Image
   observedImageId = $ObservedImageId
   observedRevisionLabel = $ObservedRevisionLabel
@@ -290,7 +305,8 @@ $Arguments = @(
   "--env", "SZL_RECEIPT_TRANSPORT=local-unsigned-outbox",
   "--env", "SZL_EXECUTION_ISOLATION=credentialless-networkless-container",
   "--env", "SZL_CONTAINER_IMAGE_REFERENCE=$Image",
-  "--env", "SZL_CONTAINER_IMAGE_ID=$ObservedImageId"
+  "--env", "SZL_CONTAINER_IMAGE_ID=$ObservedImageId",
+  "--env", "SZL_LAUNCHER_SHA256=$ApprovedLauncherSha256"
 ) + $ImageEvidenceArguments + @(
   "--env", "HF_HUB_OFFLINE=1",
   "--env", "TRANSFORMERS_OFFLINE=1",

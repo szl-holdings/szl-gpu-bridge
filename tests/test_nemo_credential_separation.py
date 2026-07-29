@@ -126,10 +126,11 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             claim_path = root / "claim.json"
             claim = {
                 "kind": "szl-nemo-v3-attempt-claim",
-                "v": 1,
+                "v": 2,
                 "jobId": "job-test",
                 "jobEnvelopeSha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
                 "bridgeRevision": "a" * 40,
+                "launcherSha256": "f" * 64,
                 "trainingImage": "sha256:" + "b" * 64,
                 "observedImageId": "sha256:" + "b" * 64,
                 "observedRevisionLabel": "a" * 40,
@@ -146,8 +147,17 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 spec,
                 now,
             )
+            self.assertEqual(observed, claim)
 
-        self.assertEqual(observed, claim)
+            claim["launcherSha256"] = "mutable"
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "launcher binding"):
+                finalize_nemo_v3_receipt.validate_attempt_claim(
+                    claim_path,
+                    spec_path,
+                    spec,
+                    now,
+                )
 
     def test_attempt_claim_rejects_unapproved_registry_digest(self) -> None:
         now = datetime.now(timezone.utc)
@@ -161,12 +171,13 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 1,
+                        "v": 2,
                         "jobId": "job-test",
                         "jobEnvelopeSha256": hashlib.sha256(
                             spec_path.read_bytes()
                         ).hexdigest(),
                         "bridgeRevision": "a" * 40,
+                        "launcherSha256": "f" * 64,
                         "trainingImage": "registry.example/image@sha256:" + "b" * 64,
                         "observedImageId": "sha256:" + "c" * 64,
                         "observedRevisionLabel": "a" * 40,
@@ -198,12 +209,13 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 1,
+                        "v": 2,
                         "jobId": "job-test",
                         "jobEnvelopeSha256": hashlib.sha256(
                             spec_path.read_bytes()
                         ).hexdigest(),
                         "bridgeRevision": "a" * 40,
+                        "launcherSha256": "f" * 64,
                         "trainingImage": "sha256:" + "b" * 64,
                         "observedImageId": "sha256:" + "b" * 64,
                         "observedRevisionLabel": "a" * 40,
@@ -239,6 +251,7 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             "evaluation": {"requiredPassRate": 1.0},
         }
         claim = {
+            "launcherSha256": "a" * 64,
             "trainingImage": "sha256:" + "c" * 64,
             "observedImageId": "sha256:" + "c" * 64,
             "observedRevisionLabel": "d" * 40,
@@ -259,7 +272,10 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             "training_rights_basis": spec["dataset"]["rightsBasis"],
             "evaluation": {
                 "state": "FAIL",
-                "stack": {"containerImage": container_image},
+                "stack": {
+                    "containerImage": container_image,
+                    "launcherSha256": claim["launcherSha256"],
+                },
             },
             "effects": {
                 "candidate_uploaded": False,
@@ -307,6 +323,21 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     claim,
                 )
 
+            receipt["evaluation"]["stack"]["containerImage"]["id"] = claim[
+                "observedImageId"
+            ]
+            receipt["evaluation"]["stack"]["launcherSha256"] = "0" * 64
+            path.write_text(json.dumps(intent), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "receipt launcher"):
+                finalize_nemo_v3_receipt.validate_intent(
+                    path,
+                    spec,
+                    exact_payload,
+                    now - timedelta(seconds=1),
+                    root,
+                    claim,
+                )
+
     def test_attempt_claim_rejects_a_mutable_training_image(self) -> None:
         now = datetime.now(timezone.utc)
         spec = {"jobId": "job-test"}
@@ -319,12 +350,13 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 1,
+                        "v": 2,
                         "jobId": "job-test",
                         "jobEnvelopeSha256": hashlib.sha256(
                             spec_path.read_bytes()
                         ).hexdigest(),
                         "bridgeRevision": "a" * 40,
+                        "launcherSha256": "f" * 64,
                         "trainingImage": "szl-nemo-v3:local",
                         "observedImageId": "sha256:" + "b" * 64,
                         "observedRevisionLabel": "a" * 40,
@@ -356,10 +388,11 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 1,
+                        "v": 2,
                         "jobId": "job-test",
                         "jobEnvelopeSha256": "0" * 64,
                         "bridgeRevision": "a" * 40,
+                        "launcherSha256": "f" * 64,
                         "trainingImage": "sha256:" + "b" * 64,
                         "observedImageId": "sha256:" + "b" * 64,
                         "observedRevisionLabel": "a" * 40,
