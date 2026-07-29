@@ -20,6 +20,14 @@ const REPO = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const JOB = /^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$/;
 const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9_./-]*$/;
 const HOLDOUT_NAMES = ['original-v2', 'shadow-v2', 'challenge-v3'];
+const OWNER_DISPATCH_FIELDS = [
+  'workflowIdentity', 'workflowBlob', 'workflowVersion', 'trainingImage',
+  'candidateUpload', 'modelCardUpload', 'datasetUpload', 'receiptsRepoId',
+];
+const OWNER_WORKFLOW_IDENTITY = 'szl-holdings/a11oy/.github/workflows/nemo-v3-isolated-owner-dispatch.yml@refs/heads/main';
+const OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v2';
+const OWNER_TRAINING_IMAGE = 'unsloth/unsloth@sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123';
+const OWNER_RECEIPTS_REPO = 'SZLHOLDINGS/szl-training-receipts';
 
 export function canonicalize(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
@@ -117,6 +125,31 @@ function validateLineage(spec) {
   }
 }
 
+function validateOwnerDispatch(spec) {
+  if (spec.ownerDispatch === undefined) return;
+  const dispatch = object(spec.ownerDispatch, 'ownerDispatch');
+  const keys = Object.keys(dispatch).sort();
+  if (JSON.stringify(keys) !== JSON.stringify([...OWNER_DISPATCH_FIELDS].sort())) {
+    throw new Error('ownerDispatch fields must be exact');
+  }
+  if (dispatch.workflowIdentity !== OWNER_WORKFLOW_IDENTITY
+      || dispatch.workflowVersion !== OWNER_WORKFLOW_VERSION) {
+    throw new Error('ownerDispatch workflow identity is not admitted');
+  }
+  if (!/^[0-9a-f]{40}$/.test(dispatch.workflowBlob ?? '')) {
+    throw new Error('ownerDispatch workflowBlob must be an exact git blob');
+  }
+  if (dispatch.trainingImage !== OWNER_TRAINING_IMAGE) {
+    throw new Error('ownerDispatch training image is not admitted');
+  }
+  for (const field of ['candidateUpload', 'modelCardUpload', 'datasetUpload']) {
+    if (dispatch[field] !== false) throw new Error(`ownerDispatch ${field} must remain false`);
+  }
+  if (dispatch.receiptsRepoId !== OWNER_RECEIPTS_REPO) {
+    throw new Error('ownerDispatch receipts repository is not admitted');
+  }
+}
+
 export function validateNemoV3Spec(spec) {
   object(spec, 'spec');
   if (spec.kind !== 'szl-nemo-governed-v3') throw new Error('bad kind');
@@ -125,6 +158,7 @@ export function validateNemoV3Spec(spec) {
   const expires = new Date(spec.expiresAt).getTime();
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
   validateLineage(spec);
+  validateOwnerDispatch(spec);
 
   object(spec.source, 'source');
   if (spec.source.repoId !== 'szl-holdings/a11oy' || spec.source.licenseId !== 'apache-2.0' || !/^[0-9a-f]{40}$/.test(spec.source.revision ?? '')) {

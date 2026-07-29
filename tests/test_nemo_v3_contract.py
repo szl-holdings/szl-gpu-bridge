@@ -110,6 +110,25 @@ def valid_spec():
     }
 
 
+def owner_dispatch():
+    return {
+        "workflowIdentity": (
+            "szl-holdings/a11oy/.github/workflows/"
+            "nemo-v3-isolated-owner-dispatch.yml@refs/heads/main"
+        ),
+        "workflowBlob": "7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33",
+        "workflowVersion": "nemo-v3-owner-dispatch.v2",
+        "trainingImage": (
+            "unsloth/unsloth@sha256:"
+            "9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123"
+        ),
+        "candidateUpload": False,
+        "modelCardUpload": False,
+        "datasetUpload": False,
+        "receiptsRepoId": "SZLHOLDINGS/szl-training-receipts",
+    }
+
+
 class NemoV3ContractTests(unittest.TestCase):
     def test_valid_contract(self):
         spec = valid_spec()
@@ -148,6 +167,28 @@ class NemoV3ContractTests(unittest.TestCase):
         spec["source"]["revision"] = "main"
         with self.assertRaisesRegex(ContractError, "40"):
             validate_nemo_v3_spec(spec)
+
+    def test_owner_dispatch_is_exact_and_receipt_only(self):
+        spec = valid_spec()
+        spec["jobId"] = "job-2026-nemo-v3-governed-attempt-2"
+        spec["ownerDispatch"] = owner_dispatch()
+        self.assertIs(validate_nemo_v3_spec(spec), spec)
+
+        for field in ("candidateUpload", "modelCardUpload", "datasetUpload"):
+            widened = json.loads(json.dumps(spec))
+            widened["ownerDispatch"][field] = True
+            with self.assertRaisesRegex(ContractError, field):
+                validate_nemo_v3_spec(widened)
+
+        mutable_image = json.loads(json.dumps(spec))
+        mutable_image["ownerDispatch"]["trainingImage"] = "unsloth/unsloth:latest"
+        with self.assertRaisesRegex(ContractError, "training image"):
+            validate_nemo_v3_spec(mutable_image)
+
+        extra = json.loads(json.dumps(spec))
+        extra["ownerDispatch"]["unreviewed"] = False
+        with self.assertRaisesRegex(ContractError, "unsupported fields"):
+            validate_nemo_v3_spec(extra)
 
     def test_exact_dsse_bytes_verify_and_tamper_fails(self):
         try:

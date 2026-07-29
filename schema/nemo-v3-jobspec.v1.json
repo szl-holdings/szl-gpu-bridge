@@ -120,6 +120,30 @@
         "requireExactRecordOrder": {"const": true}
       }
     },
+    "ownerDispatch": {
+      "type": "object",
+      "required": [
+        "workflowIdentity",
+        "workflowBlob",
+        "workflowVersion",
+        "trainingImage",
+        "candidateUpload",
+        "modelCardUpload",
+        "datasetUpload",
+        "receiptsRepoId"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "workflowIdentity": {"const": "szl-holdings/a11oy/.github/workflows/nemo-v3-isolated-owner-dispatch.yml@refs/heads/main"},
+        "workflowBlob": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "workflowVersion": {"const": "nemo-v3-owner-dispatch.v2"},
+        "trainingImage": {"const": "unsloth/unsloth@sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123"},
+        "candidateUpload": {"const": false},
+        "modelCardUpload": {"const": false},
+        "datasetUpload": {"const": false},
+        "receiptsRepoId": {"const": "SZLHOLDINGS/szl-training-receipts"}
+      }
+    },
     "notes": {"type": "string"},
     "lineage": {
       "type": "object",

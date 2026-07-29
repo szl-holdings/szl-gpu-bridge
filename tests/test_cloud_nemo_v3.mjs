@@ -67,6 +67,19 @@ function spec() {
   };
 }
 
+function ownerDispatch() {
+  return {
+    workflowIdentity: 'szl-holdings/a11oy/.github/workflows/nemo-v3-isolated-owner-dispatch.yml@refs/heads/main',
+    workflowBlob: '7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33',
+    workflowVersion: 'nemo-v3-owner-dispatch.v2',
+    trainingImage: `unsloth/unsloth@sha256:${'9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123'}`,
+    candidateUpload: false,
+    modelCardUpload: false,
+    datasetUpload: false,
+    receiptsRepoId: 'SZLHOLDINGS/szl-training-receipts',
+  };
+}
+
 test('Nemo v3 signer selects the dedicated payload type', () => {
   assert.equal(validateNemoV3Spec(spec()), NEMO_V3_PAYLOAD_TYPE);
 });
@@ -108,6 +121,25 @@ test('Nemo v3 successor requires fail-closed predecessor lineage', () => {
   assert.equal(validateNemoV3Spec(successor), NEMO_V3_PAYLOAD_TYPE);
   successor.lineage.automaticRetry = true;
   assert.throws(() => validateNemoV3Spec(successor), /automaticRetry/);
+});
+
+test('Nemo v3 owner dispatch binds exact workflow and receipt-only effects', () => {
+  const attempt = spec();
+  attempt.jobId = 'job-2026-nemo-v3-governed-attempt-2';
+  attempt.ownerDispatch = ownerDispatch();
+  assert.equal(validateNemoV3Spec(attempt), NEMO_V3_PAYLOAD_TYPE);
+
+  for (const field of ['candidateUpload', 'modelCardUpload', 'datasetUpload']) {
+    const widened = structuredClone(attempt);
+    widened.ownerDispatch[field] = true;
+    assert.throws(() => validateNemoV3Spec(widened), new RegExp(field));
+  }
+  const mutableImage = structuredClone(attempt);
+  mutableImage.ownerDispatch.trainingImage = 'unsloth/unsloth:latest';
+  assert.throws(() => validateNemoV3Spec(mutableImage), /training image/);
+  const extra = structuredClone(attempt);
+  extra.ownerDispatch.unreviewed = false;
+  assert.throws(() => validateNemoV3Spec(extra), /fields must be exact/);
 });
 
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {

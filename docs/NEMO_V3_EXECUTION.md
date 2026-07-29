@@ -240,3 +240,22 @@ an exact-main image build and CUDA smoke receipt, authenticated no-code prefetch
 and the pre-claim exact-container compatibility gate. Absence of the offline
 engine private key is `AWAITING_ENGINE_SIGNATURE`, not permission to replace the
 key, reuse the predecessor envelope, or run the predecessor again.
+
+## 7. Protected owner-dispatch attempt 2
+
+The A11oy owner-dispatch v2 contract admits a distinct new attempt identity:
+
+```text
+jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
+```
+
+That reviewed plaintext binds protected A11oy source
+`b21b8fb65400e7eb39595365c5f54c80ed78aa67`, workflow blob
+`7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33`, the immutable training image,
+the exact receipt repository, and disabled candidate, model-card, and dataset
+uploads. It preserves the frozen science inputs and the quarantined predecessor
+lineage.
+
+The file is not an executable job. No `queue/pending/` envelope exists for this
+identity until a separate protected publication review authorizes a fresh
+offline engine signature.

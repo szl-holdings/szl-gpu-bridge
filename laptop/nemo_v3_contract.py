@@ -24,6 +24,17 @@ _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _JOB = re.compile(r"^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _HOLDOUT_NAMES = ("original-v2", "shadow-v2", "challenge-v3")
+_OWNER_WORKFLOW_IDENTITY = (
+    "szl-holdings/a11oy/"
+    ".github/workflows/nemo-v3-isolated-owner-dispatch.yml"
+    "@refs/heads/main"
+)
+_OWNER_WORKFLOW_VERSION = "nemo-v3-owner-dispatch.v2"
+_OWNER_TRAINING_IMAGE = (
+    "unsloth/unsloth@"
+    "sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123"
+)
+_OWNER_RECEIPTS_REPO = "SZLHOLDINGS/szl-training-receipts"
 _ALLOWED_TOP = {
     "jobId",
     "kind",
@@ -38,6 +49,7 @@ _ALLOWED_TOP = {
     "evaluation",
     "notes",
     "lineage",
+    "ownerDispatch",
 }
 
 
@@ -139,7 +151,7 @@ def _pinned_file(
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ContractError("Nemo v3 spec must be an object")
-    required = _ALLOWED_TOP - {"notes", "lineage"}
+    required = _ALLOWED_TOP - {"notes", "lineage", "ownerDispatch"}
     missing = required - spec.keys()
     extra = spec.keys() - _ALLOWED_TOP
     if missing:
@@ -154,6 +166,41 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     expires = _timestamp(spec.get("expiresAt"), "expiresAt")
     if expires <= created:
         raise ContractError("expiresAt must be later than createdAt")
+
+    if "ownerDispatch" in spec:
+        owner_fields = {
+            "workflowIdentity",
+            "workflowBlob",
+            "workflowVersion",
+            "trainingImage",
+            "candidateUpload",
+            "modelCardUpload",
+            "datasetUpload",
+            "receiptsRepoId",
+        }
+        owner_dispatch = _object(
+            spec,
+            "ownerDispatch",
+            owner_fields,
+            owner_fields,
+        )
+        if (
+            owner_dispatch["workflowIdentity"] != _OWNER_WORKFLOW_IDENTITY
+            or owner_dispatch["workflowVersion"] != _OWNER_WORKFLOW_VERSION
+        ):
+            raise ContractError("ownerDispatch workflow identity is not admitted")
+        _revision(
+            owner_dispatch["workflowBlob"],
+            "ownerDispatch.workflowBlob",
+            exact40=True,
+        )
+        if owner_dispatch["trainingImage"] != _OWNER_TRAINING_IMAGE:
+            raise ContractError("ownerDispatch training image is not admitted")
+        for field in ("candidateUpload", "modelCardUpload", "datasetUpload"):
+            if owner_dispatch[field] is not False:
+                raise ContractError(f"ownerDispatch.{field} must remain false")
+        if owner_dispatch["receiptsRepoId"] != _OWNER_RECEIPTS_REPO:
+            raise ContractError("ownerDispatch receipts repository is not admitted")
 
     if "lineage" in spec:
         lineage_fields = {
