@@ -267,11 +267,14 @@ def model_card(
     heldout_loss = eval_metrics.get("heldOutLoss")
     yaml_loss = "null" if heldout_loss is None else str(heldout_loss)
     artifact_digest = manifest_digest(artifacts)
+    checkpoint_bucket = ""
+    if spec["outputs"].get("checkpointBucketId"):
+        checkpoint_bucket = f"buckets:\n- {spec['outputs']['checkpointBucketId']}\n"
     return f"""---
 base_model: {spec["base"]["repoId"]}
 datasets:
 - {spec["dataset"]["repoId"]}
-{f"buckets:\n- {spec['outputs']['checkpointBucketId']}\n" if spec["outputs"].get("checkpointBucketId") else ""}library_name: peft
+{checkpoint_bucket}library_name: peft
 license: {spec["base"]["licenseId"]}
 pipeline_tag: text-generation
 tags:
