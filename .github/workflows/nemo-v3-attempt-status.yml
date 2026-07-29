@@ -6,8 +6,10 @@ on:
     paths:
       - jobspecs/nemo-v3-20260722-reviewed.json
       - jobspecs/nemo-v3-20260729-successor-2-reviewed.json
+      - jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-2.json
       - schema/nemo-v3-jobspec.v1.json
       - cloud/nemo_v3_status.py
       - cloud/sign-nemo-v3-job.mjs
@@ -16,6 +18,7 @@ on:
       - laptop/runjob_nemo_v3.py
       - tests/test_reviewed_nemo_v3_spec.py
       - tests/test_reviewed_nemo_v3_successor_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_2_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -57,6 +60,12 @@ jobs:
             report_title: '[nemo-v3-successor-2] governed successor generation'
             report_marker: szl-nemo-v3-governed-successor-2
             report_heading: SZL-Nemo v3 governed successor generation 2
+          - attempt_id: attempt-2-b21
+            spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
+            report_path: reports/nemo-v3-attempt-2-b21-status.json
+            report_title: '[nemo-v3-attempt-2-b21] governed owner-dispatch attempt'
+            report_marker: szl-nemo-v3-governed-attempt-2-b21
+            report_heading: SZL-Nemo v3 governed attempt 2 for A11oy b21b8fb65400
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}
@@ -93,6 +102,7 @@ jobs:
             laptop/nemo_v3_contract.py \
             tests/test_reviewed_nemo_v3_spec.py \
             tests/test_reviewed_nemo_v3_successor_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_2_spec.py \
             tests/test_nemo_v3_status.py
           python -m unittest discover -s tests -p 'test_*nemo_v3*.py' -v
           node --check cloud/sign-nemo-v3-job.mjs
