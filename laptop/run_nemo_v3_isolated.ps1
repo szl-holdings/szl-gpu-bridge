@@ -207,6 +207,34 @@ Copy-Item `
   -LiteralPath $EngineKey `
   -Destination (Join-Path $SandboxSource "keys\engine_pubkey.json")
 
+# Prove that the exact copied source parses under the immutable training
+# image interpreter before consuming the one-attempt claim. Hosted CI also
+# compiles on Python 3.11, but this gate binds compatibility to the exact
+# container image and exact source bytes selected for this execution.
+$CompatibilityArguments = @(
+  "run",
+  "--rm",
+  "--network", "none",
+  "--read-only",
+  "--cap-drop", "ALL",
+  "--security-opt", "no-new-privileges:true",
+  "--pids-limit", "256",
+  "--mount", "type=bind,src=$SandboxSource,dst=/bridge,readonly",
+  "--tmpfs", "/tmp:rw,noexec,nosuid,size=67108864",
+  "--env", "PYTHONPYCACHEPREFIX=/tmp/pycache",
+  "--entrypoint", "python",
+  $ObservedImageId,
+  "-m", "compileall", "-q", "-f", "/bridge"
+)
+& $Docker @CompatibilityArguments
+$CompatibilityExitCode = $LASTEXITCODE
+if ($CompatibilityExitCode -ne 0) {
+  throw (
+    "container-runtime source compatibility gate failed with exit code " +
+    "$CompatibilityExitCode before the one-attempt claim"
+  )
+}
+
 $Ledger = Join-Path $Jobs "seen.txt"
 if (Test-Path -LiteralPath $Ledger -PathType Leaf) {
   $Seen = @(
