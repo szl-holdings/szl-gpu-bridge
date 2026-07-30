@@ -34,8 +34,14 @@ from frontier_contract import (  # noqa: E402
     verify_envelope,
 )
 from nemo_v3_contract import (  # noqa: E402
+    COORDINATED_ENGINE_KEY_ID,
+    COORDINATED_ENGINE_SPKI_SHA256,
+    NEXT_REVIEWED_JOB_ID,
     NEMO_V3_PAYLOAD_TYPE,
+    SETTLED_A11OY_SOURCE_REVISION,
+    SETTLED_OWNER_WORKFLOW_BLOB,
     expected_engine_key_id,
+    quarantine_policy,
     validate_nemo_v3_spec,
 )
 
@@ -68,6 +74,15 @@ class ReceiptEvidence:
     body_sha256: str | None = None
     state: str | None = None
     payload_binding: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class QuarantineEvidence:
+    present: bool
+    valid: bool
+    path: str | None = None
+    statuses: tuple[str, ...] = ()
     error: str | None = None
 
 
@@ -174,12 +189,9 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
         if signed_spec != spec:
             raise StatusError("signed queue payload differs from the reviewed jobspec")
         if (
-            (
-                "authorization" in signed_spec
-                or (root / "keys" / "engine_keyring.json").is_file()
-            )
-            and pin.get("keyId") != expected_engine_key_id(signed_spec)
-        ):
+            "authorization" in signed_spec
+            or (root / "keys" / "engine_keyring.json").is_file()
+        ) and pin.get("keyId") != expected_engine_key_id(signed_spec):
             raise StatusError("signed queue uses the wrong engine authorization key")
         canonical = signer_canonicalize(spec).encode("utf-8")
         if exact_payload != canonical:
@@ -198,6 +210,96 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
             True,
             False,
             path.relative_to(root).as_posix(),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
+def verify_quarantine(
+    spec: dict[str, Any],
+    queue: QueueEvidence,
+    root: pathlib.Path = ROOT,
+) -> QuarantineEvidence:
+    policy = quarantine_policy(spec)
+    path = root / "queue" / "quarantine" / f"{spec['jobId']}.json"
+    if policy is None:
+        if path.is_file():
+            return QuarantineEvidence(
+                True,
+                False,
+                path.relative_to(root).as_posix(),
+                error="unexpected quarantine record for dispatchable job",
+            )
+        return QuarantineEvidence(False, False)
+    if not path.is_file():
+        return QuarantineEvidence(
+            False,
+            False,
+            error="required immutable quarantine record is missing",
+        )
+
+    relative = path.relative_to(root).as_posix()
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        required = {
+            "kind",
+            "v",
+            "jobId",
+            "recordedAt",
+            "status",
+            "queuePath",
+            "queueFileSha256",
+            "signedPayloadSha256",
+            "engineKeyId",
+            "sourceRevision",
+            "preserveEnvelope",
+            "dispatchAuthorized",
+            "replacement",
+            "reason",
+        }
+        statuses = tuple(policy["statuses"])
+        expected_queue_path = f"queue/pending/{spec['jobId']}.json"
+        queue_file = root / expected_queue_path
+        replacement = record.get("replacement")
+        expected_replacement = {
+            "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
+            "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
+            "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+            "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+            "reviewedJobId": NEXT_REVIEWED_JOB_ID,
+        }
+        if (
+            not isinstance(record, dict)
+            or set(record) != required
+            or record.get("kind") != "szl-nemo-v3-queue-quarantine"
+            or record.get("v") != 1
+            or record.get("jobId") != spec["jobId"]
+            or tuple(record.get("status") or ()) != statuses
+            or record.get("queuePath") != expected_queue_path
+            or not queue_file.is_file()
+            or record.get("queueFileSha256")
+            != hashlib.sha256(queue_file.read_bytes()).hexdigest()
+            or record.get("queueFileSha256") != policy["queue_file_sha256"]
+            or not queue.valid
+            or record.get("signedPayloadSha256") != queue.payload_sha256
+            or record.get("signedPayloadSha256") != policy["payload_sha256"]
+            or record.get("engineKeyId") != policy["engine_key_id"]
+            or record.get("engineKeyId") != queue.engine_key_id
+            or record.get("sourceRevision") != policy["source_revision"]
+            or record.get("sourceRevision") != spec["source"]["revision"]
+            or record.get("preserveEnvelope") is not True
+            or record.get("dispatchAuthorized") is not False
+            or replacement != expected_replacement
+            or not isinstance(record.get("reason"), str)
+            or not record["reason"].strip()
+        ):
+            raise StatusError("quarantine record does not bind immutable evidence")
+        datetime.fromisoformat(str(record["recordedAt"]).replace("Z", "+00:00"))
+        return QuarantineEvidence(True, True, relative, statuses)
+    except Exception as exc:  # noqa: BLE001
+        return QuarantineEvidence(
+            True,
+            False,
+            relative,
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -385,12 +487,14 @@ def evaluate(
     reviewed_path = resolve_spec_path(root, spec_path)
     spec = load_reviewed_spec(root, spec_path)
     queue = verify_queue(spec, root)
+    policy = quarantine_policy(spec)
+    quarantine = verify_quarantine(spec, queue, root)
     now = now or datetime.now(timezone.utc)
     expires = datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00"))
     loader = receipt_loader or default_receipt_loader
 
     receipt = ReceiptEvidence(False, False)
-    if queue.valid:
+    if queue.valid and policy is None:
         try:
             loaded = loader(spec, hf_token)
         except Exception as exc:  # noqa: BLE001
@@ -409,7 +513,11 @@ def evaluate(
                     path=loaded[0],
                 )
 
-    if queue.present and not queue.valid:
+    if policy is not None and not quarantine.valid:
+        status = "INVALID_QUARANTINE_RECORD"
+    elif quarantine.valid:
+        status = "QUARANTINED_NEVER_DISPATCH"
+    elif queue.present and not queue.valid:
         status = "INVALID_QUEUE_ENVELOPE"
     elif not queue.present:
         status = (
@@ -431,6 +539,7 @@ def evaluate(
         status = "TERMINAL_FAILURE"
 
     terminal = status in {
+        "QUARANTINED_NEVER_DISPATCH",
         "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW",
         "TERMINAL_FAILURE",
     }
@@ -452,11 +561,13 @@ def evaluate(
             "candidate_publication_enabled": spec["outputs"]["publishCandidate"],
         },
         "queue": asdict(queue),
+        "quarantine": asdict(quarantine),
         "receipt": asdict(receipt),
         "boundaries": [
             "This controller performs no training, signing, queue mutation, candidate upload, publication, deployment, or promotion.",
             "A plaintext reviewed jobspec is not executable; only the pinned engine key can authorize a queue envelope.",
             "A laptop receipt is not trusted until its derived keyId matches the explicitly enrolled owner-host keyId.",
+            "A valid quarantine record preserves its signed envelope as evidence and is never dispatch authority.",
             "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW is not a release or deployment claim.",
             "Receipts are attestations and not cryptographic proof of computation.",
         ],

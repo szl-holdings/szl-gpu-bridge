@@ -8,6 +8,10 @@
     },
     "815714c8d4ae3e4d": {
       "file": "engine_pubkey_815714c8d4ae3e4d.json",
+      "status": "VERIFY_ONLY"
+    },
+    "b8041281c81c4caa": {
+      "file": "engine_pubkey_b8041281c81c4caa.json",
       "status": "ACTIVE"
     }
   }

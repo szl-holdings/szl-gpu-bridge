@@ -61,6 +61,39 @@ Set-Content `
   -Path "$Root\keys\engine_pubkey_815714c8d4ae3e4d.json" `
   -Value $RecoveryEnginePin `
   -Encoding utf8
+$CoordinatedEnginePin = @'
+{
+  "kind": "szl-quant-engine-pubkey",
+  "keyId": "b8041281c81c4caa",
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEAstuDm9wVQ7BrOuBRmIyEHsOtyOutChFfRvCDenCDB6c="
+}
+'@
+$CoordinatedPinObj = $CoordinatedEnginePin | ConvertFrom-Json
+$CoordinatedSpkiBytes = [Convert]::FromBase64String(
+  $CoordinatedPinObj.publicKeySpkiBase64
+)
+$CoordinatedSha = [System.Security.Cryptography.SHA256]::Create()
+$CoordinatedFullSha = (
+  (
+    $CoordinatedSha.ComputeHash($CoordinatedSpkiBytes) |
+      ForEach-Object { $_.ToString("x2") }
+  ) -join ""
+)
+$ExpectedCoordinatedSpkiSha256 = (
+  "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf"
+)
+$CoordinatedDerivedKeyId = $CoordinatedFullSha.Substring(0, 16)
+if (
+  ($CoordinatedDerivedKeyId -ne $CoordinatedPinObj.keyId) -or
+  ($CoordinatedFullSha -ne $ExpectedCoordinatedSpkiSha256)
+) {
+  Write-Host "FATAL: coordinated engine pubkey self-check failed." -ForegroundColor Red
+  exit 1
+}
+Set-Content `
+  -Path "$Root\keys\engine_pubkey_b8041281c81c4caa.json" `
+  -Value $CoordinatedEnginePin `
+  -Encoding utf8
 $EngineKeyring = @'
 {
   "kind": "szl-quant-engine-keyring",
@@ -72,6 +105,10 @@ $EngineKeyring = @'
     },
     "815714c8d4ae3e4d": {
       "file": "engine_pubkey_815714c8d4ae3e4d.json",
+      "status": "VERIFY_ONLY"
+    },
+    "b8041281c81c4caa": {
+      "file": "engine_pubkey_b8041281c81c4caa.json",
       "status": "ACTIVE"
     }
   }
@@ -81,7 +118,9 @@ Set-Content `
   -Path "$Root\keys\engine_keyring.json" `
   -Value $EngineKeyring `
   -Encoding utf8
-Write-Host "recovery engine pubkey pinned (keyId $RecoveryDerivedKeyId)"
+Write-Host "legacy engine pubkey retained verification-only (keyId $DerivedKeyId)"
+Write-Host "provisional engine pubkey retained verification-only (keyId $RecoveryDerivedKeyId)"
+Write-Host "coordinated administrative recovery key active (keyId $CoordinatedDerivedKeyId; no predecessor cryptographic continuity claimed)"
 
 # ---- 2. constrained training stack + exact installed snapshot ---------------
 $CondaBase = "$env:USERPROFILE\miniconda3"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import pathlib
 import sys
@@ -12,7 +13,11 @@ sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
 
 import nemo_v3_status  # noqa: E402
-from nemo_v3_contract import validate_nemo_v3_spec  # noqa: E402
+from frontier_contract import ContractError  # noqa: E402
+from nemo_v3_contract import (  # noqa: E402
+    require_nemo_v3_dispatchable,
+    validate_nemo_v3_spec,
+)
 
 
 SUCCESSOR_2_PATH = ROOT / "jobspecs" / "nemo-v3-20260729-successor-2-reviewed.json"
@@ -66,15 +71,15 @@ class ReviewedNemoV3Successor3SpecTests(unittest.TestCase):
         self.assertEqual(self.successor_3["lineage"]["successorGeneration"], 3)
         self.assertFalse(self.successor_3["lineage"]["automaticRetry"])
 
-    def test_signed_queue_uses_exact_enrolled_recovery_key(self) -> None:
+    def test_signed_queue_is_preserved_under_exact_quarantine(self) -> None:
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=SUCCESSOR_3_PATH,
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 30, 16, 0, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["valid"])
         self.assertEqual(
             report["queue"]["engine_key_id"],
@@ -84,6 +89,24 @@ class ReviewedNemoV3Successor3SpecTests(unittest.TestCase):
             report["queue"]["payload_sha256"],
             "f20bf865dca5413262e5fd3733df112486aec72bb9b47932083ffecb2470a415",
         )
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
+        self.assertEqual(
+            report["quarantine"]["statuses"],
+            (
+                "UNAUTHORIZED_PROVISIONAL_KEY",
+                "STALE_SOURCE",
+                "NEVER_DISPATCH",
+            ),
+        )
+        envelope = (
+            ROOT / "queue" / "pending" / "job-2026-nemo-v3-governed-successor-3.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(envelope.read_bytes()).hexdigest(),
+            "bb624d301f23552617566f57167a12360bbba27afebee086a8262b1be7ee6eaa",
+        )
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.successor_3)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,36 @@ class EngineKeyringTests(unittest.TestCase):
                 self.envelope(self.pins["new"]["keyId"]),
             )
 
+    def test_repository_keyring_has_one_exact_active_administrative_key(self) -> None:
+        keyring = json.loads(
+            (ROOT / "keys" / "engine_keyring.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            {key_id: entry["status"] for key_id, entry in keyring["keys"].items()},
+            {
+                "5c6cf59741ade920": "VERIFY_ONLY",
+                "815714c8d4ae3e4d": "VERIFY_ONLY",
+                "b8041281c81c4caa": "ACTIVE",
+            },
+        )
+        active = [
+            key_id
+            for key_id, entry in keyring["keys"].items()
+            if entry["status"] == "ACTIVE"
+        ]
+        self.assertEqual(active, ["b8041281c81c4caa"])
+        selected = load_engine_pin_for_envelope(
+            ROOT / "keys",
+            self.envelope("b8041281c81c4caa"),
+            require_active=True,
+        )
+        spki = base64.b64decode(selected["publicKeySpkiBase64"], validate=True)
+        self.assertEqual(derive_key_id(spki), "b8041281c81c4caa")
+        self.assertIn(
+            "No cryptographic continuity",
+            str(selected.get("note")),
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

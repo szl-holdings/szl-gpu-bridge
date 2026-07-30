@@ -1,0 +1,26 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-2",
+  "recordedAt": "2026-07-30T16:41:00Z",
+  "status": [
+    "STALE_SOURCE",
+    "RETIRED_KEY",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-2.json",
+  "queueFileSha256": "e74ecaea040c2abb52a5613c32e0648994f96ff39910c70e1fcc3e23fc053724",
+  "signedPayloadSha256": "84a808615ba1693935eee8cc9fa1a4c5a83d119b79ad7e9437380ec73756b90d",
+  "engineKeyId": "5c6cf59741ade920",
+  "sourceRevision": "b21b8fb65400e7eb39595365c5f54c80ed78aa67",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "5f98d90a42e021cf29948457a2404a159f236487",
+    "workflowBlob": "7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-4"
+  },
+  "reason": "Attempt 2 was signed for protected A11oy source b21b8fb65400e7eb39595365c5f54c80ed78aa67 under a now verification-only engine key. Its exact reviewed spec and DSSE envelope remain immutable historical evidence but are never execution authority."
+}

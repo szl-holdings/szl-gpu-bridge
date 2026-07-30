@@ -8,7 +8,10 @@ The repository already contains the reviewed plaintext job at:
 jobspecs/nemo-v3-20260722-reviewed.json
 ```
 
-A plaintext jobspec is **not executable**. The bridge accepts only a DSSE envelope signed by the private key corresponding to the pinned engine key `5c6cf59741ade920`.
+A plaintext jobspec is **not executable**. The bridge accepts only a DSSE
+envelope signed by a private key corresponding to the sole `ACTIVE` entry in
+the reviewed engine keyring. Historical public pins remain available only to
+verify immutable evidence.
 
 ## 1. Install or refresh the owner GPU bridge
 
@@ -256,11 +259,15 @@ the exact receipt repository, and disabled candidate, model-card, and dataset
 uploads. It preserves the frozen science inputs and the quarantined predecessor
 lineage.
 
-The file is not an executable job. No `queue/pending/` envelope exists for this
-identity until a separate protected publication review authorizes a fresh
-offline engine signature.
+Its exact queue envelope exists as immutable historical evidence, but its
+source did not become the settled A11oy release and its signing key is now
+verification-only. The record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json` binds the exact
+envelope and payload digests and marks it
+`STALE_SOURCE + RETIRED_KEY + NEVER_DISPATCH`. It must never be consumed,
+deleted, rewritten, re-signed, or retried.
 
-## 8. Engine-key recovery generation
+## 8. Quarantined provisional recovery generation
 
 Issue `https://github.com/szl-holdings/szl-gpu-bridge/issues/25` records that
 the private material for historical engine key `5c6cf59741ade920` is
@@ -274,21 +281,19 @@ jobspecs/nemo-v3-20260730-successor-3-reviewed.json
 queue/pending/job-2026-nemo-v3-governed-successor-3.json
 ```
 
-Its `authorization` object binds the recorded recovery issue, the old and new
-key IDs, the recovery mode, and the owner decision time. The queue envelope is
-signed by active key `815714c8d4ae3e4d`; every verifier resolves the envelope
-signature key ID through `keys/engine_keyring.json` before trusting payload
-fields. The new generation retains the exact predecessor lineage and frozen
-science inputs but has new job and candidate identities.
+Its exact queue envelope is preserved as historical evidence, but key
+`815714c8d4ae3e4d` was provisional and its source revision did not settle on
+protected A11oy main. The record
+`queue/quarantine/job-2026-nemo-v3-governed-successor-3.json` binds the exact
+envelope and payload digests and marks it
+`UNAUTHORIZED_PROVISIONAL_KEY + STALE_SOURCE + NEVER_DISPATCH`.
 
-On the controlled signing host, the recovery generation is authorized with:
+The dispatcher, isolated launcher, prefetch, runner, finalizer, and status
+publisher all enforce both quarantine boundaries before any execution or claim.
+The original reviewed specs and envelopes must never be consumed, deleted,
+rewritten, re-signed, or retried.
 
-```powershell
-$env:SZL_QUANT_KEY = "C:\secure\engine_key_rotation_20260730.pem"
-node cloud/sign-nemo-v3-job.mjs jobspecs/nemo-v3-20260730-successor-3-reviewed.json
-Remove-Item Env:SZL_QUANT_KEY
-```
-
-Only the public pin and DSSE envelope are committed. The private key must
-remain owner-and-SYSTEM ACL restricted and must never be placed in Git,
-Actions, an issue, or chat.
+The coordinated key `b8041281c81c4caa` is enrolled as a distinct
+administrative recovery trust root after the protected A11oy relock. It is the
+sole active key for future reviewed jobs; no cryptographic continuity with the
+two verification-only predecessors is claimed.

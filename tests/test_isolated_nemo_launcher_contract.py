@@ -139,6 +139,18 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source.index("& $Docker @Arguments"),
         )
 
+    def test_quarantined_jobs_are_refused_before_any_claim(self) -> None:
+        for fragment in (
+            "job-2026-nemo-v3-governed-attempt-2",
+            "job-2026-nemo-v3-governed-successor-3",
+            "NEVER_DISPATCH",
+        ):
+            self.assertIn(fragment, self.source)
+        self.assertLess(
+            self.source.index("NEVER_DISPATCH"),
+            self.source.index("[System.IO.FileMode]::CreateNew"),
+        )
+
     def test_exact_container_compiles_source_before_attempt_claim(self) -> None:
         for fragment in (
             "$CompatibilityArguments = @(",
