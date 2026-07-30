@@ -1,4 +1,4 @@
-# daemon.ps1 — poll the public queue, verify-first, dispatch, and ledger.
+# daemon.ps1 -- poll the public queue, verify-first, dispatch, and ledger.
 # Runs as a scheduled task (see bootstrap.ps1). Single-flight and fail-closed.
 
 param(
@@ -17,11 +17,11 @@ $Raw = "https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/queue
 
 function Log($m) { "$(Get-Date -Format o)  $m" | Add-Content -Path $Log }
 
-# single flight — a long training run must not be trampled by the 15-min trigger
+# single flight -- a long training run must not be trampled by the 15-min trigger
 if (Test-Path $Lock) {
   $age = (Get-Date) - (Get-Item $Lock).LastWriteTime
-  if ($age.TotalHours -lt 26) { Log "lock present (age $([int]$age.TotalMinutes)m) — another run in flight, exiting"; exit 0 }
-  Log "stale lock (> 26h) — clearing"
+  if ($age.TotalHours -lt 26) { Log "lock present (age $([int]$age.TotalMinutes)m) -- another run in flight, exiting"; exit 0 }
+  Log "stale lock (> 26h) -- clearing"
   Remove-Item $Lock -Force
 }
 New-Item -ItemType File -Path $Lock -Force | Out-Null
@@ -52,7 +52,7 @@ try {
 
     $specPath = "$Root\jobs\$($f.name)"
     Invoke-WebRequest -Uri "$Raw/$($f.name)?t=$bust" -OutFile $specPath -Headers @{ "User-Agent" = "szl-gpu-bridge-daemon" }
-    Log "picked up $jobId — verify-first dispatcher will select an allowlisted local runner"
+    Log "picked up $jobId -- verify-first dispatcher will select an allowlisted local runner"
 
     # dispatcher.py verifies the DSSE envelope and pinned engine identity before
     # reading kind/jobId/output fields. Exit codes:
@@ -67,9 +67,9 @@ try {
       Log "$jobId complete (validated receipts pushed)"
     } elseif ($code -eq 3) {
       Add-Content -Path $Ledger -Value "$jobId  # REFUSED-UNVERIFIED-OR-UNSUPPORTED"
-      Log "!! $jobId REFUSED — ledgered as consumed; see logs\refused-specs.jsonl"
+      Log "!! $jobId REFUSED -- ledgered as consumed; see logs\refused-specs.jsonl"
     } else {
-      Log "$jobId LOCAL FAILURE (exit $code) — left off the ledger for retry next cycle"
+      Log "$jobId LOCAL FAILURE (exit $code) -- left off the ledger for retry next cycle"
     }
   }
 } catch {
