@@ -32,9 +32,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
 - **Outbound results:** the host uses its local Hugging Face authentication. Tokens and private keys are never committed or sent through the queue.
 - **Trust roots:** the host trusts only public keys admitted by the reviewed
   `keys/engine_keyring.json`. Historical key `5c6cf59741ade920` is
-  verification-only; recovery key `815714c8d4ae3e4d` is active for the
-  separately identified successor generation. The cloud trusts the separately
-  announced laptop receipt key. An unverifiable claim is treated as no claim.
+  verification-only; provisional key `815714c8d4ae3e4d` is also
+  verification-only; coordinated administrative-recovery key
+  `b8041281c81c4caa` is the sole active execution authority. No cryptographic
+  continuity with either predecessor key is claimed. Attempt 2 and successor
+  generation 3 remain byte-preserved under explicit `NEVER_DISPATCH`
+  quarantine. The cloud trusts the separately announced laptop receipt key.
+  An unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a

@@ -1,0 +1,8 @@
+{
+  "kind": "szl-quant-engine-pubkey",
+  "v": 1,
+  "alg": "ed25519",
+  "keyId": "b8041281c81c4caa",
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEAstuDm9wVQ7BrOuBRmIyEHsOtyOutChFfRvCDenCDB6c=",
+  "note": "Administrative recovery trust root enrolled after protected A11oy relock. No cryptographic continuity with either verification-only predecessor key is claimed. Private key material remains outside this repository."
+}

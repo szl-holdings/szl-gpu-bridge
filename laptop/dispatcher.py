@@ -22,6 +22,7 @@ from nemo_v3_contract import (
     NEMO_V3_KIND,
     NEMO_V3_PAYLOAD_TYPE,
     expected_engine_key_id,
+    require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
 )
 
@@ -61,7 +62,6 @@ def main(spec_path: str) -> int:
         pin = load_engine_pin_for_envelope(
             ROOT / "keys",
             envelope,
-            require_active=True,
         )
         spec, _, payload_type = verify_envelope(
             envelope,
@@ -94,6 +94,7 @@ def main(spec_path: str) -> int:
     elif payload_type == NEMO_V3_PAYLOAD_TYPE and spec.get("kind") == NEMO_V3_KIND:
         try:
             validate_nemo_v3_spec(spec)
+            require_nemo_v3_dispatchable(spec)
             if (
                 "authorization" in spec
                 or (ROOT / "keys" / "engine_keyring.json").is_file()
@@ -106,6 +107,21 @@ def main(spec_path: str) -> int:
         return refuse(
             spec_path,
             f"verified but unsupported payload/kind pair: {payload_type!r}/{spec.get('kind')!r}",
+            verified=spec,
+        )
+
+    try:
+        active_pin = load_engine_pin_for_envelope(
+            ROOT / "keys",
+            envelope,
+            require_active=True,
+        )
+        if active_pin.get("keyId") != pin.get("keyId"):
+            raise ContractError("engine key changed during verification")
+    except ContractError as exc:
+        return refuse(
+            spec_path,
+            f"engine key is not active execution authority: {exc}",
             verified=spec,
         )
 

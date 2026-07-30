@@ -6,7 +6,7 @@
 
 | Party | Trusts | Established by |
 |---|---|---|
-| Laptop | reviewed engine keyring: `5c6cf59741ade920` verification-only and `815714c8d4ae3e4d` active | baked into `bootstrap.ps1` and independently bound by the signed job authorization |
+| Laptop | reviewed engine keyring: `5c6cf59741ade920` and provisional `815714c8d4ae3e4d` verification-only; coordinated administrative-recovery key `b8041281c81c4caa` active | baked into `bootstrap.ps1` and independently bound by the signed job authorization |
 | Cloud | laptop keyId announced by owner after bootstrap prints it | out-of-band (owner tells the session; cloud pins it for `verify-receipt.mjs --expect-keyid`) |
 
 Private keys never move: an engine signing key stays ACL-locked on the
@@ -15,6 +15,13 @@ never uploaded. Losing an engine private key does not authorize rewriting its
 public pin. Recovery requires a recorded incident, a new public keyring entry,
 a distinct job generation, and a protected change. Historical envelopes remain
 verifiable through the verification-only public pin.
+
+The coordinated active key is an administrative recovery trust root. No
+cryptographic continuity with either verification-only predecessor is claimed.
+Attempt 2 and successor generation 3 are immutable historical envelopes, not
+execution authority. Their quarantine records bind the original exact envelope
+and payload digests and mark them `NEVER_DISPATCH`. Quarantine must never be
+implemented by deleting, rewriting, re-signing, or retrying those bytes.
 
 ## Inbound path (job specs) — threats & mitigations
 

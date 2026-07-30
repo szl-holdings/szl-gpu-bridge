@@ -26,6 +26,43 @@ _ENGINE_KEY_ID = re.compile(r"^[0-9a-f]{16}$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _HOLDOUT_NAMES = ("original-v2", "shadow-v2", "challenge-v3")
 LEGACY_ENGINE_KEY_ID = "5c6cf59741ade920"
+PROVISIONAL_ENGINE_KEY_ID = "815714c8d4ae3e4d"
+COORDINATED_ENGINE_KEY_ID = "b8041281c81c4caa"
+COORDINATED_ENGINE_SPKI_SHA256 = (
+    "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf"
+)
+SETTLED_A11OY_SOURCE_REVISION = "5f98d90a42e021cf29948457a2404a159f236487"
+SETTLED_OWNER_WORKFLOW_BLOB = "7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33"
+NEXT_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-4"
+QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
+    "job-2026-nemo-v3-governed-attempt-2": {
+        "statuses": ("STALE_SOURCE", "RETIRED_KEY", "NEVER_DISPATCH"),
+        "queue_file_sha256": (
+            "e74ecaea040c2abb52a5613c32e0648994f96ff39910c70e1fcc3e23fc053724"
+        ),
+        "payload_sha256": (
+            "84a808615ba1693935eee8cc9fa1a4c5a83d119b79ad7e9437380ec73756b90d"
+        ),
+        "engine_key_id": LEGACY_ENGINE_KEY_ID,
+        "source_revision": "b21b8fb65400e7eb39595365c5f54c80ed78aa67",
+    },
+    "job-2026-nemo-v3-governed-successor-3": {
+        "statuses": (
+            "UNAUTHORIZED_PROVISIONAL_KEY",
+            "STALE_SOURCE",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "bb624d301f23552617566f57167a12360bbba27afebee086a8262b1be7ee6eaa"
+        ),
+        "payload_sha256": (
+            "f20bf865dca5413262e5fd3733df112486aec72bb9b47932083ffecb2470a415"
+        ),
+        "engine_key_id": PROVISIONAL_ENGINE_KEY_ID,
+        "source_revision": "a5351c8e37a7cfe54e0c3cf53c8bbd460a16c11c",
+    },
+}
+QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
     "szl-holdings/a11oy/"
     ".github/workflows/nemo-v3-isolated-owner-dispatch.yml"
@@ -156,6 +193,27 @@ def expected_engine_key_id(spec: dict[str, Any]) -> str:
     if authorization is None:
         return LEGACY_ENGINE_KEY_ID
     return str(authorization["engineKeyId"])
+
+
+def quarantine_policy(spec_or_job_id: dict[str, Any] | str) -> dict[str, Any] | None:
+    """Return the exact immutable quarantine policy for a reviewed job."""
+
+    job_id = (
+        spec_or_job_id.get("jobId")
+        if isinstance(spec_or_job_id, dict)
+        else spec_or_job_id
+    )
+    return QUARANTINE_POLICIES.get(str(job_id))
+
+
+def require_nemo_v3_dispatchable(spec: dict[str, Any]) -> None:
+    """Reject immutable historical envelopes before any execution side effect."""
+
+    policy = quarantine_policy(spec)
+    if policy is not None:
+        raise ContractError(
+            "Nemo v3 job is quarantined: " + " + ".join(policy["statuses"])
+        )
 
 
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:

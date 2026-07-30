@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -13,7 +14,11 @@ sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
 
 import nemo_v3_status  # noqa: E402
-from nemo_v3_contract import validate_nemo_v3_spec  # noqa: E402
+from frontier_contract import ContractError  # noqa: E402
+from nemo_v3_contract import (  # noqa: E402
+    require_nemo_v3_dispatchable,
+    validate_nemo_v3_spec,
+)
 
 
 PREDECESSOR_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
@@ -117,7 +122,7 @@ class ReviewedNemoV3Attempt2SpecTests(unittest.TestCase):
         self.assertEqual(expires - created, timedelta(days=14))
         self.assertGreater(expires, datetime(2026, 7, 29, tzinfo=timezone.utc))
 
-    def test_attempt_has_one_exact_fresh_engine_signature(self) -> None:
+    def test_attempt_signature_is_preserved_under_exact_quarantine(self) -> None:
         queue_path = ROOT / "queue" / "pending" / f"{self.attempt['jobId']}.json"
         self.assertTrue(
             queue_path.is_file(),
@@ -143,17 +148,29 @@ class ReviewedNemoV3Attempt2SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 29, 23, 10, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
+        self.assertEqual(
+            report["quarantine"]["statuses"],
+            ("STALE_SOURCE", "RETIRED_KEY", "NEVER_DISPATCH"),
+        )
+        self.assertEqual(
+            hashlib.sha256(queue_path.read_bytes()).hexdigest(),
+            "e74ecaea040c2abb52a5613c32e0648994f96ff39910c70e1fcc3e23fc053724",
+        )
         self.assertEqual(
             report["reviewed_spec"]["path"],
             "jobspecs/nemo-v3-20260729-attempt-2-reviewed.json",
         )
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.attempt)
 
     def test_status_workflow_tracks_attempt_2_without_dispatching_it(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260729-attempt-2-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-2.json",
+            "queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json",
             "tests/test_reviewed_nemo_v3_attempt_2_spec.py",
             "attempt_id: attempt-2-b21",
             "spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json",

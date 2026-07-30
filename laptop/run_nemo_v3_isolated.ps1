@@ -22,6 +22,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if (
+  $JobId -in @(
+    "job-2026-nemo-v3-governed-attempt-2",
+    "job-2026-nemo-v3-governed-successor-3"
+  )
+) {
+  throw "job is quarantined and marked NEVER_DISPATCH"
+}
+
 if ($env:HF_TOKEN -or $env:HUGGING_FACE_HUB_TOKEN -or $env:GH_TOKEN) {
   throw "isolated execution refuses a host process containing HF or GitHub tokens"
 }
