@@ -357,8 +357,17 @@ claim, training, holdout, candidate, receipt-intent, or ledger side effect.
 Its science inputs remain frozen and all candidate, model-card, and dataset
 uploads remain disabled.
 
-This phase publishes reviewed plaintext only. The attempt-5 queue envelope does
-not exist and status must remain `AWAITING_ENGINE_SIGNATURE`. A later separate
-protected change may publish one exclusive-create b804-signed envelope; that
-future envelope revision is data-only and must be a strict protected descendant
-of the signed executable Bridge revision.
+The separately protected, exclusive-create queue envelope now exists at:
+
+```text
+queue/pending/job-2026-nemo-v3-governed-attempt-5.json
+```
+
+Its raw SHA-256 is
+`30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009`.
+It verifies under active key `b8041281c81c4caa` and binds canonical payload
+SHA-256
+`374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b`.
+Status is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists.
+The protected envelope revision is data-only and a strict descendant of the
+signed executable Bridge revision.

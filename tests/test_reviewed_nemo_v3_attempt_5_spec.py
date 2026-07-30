@@ -164,17 +164,27 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2",
         )
 
-    def test_plaintext_phase_has_no_attempt_5_envelope_or_receipt(self) -> None:
-        self.assertFalse(ATTEMPT_5_QUEUE.exists())
+    def test_signed_envelope_is_valid_and_receipt_is_absent(self) -> None:
+        self.assertTrue(ATTEMPT_5_QUEUE.is_file())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_5_QUEUE.read_bytes()).hexdigest(),
+            "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009",
+        )
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=ATTEMPT_5_PATH,
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 30, 23, 31, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
+        self.assertEqual(
+            report["queue"]["payload_sha256"],
+            "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b",
+        )
         self.assertFalse(report["receipt"]["present"])
 
     def test_attempt_5_exact_bindings_fail_closed_on_drift(self) -> None:
@@ -208,9 +218,10 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_workflow_target_plaintext_attempt_5(self) -> None:
+    def test_signer_and_status_workflow_track_attempt_5(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260730-attempt-5-reviewed.json",
+            "queue/pending/job-2026-nemo-v3-governed-attempt-5.json",
             "tests/test_reviewed_nemo_v3_attempt_5_spec.py",
             "attempt_id: attempt-5-transport-v3-recovery",
         ):
@@ -221,10 +232,6 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
         )
         self.assertIn("signer is locked to ${FUTURE_REVIEWED_JOB_ID}", SIGNER_SOURCE)
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
-        self.assertNotIn(
-            "queue/pending/job-2026-nemo-v3-governed-attempt-5.json",
-            STATUS_WORKFLOW,
-        )
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)
 
 
