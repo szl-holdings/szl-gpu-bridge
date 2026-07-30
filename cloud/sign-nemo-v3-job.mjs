@@ -30,6 +30,14 @@ const OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v2';
 const OWNER_TRAINING_IMAGE = 'unsloth/unsloth@sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123';
 const OWNER_RECEIPTS_REPO = 'SZLHOLDINGS/szl-training-receipts';
 const LEGACY_ENGINE_KEY_ID = '5c6cf59741ade920';
+const PROVISIONAL_ENGINE_KEY_ID = '815714c8d4ae3e4d';
+const COORDINATED_ENGINE_KEY_ID = 'b8041281c81c4caa';
+const COORDINATED_ENGINE_SPKI_SHA256 = 'b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf';
+const SETTLED_A11OY_SOURCE_REVISION = '5f98d90a42e021cf29948457a2404a159f236487';
+const SETTLED_OWNER_WORKFLOW_BLOB = '7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33';
+const SETTLED_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30561614589';
+const CORRECTED_BRIDGE_REVISION = '2237bb3f36663343ace29d98cda6c32e165450a0';
+const NEXT_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-4';
 
 export function canonicalize(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
@@ -153,12 +161,22 @@ function validateOwnerDispatch(spec) {
 }
 
 function validateAuthorization(spec) {
-  if (spec.authorization === undefined) return;
+  if (spec.authorization === undefined) return false;
   const authorization = object(spec.authorization, 'authorization');
-  const fields = [
+  const legacyFields = [
     'engineKeyId', 'previousEngineKeyId', 'recoveryIssueUrl',
     'rotationMode', 'oldKeyStatus', 'decisionAt',
   ];
+  const coordinated = authorization.rotationMode === 'COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION';
+  const fields = coordinated
+    ? [
+      ...legacyFields,
+      'enginePublicKeySpkiSha256', 'provisionalEngineKeyId',
+      'provisionalKeyStatus', 'coordinationMode',
+      'settledA11oyRelockRunUrl', 'cryptographicContinuityClaimed',
+      'correctedBridgeRevision',
+    ]
+    : legacyFields;
   if (JSON.stringify(Object.keys(authorization).sort()) !== JSON.stringify([...fields].sort())) {
     throw new Error('authorization fields must be exact');
   }
@@ -168,7 +186,7 @@ function validateAuthorization(spec) {
     throw new Error('authorization engine key identities are invalid');
   }
   if (authorization.previousEngineKeyId !== LEGACY_ENGINE_KEY_ID
-      || authorization.rotationMode !== 'LOST_PRIVATE_KEY_NEW_GENERATION'
+      || !['LOST_PRIVATE_KEY_NEW_GENERATION', 'COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION'].includes(authorization.rotationMode)
       || authorization.oldKeyStatus !== 'VERIFY_ONLY') {
     throw new Error('authorization recovery boundary is invalid');
   }
@@ -176,6 +194,19 @@ function validateAuthorization(spec) {
       || !Number.isFinite(new Date(authorization.decisionAt).getTime())) {
     throw new Error('authorization recovery evidence is invalid');
   }
+  if (coordinated) {
+    if (authorization.engineKeyId !== COORDINATED_ENGINE_KEY_ID
+        || authorization.enginePublicKeySpkiSha256 !== COORDINATED_ENGINE_SPKI_SHA256
+        || authorization.provisionalEngineKeyId !== PROVISIONAL_ENGINE_KEY_ID
+        || authorization.provisionalKeyStatus !== 'VERIFY_ONLY'
+        || authorization.coordinationMode !== 'FINAL_ACTIVE_TRUST_ROOT'
+        || authorization.settledA11oyRelockRunUrl !== SETTLED_A11OY_RELOCK_RUN_URL
+        || authorization.cryptographicContinuityClaimed !== false
+        || authorization.correctedBridgeRevision !== CORRECTED_BRIDGE_REVISION) {
+      throw new Error('coordinated authorization boundary is invalid');
+    }
+  }
+  return coordinated;
 }
 
 function loadEnginePin(expectedKeyId) {
@@ -205,11 +236,18 @@ export function validateNemoV3Spec(spec) {
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
   validateLineage(spec);
   validateOwnerDispatch(spec);
-  validateAuthorization(spec);
+  const coordinatedAuthorization = validateAuthorization(spec);
 
   object(spec.source, 'source');
   if (spec.source.repoId !== 'szl-holdings/a11oy' || spec.source.licenseId !== 'apache-2.0' || !/^[0-9a-f]{40}$/.test(spec.source.revision ?? '')) {
     throw new Error('source must be immutable Apache-2.0 a11oy');
+  }
+  if (coordinatedAuthorization
+      && (spec.jobId !== NEXT_REVIEWED_JOB_ID
+          || spec.source.revision !== SETTLED_A11OY_SOURCE_REVISION
+          || spec.ownerDispatch?.workflowBlob !== SETTLED_OWNER_WORKFLOW_BLOB
+          || spec.lineage?.successorGeneration !== 4)) {
+    throw new Error('coordinated recovery binding is invalid');
   }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   NEMO_V3_PAYLOAD_TYPE,
@@ -140,6 +141,41 @@ test('Nemo v3 owner dispatch binds exact workflow and receipt-only effects', () 
   const extra = structuredClone(attempt);
   extra.ownerDispatch.unreviewed = false;
   assert.throws(() => validateNemoV3Spec(extra), /fields must be exact/);
+});
+
+test('Nemo v3 coordinated attempt 4 binds the corrected trust lineage', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260730-attempt-4-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+  assert.equal(
+    createHash('sha256').update(Buffer.from(canonicalize(reviewed))).digest('hex'),
+    '14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5',
+  );
+
+  const continuityClaim = structuredClone(reviewed);
+  continuityClaim.authorization.cryptographicContinuityClaimed = true;
+  assert.throws(
+    () => validateNemoV3Spec(continuityClaim),
+    /coordinated authorization/,
+  );
+
+  const staleSource = structuredClone(reviewed);
+  staleSource.source.revision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleSource),
+    /coordinated recovery binding/,
+  );
+
+  const wrongGeneration = structuredClone(reviewed);
+  wrongGeneration.lineage.successorGeneration = 3;
+  assert.throws(
+    () => validateNemoV3Spec(wrongGeneration),
+    /coordinated recovery binding/,
+  );
 });
 
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {

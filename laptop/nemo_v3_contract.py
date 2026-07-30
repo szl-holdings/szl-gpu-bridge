@@ -33,6 +33,10 @@ COORDINATED_ENGINE_SPKI_SHA256 = (
 )
 SETTLED_A11OY_SOURCE_REVISION = "5f98d90a42e021cf29948457a2404a159f236487"
 SETTLED_OWNER_WORKFLOW_BLOB = "7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33"
+SETTLED_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30561614589"
+)
+CORRECTED_BRIDGE_REVISION = "2237bb3f36663343ace29d98cda6c32e165450a0"
 NEXT_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-4"
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -240,8 +244,9 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if expires <= created:
         raise ContractError("expiresAt must be later than createdAt")
 
+    coordinated_authorization = False
     if "authorization" in spec:
-        authorization_fields = {
+        legacy_authorization_fields = {
             "engineKeyId",
             "previousEngineKeyId",
             "recoveryIssueUrl",
@@ -249,6 +254,27 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "oldKeyStatus",
             "decisionAt",
         }
+        coordinated_authorization_fields = legacy_authorization_fields | {
+            "enginePublicKeySpkiSha256",
+            "provisionalEngineKeyId",
+            "provisionalKeyStatus",
+            "coordinationMode",
+            "settledA11oyRelockRunUrl",
+            "cryptographicContinuityClaimed",
+            "correctedBridgeRevision",
+        }
+        raw_authorization = spec.get("authorization")
+        if not isinstance(raw_authorization, dict):
+            raise ContractError("authorization must be an object")
+        coordinated_authorization = (
+            raw_authorization.get("rotationMode")
+            == "COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION"
+        )
+        authorization_fields = (
+            coordinated_authorization_fields
+            if coordinated_authorization
+            else legacy_authorization_fields
+        )
         authorization = _object(
             spec,
             "authorization",
@@ -266,7 +292,10 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             raise ContractError(
                 "authorization does not preserve the historical trust root"
             )
-        if authorization["rotationMode"] != "LOST_PRIVATE_KEY_NEW_GENERATION":
+        if authorization["rotationMode"] not in {
+            "LOST_PRIVATE_KEY_NEW_GENERATION",
+            "COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION",
+        }:
             raise ContractError("authorization.rotationMode is not admitted")
         if authorization["oldKeyStatus"] != "VERIFY_ONLY":
             raise ContractError("authorization.oldKeyStatus must be VERIFY_ONLY")
@@ -277,6 +306,50 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 "authorization.recoveryIssueUrl is not the recorded incident"
             )
         _timestamp(authorization["decisionAt"], "authorization.decisionAt")
+        if coordinated_authorization:
+            if authorization["engineKeyId"] != COORDINATED_ENGINE_KEY_ID:
+                raise ContractError(
+                    "coordinated authorization does not use the final engine key"
+                )
+            if (
+                authorization["enginePublicKeySpkiSha256"]
+                != COORDINATED_ENGINE_SPKI_SHA256
+            ):
+                raise ContractError(
+                    "coordinated authorization does not bind the final SPKI hash"
+                )
+            if authorization["provisionalEngineKeyId"] != PROVISIONAL_ENGINE_KEY_ID:
+                raise ContractError(
+                    "coordinated authorization does not identify the provisional key"
+                )
+            if authorization["provisionalKeyStatus"] != "VERIFY_ONLY":
+                raise ContractError(
+                    "coordinated authorization must retire the provisional key"
+                )
+            if authorization["coordinationMode"] != "FINAL_ACTIVE_TRUST_ROOT":
+                raise ContractError(
+                    "coordinated authorization mode is not the final trust root"
+                )
+            if (
+                authorization["settledA11oyRelockRunUrl"]
+                != SETTLED_A11OY_RELOCK_RUN_URL
+            ):
+                raise ContractError(
+                    "coordinated authorization does not bind the terminal A11oy relock"
+                )
+            if authorization["cryptographicContinuityClaimed"] is not False:
+                raise ContractError(
+                    "administrative recovery must not claim cryptographic continuity"
+                )
+            _revision(
+                authorization["correctedBridgeRevision"],
+                "authorization.correctedBridgeRevision",
+                exact40=True,
+            )
+            if authorization["correctedBridgeRevision"] != CORRECTED_BRIDGE_REVISION:
+                raise ContractError(
+                    "coordinated authorization does not bind corrected bridge main"
+                )
 
     if "ownerDispatch" in spec:
         owner_fields = {
@@ -397,6 +470,28 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     ):
         raise ContractError("source must be Apache-2.0 szl-holdings/a11oy")
     _revision(source["revision"], "source.revision", exact40=True)
+    if coordinated_authorization:
+        owner_dispatch = spec.get("ownerDispatch")
+        lineage = spec.get("lineage")
+        if spec["jobId"] != NEXT_REVIEWED_JOB_ID:
+            raise ContractError(
+                "coordinated recovery requires the reviewed attempt-4 identity"
+            )
+        if source["revision"] != SETTLED_A11OY_SOURCE_REVISION:
+            raise ContractError(
+                "coordinated recovery must bind the settled A11oy source"
+            )
+        if (
+            not isinstance(owner_dispatch, dict)
+            or owner_dispatch.get("workflowBlob") != SETTLED_OWNER_WORKFLOW_BLOB
+        ):
+            raise ContractError(
+                "coordinated recovery must bind the settled owner workflow"
+            )
+        if not isinstance(lineage, dict) or lineage.get("successorGeneration") != 4:
+            raise ContractError(
+                "coordinated recovery requires distinct successor generation 4"
+            )
 
     base = _object(
         spec,
