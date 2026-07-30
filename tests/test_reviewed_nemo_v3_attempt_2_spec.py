@@ -26,6 +26,7 @@ EXPECTED_ENGINE_KEY_ID = "5c6cf59741ade920"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
+GIT_ATTRIBUTES = (ROOT / ".gitattributes").read_text(encoding="utf-8")
 
 
 class ReviewedNemoV3Attempt2SpecTests(unittest.TestCase):
@@ -160,6 +161,12 @@ class ReviewedNemoV3Attempt2SpecTests(unittest.TestCase):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIsNone(
             re.search(r"repository_dispatch|workflow_call", STATUS_WORKFLOW)
+        )
+
+    def test_signed_queue_bytes_are_stable_on_windows_checkout(self) -> None:
+        self.assertIn(
+            "queue/pending/*.json text eol=lf",
+            GIT_ATTRIBUTES.splitlines(),
         )
 
 
