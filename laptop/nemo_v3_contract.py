@@ -40,6 +40,10 @@ CORRECTED_BRIDGE_REVISION = "2237bb3f36663343ace29d98cda6c32e165450a0"
 NEXT_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-4"
 FINAL_A11OY_SOURCE_REVISION = "e3d4a46724b222c8a5b2b6f04877bc115a6c82cb"
 FINAL_OWNER_WORKFLOW_BLOB = "2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f"
+FINAL_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30588489971"
+)
+FINAL_CORRECTED_BRIDGE_REVISION = "a2015accc0be8060c4084455e829a9373e5c99e2"
 FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-5"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
@@ -108,11 +112,30 @@ _OWNER_WORKFLOW_IDENTITY = (
     "@refs/heads/main"
 )
 _OWNER_WORKFLOW_VERSION = "nemo-v3-owner-dispatch.v2"
+_FINAL_OWNER_WORKFLOW_VERSION = "nemo-v3-owner-dispatch.v4"
 _OWNER_TRAINING_IMAGE = (
     "unsloth/unsloth@"
     "sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123"
 )
 _OWNER_RECEIPTS_REPO = "SZLHOLDINGS/szl-training-receipts"
+_COORDINATED_JOB_BINDINGS = {
+    NEXT_REVIEWED_JOB_ID: {
+        "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
+        "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": SETTLED_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": CORRECTED_BRIDGE_REVISION,
+        "successorGeneration": 4,
+    },
+    FUTURE_REVIEWED_JOB_ID: {
+        "sourceRevision": FINAL_A11OY_SOURCE_REVISION,
+        "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": FINAL_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": FINAL_CORRECTED_BRIDGE_REVISION,
+        "successorGeneration": 5,
+    },
+}
 _ALLOWED_TOP = {
     "jobId",
     "kind",
@@ -280,6 +303,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         raise ContractError("expiresAt must be later than createdAt")
 
     coordinated_authorization = False
+    coordinated_binding: dict[str, Any] | None = None
     if "authorization" in spec:
         legacy_authorization_fields = {
             "engineKeyId",
@@ -305,6 +329,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             raw_authorization.get("rotationMode")
             == "COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION"
         )
+        if coordinated_authorization:
+            coordinated_binding = _COORDINATED_JOB_BINDINGS.get(spec["jobId"])
+            if coordinated_binding is None:
+                raise ContractError(
+                    "coordinated authorization requires an exact reviewed job binding"
+                )
         authorization_fields = (
             coordinated_authorization_fields
             if coordinated_authorization
@@ -367,7 +397,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 )
             if (
                 authorization["settledA11oyRelockRunUrl"]
-                != SETTLED_A11OY_RELOCK_RUN_URL
+                != coordinated_binding["relockRunUrl"]
             ):
                 raise ContractError(
                     "coordinated authorization does not bind the terminal A11oy relock"
@@ -381,7 +411,10 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 "authorization.correctedBridgeRevision",
                 exact40=True,
             )
-            if authorization["correctedBridgeRevision"] != CORRECTED_BRIDGE_REVISION:
+            if (
+                authorization["correctedBridgeRevision"]
+                != coordinated_binding["correctedBridgeRevision"]
+            ):
                 raise ContractError(
                     "coordinated authorization does not bind corrected bridge main"
                 )
@@ -403,9 +436,14 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             owner_fields,
             owner_fields,
         )
+        expected_workflow_version = (
+            coordinated_binding["workflowVersion"]
+            if coordinated_binding is not None
+            else _OWNER_WORKFLOW_VERSION
+        )
         if (
             owner_dispatch["workflowIdentity"] != _OWNER_WORKFLOW_IDENTITY
-            or owner_dispatch["workflowVersion"] != _OWNER_WORKFLOW_VERSION
+            or owner_dispatch["workflowVersion"] != expected_workflow_version
         ):
             raise ContractError("ownerDispatch workflow identity is not admitted")
         _revision(
@@ -422,7 +460,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             raise ContractError("ownerDispatch receipts repository is not admitted")
 
     if "lineage" in spec:
-        lineage_fields = {
+        legacy_lineage_fields = {
             "predecessorJobId",
             "predecessorClaimSha256",
             "predecessorEnvelopeSha256",
@@ -441,37 +479,95 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "terminalLedgerWritten",
             "scienceInputsReused",
         }
-        lineage = _object(spec, "lineage", lineage_fields, lineage_fields)
+        transport_lineage_fields = {
+            "predecessorJobId",
+            "predecessorEnvelopeSha256",
+            "predecessorPayloadSha256",
+            "predecessorEnvelopeRevision",
+            "predecessorExecutionBridgeRevision",
+            "transportEvidenceUrl",
+            "failurePhase",
+            "successorGeneration",
+            "automaticRetry",
+            "eventCreated",
+            "workflowRunCreated",
+            "claimCreated",
+            "trainingStarted",
+            "modelRepositoryCodeImported",
+            "holdoutsAccessed",
+            "candidateProduced",
+            "receiptIntentProduced",
+            "terminalLedgerWritten",
+            "scienceInputsReused",
+        }
+        raw_lineage = spec.get("lineage")
+        if not isinstance(raw_lineage, dict):
+            raise ContractError("lineage must be an object")
+        lineage_keys = set(raw_lineage)
+        transport_lineage = lineage_keys == transport_lineage_fields
+        if lineage_keys == legacy_lineage_fields:
+            lineage = raw_lineage
+        elif transport_lineage:
+            lineage = raw_lineage
+        else:
+            raise ContractError("lineage fields must match an admitted exact shape")
         predecessor = lineage["predecessorJobId"]
         if not isinstance(predecessor, str) or not _JOB.fullmatch(predecessor):
             raise ContractError("lineage.predecessorJobId is invalid")
         if predecessor == spec["jobId"]:
             raise ContractError("successor jobId must differ from its predecessor")
-        _sha256(lineage["predecessorClaimSha256"], "lineage.predecessorClaimSha256")
         _sha256(
             lineage["predecessorEnvelopeSha256"],
             "lineage.predecessorEnvelopeSha256",
         )
-        _revision(
-            lineage["predecessorBridgeRevision"],
-            "lineage.predecessorBridgeRevision",
-            exact40=True,
-        )
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", lineage["predecessorImageId"]):
-            raise ContractError("lineage.predecessorImageId must be an exact image ID")
-        _timestamp(lineage["predecessorClaimedAt"], "lineage.predecessorClaimedAt")
-        if not re.fullmatch(
-            r"https://github\.com/szl-holdings/szl-gpu-bridge/issues/"
-            r"[0-9]+#issuecomment-[0-9]+",
-            lineage["incidentUrl"],
-        ):
-            raise ContractError(
-                "lineage.incidentUrl must identify the recorded incident"
+        if transport_lineage:
+            _sha256(
+                lineage["predecessorPayloadSha256"],
+                "lineage.predecessorPayloadSha256",
             )
-        if lineage["failurePhase"] != "PRE_TRAINING_RUNTIME_SOURCE_PARSE":
-            raise ContractError(
-                "lineage.failurePhase is not an admitted recovery phase"
+            for field in (
+                "predecessorEnvelopeRevision",
+                "predecessorExecutionBridgeRevision",
+            ):
+                _revision(lineage[field], f"lineage.{field}", exact40=True)
+            if (
+                lineage["transportEvidenceUrl"]
+                != "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"
+            ):
+                raise ContractError(
+                    "lineage.transportEvidenceUrl is not the recorded transport evidence"
+                )
+            if lineage["failurePhase"] != "PRE_EVENT_TRANSPORT_VALIDATION":
+                raise ContractError(
+                    "lineage.failurePhase is not an admitted transport recovery phase"
+                )
+        else:
+            _sha256(
+                lineage["predecessorClaimSha256"],
+                "lineage.predecessorClaimSha256",
             )
+            _revision(
+                lineage["predecessorBridgeRevision"],
+                "lineage.predecessorBridgeRevision",
+                exact40=True,
+            )
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", lineage["predecessorImageId"]):
+                raise ContractError(
+                    "lineage.predecessorImageId must be an exact image ID"
+                )
+            _timestamp(lineage["predecessorClaimedAt"], "lineage.predecessorClaimedAt")
+            if not re.fullmatch(
+                r"https://github\.com/szl-holdings/szl-gpu-bridge/issues/"
+                r"[0-9]+#issuecomment-[0-9]+",
+                lineage["incidentUrl"],
+            ):
+                raise ContractError(
+                    "lineage.incidentUrl must identify the recorded incident"
+                )
+            if lineage["failurePhase"] != "PRE_TRAINING_RUNTIME_SOURCE_PARSE":
+                raise ContractError(
+                    "lineage.failurePhase is not an admitted recovery phase"
+                )
         if (
             not isinstance(lineage["successorGeneration"], int)
             or lineage["successorGeneration"] < 2
@@ -487,6 +583,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "terminalLedgerWritten": False,
             "scienceInputsReused": True,
         }
+        if transport_lineage:
+            expected_boundaries |= {
+                "eventCreated": False,
+                "workflowRunCreated": False,
+                "claimCreated": False,
+            }
         for field, expected in expected_boundaries.items():
             if lineage[field] is not expected:
                 raise ContractError(
@@ -508,25 +610,57 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if coordinated_authorization:
         owner_dispatch = spec.get("ownerDispatch")
         lineage = spec.get("lineage")
-        if spec["jobId"] != NEXT_REVIEWED_JOB_ID:
-            raise ContractError(
-                "coordinated recovery requires the reviewed attempt-4 identity"
-            )
-        if source["revision"] != SETTLED_A11OY_SOURCE_REVISION:
+        if source["revision"] != coordinated_binding["sourceRevision"]:
             raise ContractError(
                 "coordinated recovery must bind the settled A11oy source"
             )
         if (
             not isinstance(owner_dispatch, dict)
-            or owner_dispatch.get("workflowBlob") != SETTLED_OWNER_WORKFLOW_BLOB
+            or owner_dispatch.get("workflowBlob") != coordinated_binding["workflowBlob"]
         ):
             raise ContractError(
                 "coordinated recovery must bind the settled owner workflow"
             )
-        if not isinstance(lineage, dict) or lineage.get("successorGeneration") != 4:
+        if (
+            not isinstance(lineage, dict)
+            or lineage.get("successorGeneration")
+            != coordinated_binding["successorGeneration"]
+        ):
             raise ContractError(
-                "coordinated recovery requires distinct successor generation 4"
+                "coordinated recovery requires its exact successor generation"
             )
+        if spec["jobId"] == FUTURE_REVIEWED_JOB_ID:
+            exact_transport_lineage = {
+                "predecessorJobId": NEXT_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2"
+                ),
+                "predecessorPayloadSha256": (
+                    "14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "7045fe223703ba8fb2d710a59989f971080e7702"
+                ),
+                "predecessorExecutionBridgeRevision": CORRECTED_BRIDGE_REVISION,
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"
+                ),
+                "failurePhase": "PRE_EVENT_TRANSPORT_VALIDATION",
+                "successorGeneration": 5,
+                "automaticRetry": False,
+                "eventCreated": False,
+                "workflowRunCreated": False,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_transport_lineage:
+                raise ContractError("attempt-5 transport recovery lineage is not exact")
 
     base = _object(
         spec,
