@@ -19,6 +19,10 @@ from nemo_v3_contract import validate_nemo_v3_spec  # noqa: E402
 PREDECESSOR_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
 PREREGISTERED_PATH = ROOT / "jobspecs" / "nemo-v3-20260729-successor-2-reviewed.json"
 ATTEMPT_2_PATH = ROOT / "jobspecs" / "nemo-v3-20260729-attempt-2-reviewed.json"
+EXPECTED_QUEUE_PAYLOAD_SHA256 = (
+    "84a808615ba1693935eee8cc9fa1a4c5a83d119b79ad7e9437380ec73756b90d"
+)
+EXPECTED_ENGINE_KEY_ID = "5c6cf59741ade920"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -112,15 +116,33 @@ class ReviewedNemoV3Attempt2SpecTests(unittest.TestCase):
         self.assertEqual(expires - created, timedelta(days=14))
         self.assertGreater(expires, datetime(2026, 7, 29, tzinfo=timezone.utc))
 
-    def test_attempt_remains_plaintext_only_without_fresh_signature(self) -> None:
+    def test_attempt_has_one_exact_fresh_engine_signature(self) -> None:
         queue_path = ROOT / "queue" / "pending" / f"{self.attempt['jobId']}.json"
-        self.assertFalse(queue_path.exists())
+        self.assertTrue(
+            queue_path.is_file(),
+            "attempt 2 must use the independently signed DSSE queue envelope",
+        )
+        envelope = json.loads(queue_path.read_text(encoding="utf-8"))
+        self.assertNotEqual(envelope, self.attempt)
+        self.assertEqual(len(envelope.get("signatures", [])), 1)
+
+        evidence = nemo_v3_status.verify_queue(self.attempt, ROOT)
+        self.assertTrue(evidence.present)
+        self.assertTrue(evidence.valid, evidence.error)
+        self.assertEqual(evidence.payload_sha256, EXPECTED_QUEUE_PAYLOAD_SHA256)
+        self.assertEqual(evidence.engine_key_id, EXPECTED_ENGINE_KEY_ID)
+        self.assertEqual(
+            evidence.path,
+            "queue/pending/job-2026-nemo-v3-governed-attempt-2.json",
+        )
+
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=ATTEMPT_2_PATH,
+            receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 29, 23, 10, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
         self.assertEqual(
             report["reviewed_spec"]["path"],
