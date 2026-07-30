@@ -10,9 +10,6 @@ import os
 import re
 from pathlib import Path
 
-from huggingface_hub import CommitOperationAdd, HfApi
-
-
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "hf" / "szl-training-receipts" / "README.md"
 TARGET = "SZLHOLDINGS/szl-training-receipts"
@@ -28,6 +25,8 @@ def render_card(source_sha: str) -> bytes:
 
 
 def main() -> int:
+    from huggingface_hub import CommitOperationAdd, HfApi
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-sha", required=True)
     args = parser.parse_args()
