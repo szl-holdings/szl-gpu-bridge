@@ -1,0 +1,26 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-4",
+  "recordedAt": "2026-07-30T23:09:32Z",
+  "status": [
+    "STALE_SOURCE",
+    "TRANSPORT_UNREPRESENTABLE",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-4.json",
+  "queueFileSha256": "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2",
+  "signedPayloadSha256": "14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "5f98d90a42e021cf29948457a2404a159f236487",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "e3d4a46724b222c8a5b2b6f04877bc115a6c82cb",
+    "workflowBlob": "2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-5"
+  },
+  "reason": "Attempt 4 used the flat 14-property repository_dispatch transport that GitHub rejected before event creation. Its exact reviewed spec and b804 DSSE envelope remain immutable evidence, but its stale A11oy source and unrepresentable transport are never execution authority."
+}

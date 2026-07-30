@@ -16,6 +16,28 @@ import finalize_nemo_v3_receipt  # noqa: E402
 import prefetch_nemo_v3  # noqa: E402
 
 
+def valid_attempt_claim(
+    spec_path: pathlib.Path,
+    now: datetime,
+) -> dict[str, object]:
+    digest = "b" * 64
+    return {
+        "kind": "szl-nemo-v3-attempt-claim",
+        "v": 3,
+        "jobId": "job-test",
+        "jobEnvelopeSha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
+        "bridgeRevision": "a" * 40,
+        "envelopeRevision": "c" * 40,
+        "executionBridgeRevision": "a" * 40,
+        "launcherSha256": "f" * 64,
+        "trainingImage": f"unsloth/unsloth@sha256:{digest}",
+        "observedImageId": f"sha256:{digest}",
+        "environmentProbeSha256": "d" * 64,
+        "githubRunId": "123",
+        "claimedAt": now.isoformat().replace("+00:00", "Z"),
+    }
+
+
 class NemoCredentialSeparationTests(unittest.TestCase):
     def test_prefetch_reuses_only_byte_verified_input(self) -> None:
         content = b'{"record_id":"train:1"}\n'
@@ -124,21 +146,7 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             spec_path = root / "job.json"
             spec_path.write_bytes(b'{"signed":"envelope"}\n')
             claim_path = root / "claim.json"
-            claim = {
-                "kind": "szl-nemo-v3-attempt-claim",
-                "v": 2,
-                "jobId": "job-test",
-                "jobEnvelopeSha256": hashlib.sha256(spec_path.read_bytes()).hexdigest(),
-                "bridgeRevision": "a" * 40,
-                "launcherSha256": "f" * 64,
-                "trainingImage": "sha256:" + "b" * 64,
-                "observedImageId": "sha256:" + "b" * 64,
-                "observedRevisionLabel": "a" * 40,
-                "imageBuildReceiptSha256": "d" * 64,
-                "imageDockerfileSha256": "e" * 64,
-                "githubRunId": "123",
-                "claimedAt": now.isoformat().replace("+00:00", "Z"),
-            }
+            claim = valid_attempt_claim(spec_path, now)
             claim_path.write_text(json.dumps(claim), encoding="utf-8")
 
             observed = finalize_nemo_v3_receipt.validate_attempt_claim(
@@ -167,27 +175,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             spec_path = root / "job.json"
             spec_path.write_bytes(b'{"signed":"envelope"}\n')
             claim_path = root / "claim.json"
-            claim_path.write_text(
-                json.dumps(
-                    {
-                        "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 2,
-                        "jobId": "job-test",
-                        "jobEnvelopeSha256": hashlib.sha256(
-                            spec_path.read_bytes()
-                        ).hexdigest(),
-                        "bridgeRevision": "a" * 40,
-                        "launcherSha256": "f" * 64,
-                        "trainingImage": "registry.example/image@sha256:" + "b" * 64,
-                        "observedImageId": "sha256:" + "c" * 64,
-                        "observedRevisionLabel": "a" * 40,
-                        "imageBuildReceiptSha256": None,
-                        "imageDockerfileSha256": None,
-                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
-                    }
-                ),
-                encoding="utf-8",
-            )
+            claim = valid_attempt_claim(spec_path, now)
+            claim["trainingImage"] = "registry.example/image@sha256:" + "b" * 64
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "immutable execution identity"):
                 finalize_nemo_v3_receipt.validate_attempt_claim(
@@ -197,7 +187,7 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     now,
                 )
 
-    def test_attempt_claim_rejects_local_image_without_build_binding(self) -> None:
+    def test_attempt_claim_rejects_same_envelope_and_execution_revision(self) -> None:
         now = datetime.now(timezone.utc)
         spec = {"jobId": "job-test"}
         with tempfile.TemporaryDirectory() as temporary:
@@ -205,29 +195,11 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             spec_path = root / "job.json"
             spec_path.write_bytes(b'{"signed":"envelope"}\n')
             claim_path = root / "claim.json"
-            claim_path.write_text(
-                json.dumps(
-                    {
-                        "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 2,
-                        "jobId": "job-test",
-                        "jobEnvelopeSha256": hashlib.sha256(
-                            spec_path.read_bytes()
-                        ).hexdigest(),
-                        "bridgeRevision": "a" * 40,
-                        "launcherSha256": "f" * 64,
-                        "trainingImage": "sha256:" + "b" * 64,
-                        "observedImageId": "sha256:" + "b" * 64,
-                        "observedRevisionLabel": "a" * 40,
-                        "imageBuildReceiptSha256": None,
-                        "imageDockerfileSha256": None,
-                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
-                    }
-                ),
-                encoding="utf-8",
-            )
+            claim = valid_attempt_claim(spec_path, now)
+            claim["envelopeRevision"] = claim["executionBridgeRevision"]
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
 
-            with self.assertRaisesRegex(ValueError, "approved build binding"):
+            with self.assertRaisesRegex(ValueError, "immutable execution identity"):
                 finalize_nemo_v3_receipt.validate_attempt_claim(
                     claim_path,
                     spec_path,
@@ -252,11 +224,11 @@ class NemoCredentialSeparationTests(unittest.TestCase):
         }
         claim = {
             "launcherSha256": "a" * 64,
-            "trainingImage": "sha256:" + "c" * 64,
+            "trainingImage": "unsloth/unsloth@sha256:" + "c" * 64,
             "observedImageId": "sha256:" + "c" * 64,
-            "observedRevisionLabel": "d" * 40,
-            "imageBuildReceiptSha256": "e" * 64,
-            "imageDockerfileSha256": "f" * 64,
+            "environmentProbeSha256": "e" * 64,
+            "envelopeRevision": "d" * 40,
+            "executionBridgeRevision": "f" * 40,
         }
         container_image = finalize_nemo_v3_receipt.claim_container_image(claim)
         receipt = {
@@ -274,6 +246,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                 "state": "FAIL",
                 "stack": {
                     "containerImage": container_image,
+                    "bridgeExecution": (
+                        finalize_nemo_v3_receipt.claim_bridge_execution(claim)
+                    ),
                     "launcherSha256": claim["launcherSha256"],
                 },
             },
@@ -323,9 +298,26 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     claim,
                 )
 
-            receipt["evaluation"]["stack"]["containerImage"]["id"] = claim[
-                "observedImageId"
-            ]
+            receipt["evaluation"]["stack"]["containerImage"] = (
+                finalize_nemo_v3_receipt.claim_container_image(claim)
+            )
+            receipt["evaluation"]["stack"]["bridgeExecution"][
+                "executionBridgeRevision"
+            ] = "0" * 40
+            path.write_text(json.dumps(intent), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Bridge revisions"):
+                finalize_nemo_v3_receipt.validate_intent(
+                    path,
+                    spec,
+                    exact_payload,
+                    now - timedelta(seconds=1),
+                    root,
+                    claim,
+                )
+
+            receipt["evaluation"]["stack"]["bridgeExecution"] = (
+                finalize_nemo_v3_receipt.claim_bridge_execution(claim)
+            )
             receipt["evaluation"]["stack"]["launcherSha256"] = "0" * 64
             path.write_text(json.dumps(intent), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "receipt launcher"):
@@ -346,27 +338,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             spec_path = root / "job.json"
             spec_path.write_bytes(b'{"signed":"envelope"}\n')
             claim_path = root / "claim.json"
-            claim_path.write_text(
-                json.dumps(
-                    {
-                        "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 2,
-                        "jobId": "job-test",
-                        "jobEnvelopeSha256": hashlib.sha256(
-                            spec_path.read_bytes()
-                        ).hexdigest(),
-                        "bridgeRevision": "a" * 40,
-                        "launcherSha256": "f" * 64,
-                        "trainingImage": "szl-nemo-v3:local",
-                        "observedImageId": "sha256:" + "b" * 64,
-                        "observedRevisionLabel": "a" * 40,
-                        "imageBuildReceiptSha256": None,
-                        "imageDockerfileSha256": None,
-                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
-                    }
-                ),
-                encoding="utf-8",
-            )
+            claim = valid_attempt_claim(spec_path, now)
+            claim["trainingImage"] = "szl-nemo-v3:local"
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "immutable execution identity"):
                 finalize_nemo_v3_receipt.validate_attempt_claim(
@@ -384,25 +358,9 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             spec_path = root / "job.json"
             spec_path.write_bytes(b'{"signed":"changed"}\n')
             claim_path = root / "claim.json"
-            claim_path.write_text(
-                json.dumps(
-                    {
-                        "kind": "szl-nemo-v3-attempt-claim",
-                        "v": 2,
-                        "jobId": "job-test",
-                        "jobEnvelopeSha256": "0" * 64,
-                        "bridgeRevision": "a" * 40,
-                        "launcherSha256": "f" * 64,
-                        "trainingImage": "sha256:" + "b" * 64,
-                        "observedImageId": "sha256:" + "b" * 64,
-                        "observedRevisionLabel": "a" * 40,
-                        "imageBuildReceiptSha256": "c" * 64,
-                        "imageDockerfileSha256": "d" * 64,
-                        "claimedAt": now.isoformat().replace("+00:00", "Z"),
-                    }
-                ),
-                encoding="utf-8",
-            )
+            claim = valid_attempt_claim(spec_path, now)
+            claim["jobEnvelopeSha256"] = "0" * 64
+            claim_path.write_text(json.dumps(claim), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "signed job envelope"):
                 finalize_nemo_v3_receipt.validate_attempt_claim(

@@ -149,6 +149,45 @@ class ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "verification failed"):
             verify_envelope(tampered, pin)
 
+    def test_dsse_verifies_with_cryptography_when_pynacl_is_absent(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey,
+        )
+
+        signing_key = Ed25519PrivateKey.generate()
+        raw_public = signing_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + raw_public
+        key_id = __import__("hashlib").sha256(spki).hexdigest()[:16]
+        spec = valid_spec()
+        payload = json.dumps(spec, separators=(",", ":"), ensure_ascii=False).encode()
+        signature = signing_key.sign(pae(V2_PAYLOAD_TYPE, payload))
+        envelope = {
+            "payloadType": V2_PAYLOAD_TYPE,
+            "payload": base64.b64encode(payload).decode(),
+            "publicKeySpkiBase64": base64.b64encode(spki).decode(),
+            "signatures": [
+                {"keyid": key_id, "sig": base64.b64encode(signature).decode()}
+            ],
+        }
+        pin = {"keyId": key_id, "publicKeySpkiBase64": envelope["publicKeySpkiBase64"]}
+
+        real_import = __import__
+
+        def without_pynacl(name, *args, **kwargs):
+            if name == "nacl.signing":
+                raise ModuleNotFoundError("simulated missing PyNaCl")
+            return real_import(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=without_pynacl):
+            observed, exact, observed_type = verify_envelope(envelope, pin)
+        self.assertEqual(observed, spec)
+        self.assertEqual(exact, payload)
+        self.assertEqual(observed_type, V2_PAYLOAD_TYPE)
+
     def test_floating_revision_is_refused(self):
         spec = valid_spec()
         spec["base"]["revision"] = "main"
@@ -281,8 +320,42 @@ class RuntimeEvidenceTests(unittest.TestCase):
             },
             clear=False,
         ):
-            with self.assertRaisesRegex(RuntimeError, "approved local ID"):
+            with self.assertRaisesRegex(RuntimeError, "not admitted"):
                 stack_fingerprint(packages=())
+
+    def test_stack_fingerprint_records_governed_registry_image_and_revisions(self):
+        digest = "a" * 64
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "SZL_CONTAINER_IMAGE_REFERENCE": (f"unsloth/unsloth@sha256:{digest}"),
+                "SZL_CONTAINER_IMAGE_ID": f"sha256:{digest}",
+                "SZL_CONTAINER_IMAGE_REVISION": "",
+                "SZL_CONTAINER_ENVIRONMENT_PROBE_SHA256": "b" * 64,
+                "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256": "",
+                "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256": "",
+                "SZL_ENVELOPE_REVISION": "c" * 40,
+                "SZL_EXECUTION_BRIDGE_REVISION": "d" * 40,
+                "SZL_LAUNCHER_SHA256": "e" * 64,
+            },
+            clear=False,
+        ):
+            evidence = stack_fingerprint(packages=())
+        self.assertEqual(
+            evidence["containerImage"],
+            {
+                "reference": f"unsloth/unsloth@sha256:{digest}",
+                "id": f"sha256:{digest}",
+                "environmentProbeSha256": "b" * 64,
+            },
+        )
+        self.assertEqual(
+            evidence["bridgeExecution"],
+            {
+                "envelopeRevision": "c" * 40,
+                "executionBridgeRevision": "d" * 40,
+            },
+        )
 
     def test_chat_template_evidence(self):
         tokenizer = SimpleNamespace(

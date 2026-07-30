@@ -136,30 +136,49 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
     image_reference = os.environ.get("SZL_CONTAINER_IMAGE_REFERENCE")
     image_id = os.environ.get("SZL_CONTAINER_IMAGE_ID")
     image_revision = os.environ.get("SZL_CONTAINER_IMAGE_REVISION")
+    environment_probe_sha256 = os.environ.get("SZL_CONTAINER_ENVIRONMENT_PROBE_SHA256")
     build_receipt_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256")
     dockerfile_sha256 = os.environ.get("SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256")
+    envelope_revision = os.environ.get("SZL_ENVELOPE_REVISION")
+    execution_bridge_revision = os.environ.get("SZL_EXECUTION_BRIDGE_REVISION")
     launcher_sha256 = os.environ.get("SZL_LAUNCHER_SHA256")
     if launcher_sha256 and not re.fullmatch(r"[0-9a-f]{64}", launcher_sha256):
         raise RuntimeError("isolated launcher identity is not immutable")
     evidence["launcherSha256"] = launcher_sha256 or None
+    if bool(envelope_revision) != bool(execution_bridge_revision):
+        raise RuntimeError("Bridge execution evidence is incomplete")
+    if envelope_revision:
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", envelope_revision)
+            or not re.fullmatch(r"[0-9a-f]{40}", execution_bridge_revision or "")
+            or envelope_revision == execution_bridge_revision
+        ):
+            raise RuntimeError("Bridge execution evidence is not immutable")
+        evidence["bridgeExecution"] = {
+            "envelopeRevision": envelope_revision,
+            "executionBridgeRevision": execution_bridge_revision,
+        }
+    else:
+        evidence["bridgeExecution"] = None
     if image_reference or image_id:
-        if not image_reference or not image_id or not image_revision:
+        if not image_reference or not image_id:
             raise RuntimeError("container image evidence is incomplete")
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_reference):
-            raise RuntimeError("container image reference is not an approved local ID")
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
             raise RuntimeError("container image ID is not immutable")
-        if not re.fullmatch(r"[0-9a-f]{40}", image_revision):
-            raise RuntimeError("container image revision is not immutable")
         if bool(build_receipt_sha256) != bool(dockerfile_sha256):
             raise RuntimeError("container local-build evidence is incomplete")
-        container_image = {
-            "reference": image_reference,
-            "id": image_id,
-            "revision": image_revision,
-        }
-        if build_receipt_sha256:
-            if not re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256):
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", image_reference):
+            if (
+                not re.fullmatch(r"[0-9a-f]{40}", image_revision or "")
+                or environment_probe_sha256
+            ):
+                raise RuntimeError("local container image evidence is incomplete")
+            container_image = {
+                "reference": image_reference,
+                "id": image_id,
+                "revision": image_revision,
+            }
+            if not re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256 or ""):
                 raise RuntimeError("container image build receipt is not immutable")
             if not re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256 or ""):
                 raise RuntimeError("container image Dockerfile is not immutable")
@@ -167,9 +186,39 @@ def stack_fingerprint(packages: Iterable[str] = PACKAGE_EVIDENCE) -> dict[str, A
                 "receiptSha256": build_receipt_sha256,
                 "dockerfileSha256": dockerfile_sha256,
             }
+        elif re.fullmatch(
+            r"unsloth/unsloth@sha256:[0-9a-f]{64}",
+            image_reference,
+        ):
+            expected_id = image_reference.rsplit("@", 1)[1]
+            if (
+                image_id != expected_id
+                or image_revision
+                or build_receipt_sha256
+                or dockerfile_sha256
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}",
+                    environment_probe_sha256 or "",
+                )
+            ):
+                raise RuntimeError(
+                    "digest-pinned training image evidence is incomplete"
+                )
+            container_image = {
+                "reference": image_reference,
+                "id": image_id,
+                "environmentProbeSha256": environment_probe_sha256,
+            }
+        else:
+            raise RuntimeError("container image reference is not admitted")
         evidence["containerImage"] = container_image
     else:
-        if image_revision or build_receipt_sha256 or dockerfile_sha256:
+        if (
+            image_revision
+            or environment_probe_sha256
+            or build_receipt_sha256
+            or dockerfile_sha256
+        ):
             raise RuntimeError("container image evidence is incomplete")
         evidence["containerImage"] = None
     lock_path = pathlib.Path(__file__).resolve().parent / "stack-freeze.txt"

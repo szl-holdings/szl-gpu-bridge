@@ -38,6 +38,23 @@ SETTLED_A11OY_RELOCK_RUN_URL = (
 )
 CORRECTED_BRIDGE_REVISION = "2237bb3f36663343ace29d98cda6c32e165450a0"
 NEXT_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-4"
+FINAL_A11OY_SOURCE_REVISION = "e3d4a46724b222c8a5b2b6f04877bc115a6c82cb"
+FINAL_OWNER_WORKFLOW_BLOB = "2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f"
+FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-5"
+_ATTEMPT_4_REPLACEMENT = {
+    "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
+    "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": NEXT_REVIEWED_JOB_ID,
+}
+_ATTEMPT_5_REPLACEMENT = {
+    "sourceRevision": FINAL_A11OY_SOURCE_REVISION,
+    "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+}
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
         "statuses": ("STALE_SOURCE", "RETIRED_KEY", "NEVER_DISPATCH"),
@@ -49,6 +66,7 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         ),
         "engine_key_id": LEGACY_ENGINE_KEY_ID,
         "source_revision": "b21b8fb65400e7eb39595365c5f54c80ed78aa67",
+        "replacement": _ATTEMPT_4_REPLACEMENT,
     },
     "job-2026-nemo-v3-governed-successor-3": {
         "statuses": (
@@ -64,6 +82,23 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         ),
         "engine_key_id": PROVISIONAL_ENGINE_KEY_ID,
         "source_revision": "a5351c8e37a7cfe54e0c3cf53c8bbd460a16c11c",
+        "replacement": _ATTEMPT_4_REPLACEMENT,
+    },
+    "job-2026-nemo-v3-governed-attempt-4": {
+        "statuses": (
+            "STALE_SOURCE",
+            "TRANSPORT_UNREPRESENTABLE",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2"
+        ),
+        "payload_sha256": (
+            "14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": SETTLED_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_5_REPLACEMENT,
     },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)

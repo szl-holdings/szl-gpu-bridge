@@ -289,7 +289,7 @@ envelope and payload digests and marks it
 `UNAUTHORIZED_PROVISIONAL_KEY + STALE_SOURCE + NEVER_DISPATCH`.
 
 The dispatcher, isolated launcher, prefetch, runner, finalizer, and status
-publisher all enforce both quarantine boundaries before any execution or claim.
+publisher all enforce every quarantine boundary before any execution or claim.
 The original reviewed specs and envelopes must never be consumed, deleted,
 rewritten, re-signed, or retried.
 
@@ -324,8 +324,17 @@ queue/pending/job-2026-nemo-v3-governed-attempt-4.json
 ```
 
 It verifies under active key `b8041281c81c4caa` and binds the exact reviewed
-payload. Its status is `QUEUED_AWAITING_GPU_RECEIPT`; this is queue
-authorization only, not a claim, dispatch, receipt, execution, or release
-claim. Runner registration/start, claim, dispatch,
-receipt/candidate/model/model-card/dataset upload, and Hugging Face mutation
-remain forbidden until their own post-merge release gate.
+payload. GitHub rejected its flat 14-property `repository_dispatch` transport
+before creating an event. The immutable record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json` therefore marks it
+`STALE_SOURCE + TRANSPORT_UNREPRESENTABLE + NEVER_DISPATCH`. Its spec and
+envelope remain byte-for-byte evidence and must never be resent, consumed,
+deleted, rewritten, or re-signed.
+
+A fresh attempt must bind protected A11oy main
+`e3d4a46724b222c8a5b2b6f04877bc115a6c82cb`, owner-workflow blob
+`2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f`, and the nested-v3 transport.
+The b804-signed payload alone selects the executable Bridge revision. The
+later protected envelope revision is data-only, is passed as an exact path,
+and must be a strict protected descendant. The create-new claim and terminal
+receipt evidence bind both revisions and the immutable Unsloth image digest.
