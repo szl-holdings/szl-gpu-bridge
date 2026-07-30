@@ -34,6 +34,9 @@ ATTEMPT_4_QUEUE = ROOT / "queue" / "pending" / f"{NEXT_REVIEWED_JOB_ID}.json"
 EXPECTED_PAYLOAD_SHA256 = (
     "14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5"
 )
+EXPECTED_ENVELOPE_FILE_SHA256 = (
+    "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2"
+)
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -172,18 +175,36 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
             "ACTIVE",
         )
 
-    def test_plaintext_has_no_queue_envelope_or_execution_authority(self) -> None:
-        self.assertFalse(ATTEMPT_4_QUEUE.exists())
+    def test_signed_queue_is_exact_but_has_no_receipt_or_release_claim(self) -> None:
+        self.assertTrue(ATTEMPT_4_QUEUE.is_file())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_4_QUEUE.read_bytes()).hexdigest(),
+            EXPECTED_ENVELOPE_FILE_SHA256,
+        )
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=ATTEMPT_4_PATH,
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 30, 19, 30, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(
+            report["queue"]["path"],
+            "queue/pending/job-2026-nemo-v3-governed-attempt-4.json",
+        )
+        self.assertEqual(
+            report["queue"]["payload_sha256"],
+            EXPECTED_PAYLOAD_SHA256,
+        )
+        self.assertEqual(
+            report["queue"]["engine_key_id"],
+            COORDINATED_ENGINE_KEY_ID,
+        )
         self.assertFalse(report["quarantine"]["present"])
+        self.assertFalse(report["receipt"]["present"])
         self.assertEqual(
             report["reviewed_spec"]["sha256"],
             EXPECTED_PAYLOAD_SHA256,
@@ -227,7 +248,7 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_status_workflow_tracks_plaintext_without_dispatch(self) -> None:
+    def test_status_workflow_tracks_signed_queue_without_dispatch(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260730-attempt-4-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-4.json",
