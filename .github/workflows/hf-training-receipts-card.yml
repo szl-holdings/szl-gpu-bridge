@@ -1,0 +1,46 @@
+name: Sync training-receipts card
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - hf/szl-training-receipts/README.md
+      - cloud/sync_training_receipts_card.py
+      - tests/test_training_receipts_card.py
+      - .github/workflows/hf-training-receipts-card.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact protected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify card contract
+        run: |
+          set -euo pipefail
+          python -m py_compile cloud/sync_training_receipts_card.py
+          python -m unittest tests.test_training_receipts_card -v
+          git diff --check
+      - name: Require approved Hugging Face credential
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: test -n "$HF_TOKEN"
+      - name: Publish source-bound card only
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface-hub==1.19.0
+          python cloud/sync_training_receipts_card.py --source-sha "$GITHUB_SHA"
