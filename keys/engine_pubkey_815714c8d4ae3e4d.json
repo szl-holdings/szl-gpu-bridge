@@ -1,0 +1,8 @@
+{
+  "kind": "szl-quant-engine-pubkey",
+  "v": 1,
+  "alg": "ed25519",
+  "keyId": "815714c8d4ae3e4d",
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEAY7nvtOfryavNF5cOYd+9xT44Z47CcY1byfDhR/g7GZM=",
+  "note": "Recovery-generation engine signing identity enrolled by protected review. Private key remains ACL-locked on the owner host and is not in this repository."
+}

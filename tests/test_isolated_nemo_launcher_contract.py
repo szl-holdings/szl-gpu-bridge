@@ -25,6 +25,9 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
 
     def test_only_public_engine_key_enters_sandbox(self) -> None:
         self.assertIn('"keys\\engine_pubkey.json"', self.source)
+        self.assertIn('"engine_keyring.json"', self.source)
+        self.assertIn("$Envelope.signatures[0].keyid", self.source)
+        self.assertIn("$EngineKey", self.source)
         self.assertNotIn("laptop_key.pem", self.source)
         self.assertNotIn("laptop_pubkey.json", self.source)
 

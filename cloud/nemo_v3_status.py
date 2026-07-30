@@ -27,8 +27,17 @@ LAPTOP = ROOT / "laptop"
 if str(LAPTOP) not in sys.path:
     sys.path.insert(0, str(LAPTOP))
 
-from frontier_contract import canonicalize, derive_key_id, verify_envelope  # noqa: E402
-from nemo_v3_contract import NEMO_V3_PAYLOAD_TYPE, validate_nemo_v3_spec  # noqa: E402
+from frontier_contract import (  # noqa: E402
+    canonicalize,
+    derive_key_id,
+    load_engine_pin_for_envelope,
+    verify_envelope,
+)
+from nemo_v3_contract import (  # noqa: E402
+    NEMO_V3_PAYLOAD_TYPE,
+    expected_engine_key_id,
+    validate_nemo_v3_spec,
+)
 
 SPEC_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
 RECEIPTS_REPO = "SZLHOLDINGS/szl-training-receipts"
@@ -153,9 +162,7 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
         return QueueEvidence(False, False, path.relative_to(root).as_posix())
     try:
         envelope = json.loads(path.read_text(encoding="utf-8"))
-        pin = json.loads(
-            (root / "keys" / "engine_pubkey.json").read_text(encoding="utf-8")
-        )
+        pin = load_engine_pin_for_envelope(root / "keys", envelope)
         signed_spec, exact_payload, payload_type = verify_envelope(
             envelope,
             pin,
@@ -166,6 +173,14 @@ def verify_queue(spec: dict[str, Any], root: pathlib.Path = ROOT) -> QueueEviden
             raise StatusError(f"unexpected payload type {payload_type!r}")
         if signed_spec != spec:
             raise StatusError("signed queue payload differs from the reviewed jobspec")
+        if (
+            (
+                "authorization" in signed_spec
+                or (root / "keys" / "engine_keyring.json").is_file()
+            )
+            and pin.get("keyId") != expected_engine_key_id(signed_spec)
+        ):
+            raise StatusError("signed queue uses the wrong engine authorization key")
         canonical = signer_canonicalize(spec).encode("utf-8")
         if exact_payload != canonical:
             raise StatusError(

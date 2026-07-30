@@ -133,12 +133,56 @@ $ImageBuildReceiptSha256 = (
 ).Hash.ToLowerInvariant()
 
 $JobSpec = Join-Path $BridgeSource "queue\pending\$JobId.json"
-$EngineKey = Join-Path $BridgeSource "keys\engine_pubkey.json"
 $PrefetchReceipt = Join-Path $InputCache "$JobId-prefetch.json"
-foreach ($Required in @($JobSpec, $EngineKey, $PrefetchReceipt)) {
+foreach ($Required in @($JobSpec, $PrefetchReceipt)) {
   if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
     throw "required isolated-execution input is missing: $Required"
   }
+}
+$Envelope = Get-Content -LiteralPath $JobSpec -Raw | ConvertFrom-Json
+if (
+  @($Envelope.signatures).Count -ne 1 -or
+  [string]$Envelope.signatures[0].keyid -notmatch '^[0-9a-f]{16}$'
+) {
+  throw "signed job does not contain exactly one valid engine key ID"
+}
+$EnvelopeKeyId = [string]$Envelope.signatures[0].keyid
+$KeysRoot = Join-Path $BridgeSource "keys"
+$KeyringPath = Join-Path $KeysRoot "engine_keyring.json"
+if (Test-Path -LiteralPath $KeyringPath -PathType Leaf) {
+  $Keyring = Get-Content -LiteralPath $KeyringPath -Raw | ConvertFrom-Json
+  if (
+    $Keyring.kind -ne "szl-quant-engine-keyring" -or
+    $Keyring.v -ne 1
+  ) {
+    throw "engine keyring contract is invalid"
+  }
+  $KeyEntry = $Keyring.keys.PSObject.Properties[$EnvelopeKeyId].Value
+  if (
+    $null -eq $KeyEntry -or
+    $KeyEntry.status -ne "ACTIVE" -or
+    [string]$KeyEntry.file -notmatch '^engine_pubkey(?:_[0-9a-f]{16})?\.json$'
+  ) {
+    throw "signed job engine key is not active for execution"
+  }
+  $EngineKey = Join-Path $KeysRoot ([string]$KeyEntry.file)
+} else {
+  $EngineKey = Join-Path $KeysRoot "engine_pubkey.json"
+}
+if (-not (Test-Path -LiteralPath $EngineKey -PathType Leaf)) {
+  throw "enrolled engine public key is missing: $EngineKey"
+}
+$EnginePin = Get-Content -LiteralPath $EngineKey -Raw | ConvertFrom-Json
+if ([string]$EnginePin.keyId -ne $EnvelopeKeyId) {
+  throw "engine keyring entry differs from the selected public key"
+}
+$EngineSpki = [Convert]::FromBase64String([string]$EnginePin.publicKeySpkiBase64)
+$EngineSha = [System.Security.Cryptography.SHA256]::Create()
+$DerivedEngineKeyId = (
+  ($EngineSha.ComputeHash($EngineSpki) | ForEach-Object { $_.ToString("x2") }) -join ""
+).Substring(0, 16)
+if ($DerivedEngineKeyId -ne $EnvelopeKeyId) {
+  throw "selected engine public key bytes are mislabeled"
 }
 foreach ($RequiredDirectory in @($HfCache, $InputCache)) {
   if (-not (Test-Path -LiteralPath $RequiredDirectory -PathType Container)) {

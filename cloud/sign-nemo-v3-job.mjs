@@ -18,6 +18,7 @@ const SHA = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const REPO = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const JOB = /^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$/;
+const ENGINE_KEY_ID = /^[0-9a-f]{16}$/;
 const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9_./-]*$/;
 const HOLDOUT_NAMES = ['original-v2', 'shadow-v2', 'challenge-v3'];
 const OWNER_DISPATCH_FIELDS = [
@@ -28,6 +29,7 @@ const OWNER_WORKFLOW_IDENTITY = 'szl-holdings/a11oy/.github/workflows/nemo-v3-is
 const OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v2';
 const OWNER_TRAINING_IMAGE = 'unsloth/unsloth@sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123';
 const OWNER_RECEIPTS_REPO = 'SZLHOLDINGS/szl-training-receipts';
+const LEGACY_ENGINE_KEY_ID = '5c6cf59741ade920';
 
 export function canonicalize(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
@@ -150,6 +152,50 @@ function validateOwnerDispatch(spec) {
   }
 }
 
+function validateAuthorization(spec) {
+  if (spec.authorization === undefined) return;
+  const authorization = object(spec.authorization, 'authorization');
+  const fields = [
+    'engineKeyId', 'previousEngineKeyId', 'recoveryIssueUrl',
+    'rotationMode', 'oldKeyStatus', 'decisionAt',
+  ];
+  if (JSON.stringify(Object.keys(authorization).sort()) !== JSON.stringify([...fields].sort())) {
+    throw new Error('authorization fields must be exact');
+  }
+  if (!ENGINE_KEY_ID.test(authorization.engineKeyId ?? '')
+      || !ENGINE_KEY_ID.test(authorization.previousEngineKeyId ?? '')
+      || authorization.engineKeyId === authorization.previousEngineKeyId) {
+    throw new Error('authorization engine key identities are invalid');
+  }
+  if (authorization.previousEngineKeyId !== LEGACY_ENGINE_KEY_ID
+      || authorization.rotationMode !== 'LOST_PRIVATE_KEY_NEW_GENERATION'
+      || authorization.oldKeyStatus !== 'VERIFY_ONLY') {
+    throw new Error('authorization recovery boundary is invalid');
+  }
+  if (authorization.recoveryIssueUrl !== 'https://github.com/szl-holdings/szl-gpu-bridge/issues/25'
+      || !Number.isFinite(new Date(authorization.decisionAt).getTime())) {
+    throw new Error('authorization recovery evidence is invalid');
+  }
+}
+
+function loadEnginePin(expectedKeyId) {
+  const keyring = JSON.parse(readFileSync(join(ROOT, 'keys/engine_keyring.json'), 'utf8'));
+  if (keyring.kind !== 'szl-quant-engine-keyring' || keyring.v !== 1
+      || !keyring.keys || typeof keyring.keys !== 'object' || Array.isArray(keyring.keys)) {
+    throw new Error('engine keyring contract is invalid');
+  }
+  const entry = keyring.keys[expectedKeyId];
+  if (!entry || entry.status !== 'ACTIVE'
+      || !/^engine_pubkey(?:_[0-9a-f]{16})?\.json$/.test(entry.file ?? '')) {
+    throw new Error(`engine key ${expectedKeyId} is not active for new authorization`);
+  }
+  const pin = JSON.parse(readFileSync(join(ROOT, 'keys', entry.file), 'utf8'));
+  if (pin.keyId !== expectedKeyId) {
+    throw new Error(`engine keyring entry ${expectedKeyId} differs from its pin`);
+  }
+  return pin;
+}
+
 export function validateNemoV3Spec(spec) {
   object(spec, 'spec');
   if (spec.kind !== 'szl-nemo-governed-v3') throw new Error('bad kind');
@@ -159,6 +205,7 @@ export function validateNemoV3Spec(spec) {
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
   validateLineage(spec);
   validateOwnerDispatch(spec);
+  validateAuthorization(spec);
 
   object(spec.source, 'source');
   if (spec.source.repoId !== 'szl-holdings/a11oy' || spec.source.licenseId !== 'apache-2.0' || !/^[0-9a-f]{40}$/.test(spec.source.revision ?? '')) {
@@ -234,7 +281,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');
   const privateKey = createPrivateKey(readFileSync(keyPath));
-  const pubJson = JSON.parse(readFileSync(join(ROOT, 'keys/engine_pubkey.json'), 'utf8'));
+  const expectedKeyId = spec.authorization?.engineKeyId ?? LEGACY_ENGINE_KEY_ID;
+  const pubJson = loadEnginePin(expectedKeyId);
   const publicKey = createPublicKey({
     key: Buffer.from(pubJson.publicKeySpkiBase64, 'base64'), format: 'der', type: 'spki',
   });

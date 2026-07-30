@@ -25,7 +25,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any
 
-from frontier_contract import load_pin, verify_envelope
+from frontier_contract import load_engine_pin_for_envelope, verify_envelope
 from frontier_job import (
     ROOT,
     _build_sft_config,
@@ -46,6 +46,7 @@ from frontier_runtime import (
 )
 from nemo_v3_contract import (
     NEMO_V3_PAYLOAD_TYPE,
+    expected_engine_key_id,
     record_ids_sha256,
     validate_nemo_v3_spec,
 )
@@ -361,7 +362,7 @@ def _complete_terminal_evaluation_failure(
 
 def main(spec_path: str) -> int:
     envelope = json.loads(pathlib.Path(spec_path).read_text(encoding="utf-8-sig"))
-    pin = load_pin(ROOT / "keys" / "engine_pubkey.json")
+    pin = load_engine_pin_for_envelope(ROOT / "keys", envelope)
     try:
         spec, exact_payload, payload_type = verify_envelope(
             envelope,
@@ -369,6 +370,8 @@ def main(spec_path: str) -> int:
             allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,),
         )
         validate_nemo_v3_spec(spec)
+        if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
+            raise ValueError("Nemo v3 engine authorization key mismatch")
     except Exception as exc:  # noqa: BLE001
         print(f"REFUSED Nemo v3 contract: {exc}")
         return 3

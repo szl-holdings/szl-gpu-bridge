@@ -6,18 +6,33 @@ on:
     paths:
       - jobspecs/nemo-v3-20260722-reviewed.json
       - jobspecs/nemo-v3-20260729-successor-2-reviewed.json
+      - jobspecs/nemo-v3-20260730-successor-3-reviewed.json
       - jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
+      - queue/pending/job-2026-nemo-v3-governed-successor-3.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-2.json
+      - keys/engine_keyring.json
+      - keys/engine_pubkey.json
+      - keys/engine_pubkey_815714c8d4ae3e4d.json
       - schema/nemo-v3-jobspec.v1.json
       - cloud/nemo_v3_status.py
       - cloud/sign-nemo-v3-job.mjs
       - cloud/verify-receipt.mjs
+      - laptop/bootstrap.ps1
+      - laptop/dispatcher.py
+      - laptop/finalize_nemo_v3_receipt.py
+      - laptop/frontier_contract.py
       - laptop/nemo_v3_contract.py
+      - laptop/prefetch_nemo_v3.py
+      - laptop/run_nemo_v3_isolated.ps1
       - laptop/runjob_nemo_v3.py
+      - tests/test_engine_keyring.py
+      - tests/test_isolated_nemo_launcher_contract.py
+      - tests/test_nemo_v3_dispatcher_engine_key_scope.py
       - tests/test_reviewed_nemo_v3_spec.py
       - tests/test_reviewed_nemo_v3_successor_spec.py
+      - tests/test_reviewed_nemo_v3_successor_3_spec.py
       - tests/test_reviewed_nemo_v3_attempt_2_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
@@ -60,6 +75,12 @@ jobs:
             report_title: '[nemo-v3-successor-2] governed successor generation'
             report_marker: szl-nemo-v3-governed-successor-2
             report_heading: SZL-Nemo v3 governed successor generation 2
+          - attempt_id: successor-3-key-recovery
+            spec_path: jobspecs/nemo-v3-20260730-successor-3-reviewed.json
+            report_path: reports/nemo-v3-successor-3-status.json
+            report_title: '[nemo-v3-successor-3] governed key-recovery generation'
+            report_marker: szl-nemo-v3-governed-successor-3
+            report_heading: SZL-Nemo v3 governed successor generation 3 key recovery
           - attempt_id: attempt-2-b21
             spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
             report_path: reports/nemo-v3-attempt-2-b21-status.json
@@ -102,7 +123,11 @@ jobs:
             laptop/nemo_v3_contract.py \
             tests/test_reviewed_nemo_v3_spec.py \
             tests/test_reviewed_nemo_v3_successor_spec.py \
+            tests/test_reviewed_nemo_v3_successor_3_spec.py \
             tests/test_reviewed_nemo_v3_attempt_2_spec.py \
+            tests/test_engine_keyring.py \
+            tests/test_isolated_nemo_launcher_contract.py \
+            tests/test_nemo_v3_dispatcher_engine_key_scope.py \
             tests/test_nemo_v3_status.py
           python -m unittest discover -s tests -p 'test_*nemo_v3*.py' -v
           node --check cloud/sign-nemo-v3-job.mjs

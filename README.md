@@ -30,7 +30,11 @@ cloud/verify-receipt.mjs ◄─────────────────�
 
 - **Inbound jobs:** public HTTPS polling only; no laptop GitHub credential and no inbound port.
 - **Outbound results:** the host uses its local Hugging Face authentication. Tokens and private keys are never committed or sent through the queue.
-- **Trust roots:** the host trusts one baked engine public key. The cloud trusts the separately announced laptop receipt key. An unverifiable claim is treated as no claim.
+- **Trust roots:** the host trusts only public keys admitted by the reviewed
+  `keys/engine_keyring.json`. Historical key `5c6cf59741ade920` is
+  verification-only; recovery key `815714c8d4ae3e4d` is active for the
+  separately identified successor generation. The cloud trusts the separately
+  announced laptop receipt key. An unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a

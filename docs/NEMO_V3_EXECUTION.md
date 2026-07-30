@@ -259,3 +259,36 @@ lineage.
 The file is not an executable job. No `queue/pending/` envelope exists for this
 identity until a separate protected publication review authorizes a fresh
 offline engine signature.
+
+## 8. Engine-key recovery generation
+
+Issue `https://github.com/szl-holdings/szl-gpu-bridge/issues/25` records that
+the private material for historical engine key `5c6cf59741ade920` is
+unavailable. The public key is retained as `VERIFY_ONLY`; its historical
+envelopes remain verifiable and its jobs are not retried, reset, or relabeled.
+
+The separately identified generation is:
+
+```text
+jobspecs/nemo-v3-20260730-successor-3-reviewed.json
+queue/pending/job-2026-nemo-v3-governed-successor-3.json
+```
+
+Its `authorization` object binds the recorded recovery issue, the old and new
+key IDs, the recovery mode, and the owner decision time. The queue envelope is
+signed by active key `815714c8d4ae3e4d`; every verifier resolves the envelope
+signature key ID through `keys/engine_keyring.json` before trusting payload
+fields. The new generation retains the exact predecessor lineage and frozen
+science inputs but has new job and candidate identities.
+
+On the controlled signing host, the recovery generation is authorized with:
+
+```powershell
+$env:SZL_QUANT_KEY = "C:\secure\engine_key_rotation_20260730.pem"
+node cloud/sign-nemo-v3-job.mjs jobspecs/nemo-v3-20260730-successor-3-reviewed.json
+Remove-Item Env:SZL_QUANT_KEY
+```
+
+Only the public pin and DSSE envelope are committed. The private key must
+remain owner-and-SYSTEM ACL restricted and must never be placed in Git,
+Actions, an issue, or chat.
