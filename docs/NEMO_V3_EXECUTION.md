@@ -338,3 +338,27 @@ The b804-signed payload alone selects the executable Bridge revision. The
 later protected envelope revision is data-only, is passed as an exact path,
 and must be a strict protected descendant. The create-new claim and terminal
 receipt evidence bind both revisions and the immutable Unsloth image digest.
+
+## 10. Reviewed attempt 5 plaintext
+
+The fresh transport-v3 recovery plaintext is:
+
+```text
+jobspecs/nemo-v3-20260730-attempt-5-reviewed.json
+```
+
+It binds final protected A11oy main
+`e3d4a46724b222c8a5b2b6f04877bc115a6c82cb`, owner-workflow blob
+`2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f`, workflow version
+`nemo-v3-owner-dispatch.v4`, and protected executable Bridge revision
+`a2015accc0be8060c4084455e829a9373e5c99e2`. The lineage records that attempt
+4 failed during pre-event transport validation with no event, workflow run,
+claim, training, holdout, candidate, receipt-intent, or ledger side effect.
+Its science inputs remain frozen and all candidate, model-card, and dataset
+uploads remain disabled.
+
+This phase publishes reviewed plaintext only. The attempt-5 queue envelope does
+not exist and status must remain `AWAITING_ENGINE_SIGNATURE`. A later separate
+protected change may publish one exclusive-create b804-signed envelope; that
+future envelope revision is data-only and must be a strict protected descendant
+of the signed executable Bridge revision.

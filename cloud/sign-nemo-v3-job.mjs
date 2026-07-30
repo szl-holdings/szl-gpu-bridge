@@ -38,6 +38,30 @@ const SETTLED_OWNER_WORKFLOW_BLOB = '7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33';
 const SETTLED_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30561614589';
 const CORRECTED_BRIDGE_REVISION = '2237bb3f36663343ace29d98cda6c32e165450a0';
 const NEXT_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-4';
+const FINAL_A11OY_SOURCE_REVISION = 'e3d4a46724b222c8a5b2b6f04877bc115a6c82cb';
+const FINAL_OWNER_WORKFLOW_BLOB = '2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f';
+const FINAL_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30588489971';
+const FINAL_CORRECTED_BRIDGE_REVISION = 'a2015accc0be8060c4084455e829a9373e5c99e2';
+const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';
+const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
+const COORDINATED_JOB_BINDINGS = {
+  [NEXT_REVIEWED_JOB_ID]: {
+    sourceRevision: SETTLED_A11OY_SOURCE_REVISION,
+    workflowBlob: SETTLED_OWNER_WORKFLOW_BLOB,
+    workflowVersion: OWNER_WORKFLOW_VERSION,
+    relockRunUrl: SETTLED_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 4,
+  },
+  [FUTURE_REVIEWED_JOB_ID]: {
+    sourceRevision: FINAL_A11OY_SOURCE_REVISION,
+    workflowBlob: FINAL_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: FINAL_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: FINAL_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 5,
+  },
+};
 
 export function canonicalize(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
@@ -90,7 +114,7 @@ function validatePinnedFile(value, name, records = false) {
 function validateLineage(spec) {
   if (spec.lineage === undefined) return;
   const lineage = object(spec.lineage, 'lineage');
-  const fields = [
+  const legacyFields = [
     'predecessorJobId', 'predecessorClaimSha256', 'predecessorEnvelopeSha256',
     'predecessorBridgeRevision', 'predecessorImageId', 'predecessorClaimedAt',
     'incidentUrl', 'failurePhase', 'successorGeneration', 'automaticRetry',
@@ -98,26 +122,52 @@ function validateLineage(spec) {
     'candidateProduced', 'receiptIntentProduced', 'terminalLedgerWritten',
     'scienceInputsReused',
   ];
+  const transportFields = [
+    'predecessorJobId', 'predecessorEnvelopeSha256', 'predecessorPayloadSha256',
+    'predecessorEnvelopeRevision', 'predecessorExecutionBridgeRevision',
+    'transportEvidenceUrl', 'failurePhase', 'successorGeneration',
+    'automaticRetry', 'eventCreated', 'workflowRunCreated', 'claimCreated',
+    'trainingStarted', 'modelRepositoryCodeImported', 'holdoutsAccessed',
+    'candidateProduced', 'receiptIntentProduced', 'terminalLedgerWritten',
+    'scienceInputsReused',
+  ];
   const keys = Object.keys(lineage).sort();
-  if (JSON.stringify(keys) !== JSON.stringify([...fields].sort())) {
+  const legacy = JSON.stringify(keys) === JSON.stringify([...legacyFields].sort());
+  const transport = JSON.stringify(keys) === JSON.stringify([...transportFields].sort());
+  if (!legacy && !transport) {
     throw new Error('lineage fields must be exact');
   }
   if (!JOB.test(lineage.predecessorJobId ?? '') || lineage.predecessorJobId === spec.jobId) {
     throw new Error('lineage predecessor jobId invalid');
   }
-  if (!SHA256.test(lineage.predecessorClaimSha256 ?? '') || !SHA256.test(lineage.predecessorEnvelopeSha256 ?? '')) {
-    throw new Error('lineage predecessor digests invalid');
+  if (!SHA256.test(lineage.predecessorEnvelopeSha256 ?? '')) {
+    throw new Error('lineage predecessor envelope digest invalid');
   }
-  if (!/^[0-9a-f]{40}$/.test(lineage.predecessorBridgeRevision ?? '')
-      || !/^sha256:[0-9a-f]{64}$/.test(lineage.predecessorImageId ?? '')) {
-    throw new Error('lineage predecessor execution identity invalid');
+  if (transport) {
+    if (!SHA256.test(lineage.predecessorPayloadSha256 ?? '')
+        || !/^[0-9a-f]{40}$/.test(lineage.predecessorEnvelopeRevision ?? '')
+        || !/^[0-9a-f]{40}$/.test(lineage.predecessorExecutionBridgeRevision ?? '')) {
+      throw new Error('lineage predecessor transport identity invalid');
+    }
+    if (lineage.transportEvidenceUrl !== 'https://github.com/szl-holdings/szl-gpu-bridge/issues/32'
+        || lineage.failurePhase !== 'PRE_EVENT_TRANSPORT_VALIDATION') {
+      throw new Error('lineage predecessor transport evidence invalid');
+    }
+  } else {
+    if (!SHA256.test(lineage.predecessorClaimSha256 ?? '')
+        || !/^[0-9a-f]{40}$/.test(lineage.predecessorBridgeRevision ?? '')
+        || !/^sha256:[0-9a-f]{64}$/.test(lineage.predecessorImageId ?? '')) {
+      throw new Error('lineage predecessor execution identity invalid');
+    }
+    if (!Number.isFinite(new Date(lineage.predecessorClaimedAt).getTime())
+        || !/^https:\/\/github\.com\/szl-holdings\/szl-gpu-bridge\/issues\/[0-9]+#issuecomment-[0-9]+$/.test(lineage.incidentUrl ?? '')) {
+      throw new Error('lineage predecessor evidence invalid');
+    }
+    if (lineage.failurePhase !== 'PRE_TRAINING_RUNTIME_SOURCE_PARSE') {
+      throw new Error('lineage recovery phase invalid');
+    }
   }
-  if (!Number.isFinite(new Date(lineage.predecessorClaimedAt).getTime())
-      || !/^https:\/\/github\.com\/szl-holdings\/szl-gpu-bridge\/issues\/[0-9]+#issuecomment-[0-9]+$/.test(lineage.incidentUrl ?? '')) {
-    throw new Error('lineage predecessor evidence invalid');
-  }
-  if (lineage.failurePhase !== 'PRE_TRAINING_RUNTIME_SOURCE_PARSE'
-      || !Number.isInteger(lineage.successorGeneration) || lineage.successorGeneration < 2) {
+  if (!Number.isInteger(lineage.successorGeneration) || lineage.successorGeneration < 2) {
     throw new Error('lineage recovery phase invalid');
   }
   const boundaries = {
@@ -130,20 +180,28 @@ function validateLineage(spec) {
     terminalLedgerWritten: false,
     scienceInputsReused: true,
   };
+  if (transport) {
+    Object.assign(boundaries, {
+      eventCreated: false,
+      workflowRunCreated: false,
+      claimCreated: false,
+    });
+  }
   for (const [field, expected] of Object.entries(boundaries)) {
     if (lineage[field] !== expected) throw new Error(`lineage ${field} boundary invalid`);
   }
 }
 
-function validateOwnerDispatch(spec) {
+function validateOwnerDispatch(spec, coordinatedBinding) {
   if (spec.ownerDispatch === undefined) return;
   const dispatch = object(spec.ownerDispatch, 'ownerDispatch');
   const keys = Object.keys(dispatch).sort();
   if (JSON.stringify(keys) !== JSON.stringify([...OWNER_DISPATCH_FIELDS].sort())) {
     throw new Error('ownerDispatch fields must be exact');
   }
+  const workflowVersion = coordinatedBinding?.workflowVersion ?? OWNER_WORKFLOW_VERSION;
   if (dispatch.workflowIdentity !== OWNER_WORKFLOW_IDENTITY
-      || dispatch.workflowVersion !== OWNER_WORKFLOW_VERSION) {
+      || dispatch.workflowVersion !== workflowVersion) {
     throw new Error('ownerDispatch workflow identity is not admitted');
   }
   if (!/^[0-9a-f]{40}$/.test(dispatch.workflowBlob ?? '')) {
@@ -160,7 +218,7 @@ function validateOwnerDispatch(spec) {
   }
 }
 
-function validateAuthorization(spec) {
+function validateAuthorization(spec, coordinatedBinding) {
   if (spec.authorization === undefined) return false;
   const authorization = object(spec.authorization, 'authorization');
   const legacyFields = [
@@ -195,14 +253,15 @@ function validateAuthorization(spec) {
     throw new Error('authorization recovery evidence is invalid');
   }
   if (coordinated) {
-    if (authorization.engineKeyId !== COORDINATED_ENGINE_KEY_ID
+    if (!coordinatedBinding
+        || authorization.engineKeyId !== COORDINATED_ENGINE_KEY_ID
         || authorization.enginePublicKeySpkiSha256 !== COORDINATED_ENGINE_SPKI_SHA256
         || authorization.provisionalEngineKeyId !== PROVISIONAL_ENGINE_KEY_ID
         || authorization.provisionalKeyStatus !== 'VERIFY_ONLY'
         || authorization.coordinationMode !== 'FINAL_ACTIVE_TRUST_ROOT'
-        || authorization.settledA11oyRelockRunUrl !== SETTLED_A11OY_RELOCK_RUN_URL
+        || authorization.settledA11oyRelockRunUrl !== coordinatedBinding.relockRunUrl
         || authorization.cryptographicContinuityClaimed !== false
-        || authorization.correctedBridgeRevision !== CORRECTED_BRIDGE_REVISION) {
+        || authorization.correctedBridgeRevision !== coordinatedBinding.correctedBridgeRevision) {
       throw new Error('coordinated authorization boundary is invalid');
     }
   }
@@ -234,20 +293,46 @@ export function validateNemoV3Spec(spec) {
   const created = new Date(spec.createdAt).getTime();
   const expires = new Date(spec.expiresAt).getTime();
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
+  const coordinatedBinding = COORDINATED_JOB_BINDINGS[spec.jobId];
   validateLineage(spec);
-  validateOwnerDispatch(spec);
-  const coordinatedAuthorization = validateAuthorization(spec);
+  validateOwnerDispatch(spec, coordinatedBinding);
+  const coordinatedAuthorization = validateAuthorization(spec, coordinatedBinding);
 
   object(spec.source, 'source');
   if (spec.source.repoId !== 'szl-holdings/a11oy' || spec.source.licenseId !== 'apache-2.0' || !/^[0-9a-f]{40}$/.test(spec.source.revision ?? '')) {
     throw new Error('source must be immutable Apache-2.0 a11oy');
   }
   if (coordinatedAuthorization
-      && (spec.jobId !== NEXT_REVIEWED_JOB_ID
-          || spec.source.revision !== SETTLED_A11OY_SOURCE_REVISION
-          || spec.ownerDispatch?.workflowBlob !== SETTLED_OWNER_WORKFLOW_BLOB
-          || spec.lineage?.successorGeneration !== 4)) {
+      && (spec.source.revision !== coordinatedBinding.sourceRevision
+          || spec.ownerDispatch?.workflowBlob !== coordinatedBinding.workflowBlob
+          || spec.lineage?.successorGeneration !== coordinatedBinding.successorGeneration)) {
     throw new Error('coordinated recovery binding is invalid');
+  }
+  if (spec.jobId === FUTURE_REVIEWED_JOB_ID) {
+    const exactTransportLineage = {
+      predecessorJobId: NEXT_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: 'e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2',
+      predecessorPayloadSha256: '14441cf982b177c1b613e56e63eae8be3e589ae35444826b40731c32312268e5',
+      predecessorEnvelopeRevision: '7045fe223703ba8fb2d710a59989f971080e7702',
+      predecessorExecutionBridgeRevision: CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/szl-gpu-bridge/issues/32',
+      failurePhase: 'PRE_EVENT_TRANSPORT_VALIDATION',
+      successorGeneration: 5,
+      automaticRetry: false,
+      eventCreated: false,
+      workflowRunCreated: false,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactTransportLineage)) {
+      throw new Error('attempt-5 transport recovery lineage is not exact');
+    }
   }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
@@ -316,6 +401,9 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   } catch (error) {
     fail(error.message);
   }
+  if (spec.jobId !== FUTURE_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${FUTURE_REVIEWED_JOB_ID}`);
+  }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');
   const privateKey = createPrivateKey(readFileSync(keyPath));
@@ -339,7 +427,7 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     publicKeySpkiBase64: pubJson.publicKeySpkiBase64,
   };
   const output = join(ROOT, 'queue/pending', `${spec.jobId}.json`);
-  writeFileSync(output, `${JSON.stringify(envelope, null, 2)}\n`);
+  writeFileSync(output, `${JSON.stringify(envelope, null, 2)}\n`, { flag: 'wx' });
   console.log(`signed Nemo v3 job -> ${output}`);
   console.log(`keyId ${keyId} payload sha256 ${createHash('sha256').update(payloadBytes).digest('hex')}`);
 }

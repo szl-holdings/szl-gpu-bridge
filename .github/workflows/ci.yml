@@ -63,6 +63,20 @@ jobs:
               schema = json.loads(path.read_text(encoding='utf-8-sig'))
               Draft202012Validator.check_schema(schema)
               print('valid draft-2020-12 schema:', path)
+          nemo_schema = json.loads(
+              pathlib.Path('schema/nemo-v3-jobspec.v1.json').read_text(
+                  encoding='utf-8-sig'
+              )
+          )
+          nemo_validator = Draft202012Validator(
+              nemo_schema,
+              format_checker=Draft202012Validator.FORMAT_CHECKER,
+          )
+          for path in pathlib.Path('jobspecs').glob('nemo-v3-*.json'):
+              nemo_validator.validate(
+                  json.loads(path.read_text(encoding='utf-8-sig'))
+              )
+              print('valid Nemo v3 jobspec:', path)
           for path in pathlib.Path('queue').rglob('*.json'):
               json.loads(path.read_text(encoding='utf-8-sig'))
               print('valid queued json:', path)

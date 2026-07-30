@@ -178,6 +178,37 @@ test('Nemo v3 coordinated attempt 4 binds the corrected trust lineage', () => {
   );
 });
 
+test('Nemo v3 attempt 5 binds nested-v3 transport and zero predecessor effects', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260730-attempt-5-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+
+  const eventCreated = structuredClone(reviewed);
+  eventCreated.lineage.eventCreated = true;
+  assert.throws(
+    () => validateNemoV3Spec(eventCreated),
+    /eventCreated/,
+  );
+
+  const staleRuntime = structuredClone(reviewed);
+  staleRuntime.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleRuntime),
+    /coordinated authorization/,
+  );
+
+  const flatTransportLineage = structuredClone(reviewed);
+  flatTransportLineage.lineage.predecessorClaimSha256 = 'b'.repeat(64);
+  assert.throws(
+    () => validateNemoV3Spec(flatTransportLineage),
+    /lineage fields must be exact/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
