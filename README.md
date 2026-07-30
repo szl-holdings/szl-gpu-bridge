@@ -41,10 +41,11 @@ cloud/verify-receipt.mjs ◄─────────────────�
   was rejected by GitHub before event creation, so its signed envelope is
   evidence only. Reviewed attempt 5 now binds the protected nested-v3 A11oy
   workflow and keeps its signed executable Bridge revision distinct from the
-  future envelope-publication revision. It remains
-  `AWAITING_ENGINE_SIGNATURE`: no attempt-5 queue envelope, claim, dispatch, or
-  receipt exists in this plaintext phase. The cloud trusts the separately
-  announced laptop receipt key. An unverifiable claim is treated as no claim.
+  protected envelope-publication revision. Its separately reviewed queue
+  envelope verifies under active key `b8041281c81c4caa` and is
+  `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists yet. The
+  cloud trusts the separately announced laptop receipt key. An unverifiable
+  claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a
