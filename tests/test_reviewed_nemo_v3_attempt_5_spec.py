@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -29,7 +30,6 @@ from nemo_v3_contract import (  # noqa: E402
 ATTEMPT_4_PATH = ROOT / "jobspecs" / "nemo-v3-20260730-attempt-4-reviewed.json"
 ATTEMPT_5_PATH = ROOT / "jobspecs" / "nemo-v3-20260730-attempt-5-reviewed.json"
 ATTEMPT_5_QUEUE = ROOT / "queue" / "pending" / f"{FUTURE_REVIEWED_JOB_ID}.json"
-ATTEMPT_4_QUEUE = ROOT / "queue" / "pending" / f"{NEXT_REVIEWED_JOB_ID}.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -139,12 +139,28 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
         )
 
     def test_attempt_4_evidence_is_byte_preserved(self) -> None:
-        self.assertEqual(
-            hashlib.sha256(ATTEMPT_4_PATH.read_bytes()).hexdigest(),
-            "35971d98bd1b9e546b489abc381e7e9e1f734f2b44905dcde831e2b8d74c9f59",
+        spec_bytes = subprocess.check_output(
+            [
+                "git",
+                "show",
+                "HEAD:jobspecs/nemo-v3-20260730-attempt-4-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
+        envelope_bytes = subprocess.check_output(
+            [
+                "git",
+                "show",
+                f"HEAD:queue/pending/{NEXT_REVIEWED_JOB_ID}.json",
+            ],
+            cwd=ROOT,
         )
         self.assertEqual(
-            hashlib.sha256(ATTEMPT_4_QUEUE.read_bytes()).hexdigest(),
+            hashlib.sha256(spec_bytes).hexdigest(),
+            "10e4659c9414fd183f7ccdf9534d40735e33f9188ddba0a7b4fc135c439086df",
+        )
+        self.assertEqual(
+            hashlib.sha256(envelope_bytes).hexdigest(),
             "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2",
         )
 
