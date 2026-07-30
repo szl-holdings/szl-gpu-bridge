@@ -317,8 +317,15 @@ claims no cryptographic continuity with either verification-only predecessor.
 The two immutable quarantine records bind the superseded signed envelopes to
 this replacement identity.
 
-No attempt-4 queue envelope exists in this change. The plaintext remains
-`AWAITING_ENGINE_SIGNATURE`; a separate signed and protected publication is
-required before it can become queue authority. Runner start, claim, dispatch,
+The separately protected queue envelope now exists at:
+
+```text
+queue/pending/job-2026-nemo-v3-governed-attempt-4.json
+```
+
+It verifies under active key `b8041281c81c4caa` and binds the exact reviewed
+payload. Its status is `QUEUED_AWAITING_GPU_RECEIPT`; this is queue
+authorization only, not a claim, dispatch, receipt, execution, or release
+claim. Runner registration/start, claim, dispatch,
 receipt/candidate/model/model-card/dataset upload, and Hugging Face mutation
 remain forbidden until their own post-merge release gate.
