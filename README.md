@@ -37,8 +37,10 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `b8041281c81c4caa` is the sole active execution authority. No cryptographic
   continuity with either predecessor key is claimed. Attempt 2 and successor
   generation 3 remain byte-preserved under explicit `NEVER_DISPATCH`
-  quarantine. The cloud trusts the separately announced laptop receipt key.
-  An unverifiable claim is treated as no claim.
+  quarantine. Attempt 4 is reviewed plaintext bound to the settled source,
+  workflow, and corrected bridge, but has no queue envelope or execution
+  authority. The cloud trusts the separately announced laptop receipt key. An
+  unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a

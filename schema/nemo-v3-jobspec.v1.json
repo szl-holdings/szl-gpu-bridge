@@ -145,24 +145,62 @@
       }
     },
     "authorization": {
-      "type": "object",
-      "required": [
-        "engineKeyId",
-        "previousEngineKeyId",
-        "recoveryIssueUrl",
-        "rotationMode",
-        "oldKeyStatus",
-        "decisionAt"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "engineKeyId": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
-        "previousEngineKeyId": {"const": "5c6cf59741ade920"},
-        "recoveryIssueUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/25"},
-        "rotationMode": {"const": "LOST_PRIVATE_KEY_NEW_GENERATION"},
-        "oldKeyStatus": {"const": "VERIFY_ONLY"},
-        "decisionAt": {"type": "string", "format": "date-time"}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "engineKeyId",
+            "previousEngineKeyId",
+            "recoveryIssueUrl",
+            "rotationMode",
+            "oldKeyStatus",
+            "decisionAt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "engineKeyId": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+            "previousEngineKeyId": {"const": "5c6cf59741ade920"},
+            "recoveryIssueUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/25"},
+            "rotationMode": {"const": "LOST_PRIVATE_KEY_NEW_GENERATION"},
+            "oldKeyStatus": {"const": "VERIFY_ONLY"},
+            "decisionAt": {"type": "string", "format": "date-time"}
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "engineKeyId",
+            "previousEngineKeyId",
+            "recoveryIssueUrl",
+            "rotationMode",
+            "oldKeyStatus",
+            "decisionAt",
+            "enginePublicKeySpkiSha256",
+            "provisionalEngineKeyId",
+            "provisionalKeyStatus",
+            "coordinationMode",
+            "settledA11oyRelockRunUrl",
+            "cryptographicContinuityClaimed",
+            "correctedBridgeRevision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "engineKeyId": {"const": "b8041281c81c4caa"},
+            "previousEngineKeyId": {"const": "5c6cf59741ade920"},
+            "recoveryIssueUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/25"},
+            "rotationMode": {"const": "COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION"},
+            "oldKeyStatus": {"const": "VERIFY_ONLY"},
+            "decisionAt": {"type": "string", "format": "date-time"},
+            "enginePublicKeySpkiSha256": {"const": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf"},
+            "provisionalEngineKeyId": {"const": "815714c8d4ae3e4d"},
+            "provisionalKeyStatus": {"const": "VERIFY_ONLY"},
+            "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
+            "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30561614589"},
+            "cryptographicContinuityClaimed": {"const": false},
+            "correctedBridgeRevision": {"const": "2237bb3f36663343ace29d98cda6c32e165450a0"}
+          }
+        }
+      ]
     },
     "notes": {"type": "string"},
     "lineage": {

@@ -297,3 +297,28 @@ The coordinated key `b8041281c81c4caa` is enrolled as a distinct
 administrative recovery trust root after the protected A11oy relock. It is the
 sole active key for future reviewed jobs; no cryptographic continuity with the
 two verification-only predecessors is claimed.
+
+## 9. Coordinated reviewed attempt 4
+
+The distinct reviewed plaintext is:
+
+```text
+jobspecs/nemo-v3-20260730-attempt-4-reviewed.json
+```
+
+It binds settled A11oy source
+`5f98d90a42e021cf29948457a2404a159f236487`, immutable owner-workflow blob
+`7e08ffc8aa87b78d0fa1618d7d3c3e68cb81ca33`, corrected bridge revision
+`2237bb3f36663343ace29d98cda6c32e165450a0`, coordinated active key
+`b8041281c81c4caa`, and full public-SPKI SHA-256
+`b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf`.
+Its authorization records the terminal exact-main A11oy relock and explicitly
+claims no cryptographic continuity with either verification-only predecessor.
+The two immutable quarantine records bind the superseded signed envelopes to
+this replacement identity.
+
+No attempt-4 queue envelope exists in this change. The plaintext remains
+`AWAITING_ENGINE_SIGNATURE`; a separate signed and protected publication is
+required before it can become queue authority. Runner start, claim, dispatch,
+receipt/candidate/model/model-card/dataset upload, and Hugging Face mutation
+remain forbidden until their own post-merge release gate.
