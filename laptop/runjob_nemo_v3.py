@@ -450,11 +450,12 @@ def main(spec_path: str) -> int:
     recipe = spec["recipe"]
     try:
         import torch
+        import unsloth
         from datasets import Dataset
         from transformers import TrainerCallback
         from trl import SFTConfig, SFTTrainer
-        from unsloth import FastLanguageModel
 
+        FastLanguageModel = unsloth.FastLanguageModel
         if not torch.cuda.is_available():
             blocked(spec, "gate:cuda", "CUDA is unavailable")
         torch.cuda.reset_peak_memory_stats()

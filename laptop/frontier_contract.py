@@ -181,11 +181,22 @@ def verify_envelope(
     payload = _decode_b64(envelope.get("payload"), "payload")
 
     try:
-        from nacl.signing import VerifyKey
-
         if len(spki) != 44:
             raise ContractError(f"unexpected Ed25519 SPKI length {len(spki)}")
-        VerifyKey(spki[-32:]).verify(pae(payload_type, payload), signature)
+        signed_bytes = pae(payload_type, payload)
+        try:
+            from nacl.signing import VerifyKey
+        except ModuleNotFoundError:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+                Ed25519PublicKey,
+            )
+
+            Ed25519PublicKey.from_public_bytes(spki[-32:]).verify(
+                signature,
+                signed_bytes,
+            )
+        else:
+            VerifyKey(spki[-32:]).verify(signed_bytes, signature)
     except ContractError:
         raise
     except Exception as exc:  # noqa: BLE001

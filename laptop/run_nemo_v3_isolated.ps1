@@ -8,16 +8,18 @@ param(
   [string]$BridgeRevision,
 
   [Parameter(Mandatory = $true)]
-  [ValidatePattern('^sha256:[0-9a-f]{64}$')]
+  [ValidatePattern('^unsloth/unsloth@sha256:[0-9a-f]{64}$')]
   [string]$Image,
 
   [Parameter(Mandatory = $true)]
   [string]$BridgeSource,
 
+  [Parameter(Mandatory = $true)]
+  [string]$EnvelopePath,
+
   [string]$BridgeRoot = "C:\szl-bridge",
   [string]$HfCache = "C:\szl-bridge-cache\huggingface\hub",
-  [string]$InputCache = "C:\szl-bridge-cache\inputs",
-  [string]$ImageReceiptRoot = "C:\szl-bridge\image-receipts"
+  [string]$InputCache = "C:\szl-bridge-cache\inputs"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +27,8 @@ $ErrorActionPreference = "Stop"
 if (
   $JobId -in @(
     "job-2026-nemo-v3-governed-attempt-2",
-    "job-2026-nemo-v3-governed-successor-3"
+    "job-2026-nemo-v3-governed-successor-3",
+    "job-2026-nemo-v3-governed-attempt-4"
   )
 ) {
   throw "job is quarantined and marked NEVER_DISPATCH"
@@ -53,14 +56,9 @@ $ObservedImageId = [string]$ImageMetadata[0].Id
 if ($ObservedImageId -notmatch '^sha256:[0-9a-f]{64}$') {
   throw "container image metadata has no immutable identifier"
 }
-if ($ObservedImageId -ne $Image) {
+$ExpectedImageId = ($Image -split "@", 2)[1]
+if ($ObservedImageId -ne $ExpectedImageId) {
   throw "local image identifier drifted: $ObservedImageId != $Image"
-}
-$ObservedRevisionLabel = [string](
-  $ImageMetadata[0].Config.Labels.'org.opencontainers.image.revision'
-)
-if ($ObservedRevisionLabel -ne $BridgeRevision) {
-  throw "container image revision label does not match exact bridge revision"
 }
 
 $ObservedRevision = (& $Git -C $BridgeSource rev-parse HEAD).Trim()
@@ -88,60 +86,152 @@ if ($InvokedLauncherSha256 -ne $ApprovedLauncherSha256) {
   throw "running launcher does not match the exact approved bridge source"
 }
 
-$Dockerfile = Join-Path $BridgeSource "laptop\Dockerfile.nemo-v3"
-$ImageReceipt = Join-Path `
-  $ImageReceiptRoot `
-  "nemo-v3-image-$BridgeRevision.json"
-foreach ($Required in @($Dockerfile, $ImageReceipt)) {
-  if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
-    throw "trusted local-image build input is missing: $Required"
-  }
-}
-$ImageDockerfileSha256 = (
-  Get-FileHash -LiteralPath $Dockerfile -Algorithm SHA256
-).Hash.ToLowerInvariant()
-$ExpectedBaseImage = (
-  "pytorch/pytorch@sha256:" +
-  "417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385"
-)
-$BuildReceipt = Get-Content -LiteralPath $ImageReceipt -Raw | ConvertFrom-Json
-if (
-  $BuildReceipt.schema -ne "szl-nemo-v3-image-build-receipt-v1" -or
-  $BuildReceipt.bridgeRevision -ne $BridgeRevision -or
-  $BuildReceipt.baseImage -ne $ExpectedBaseImage -or
-  $BuildReceipt.imageId -ne $ObservedImageId -or
-  $BuildReceipt.observedRevisionLabel -ne $ObservedRevisionLabel -or
-  $BuildReceipt.dockerfileSha256 -ne $ImageDockerfileSha256 -or
-  $BuildReceipt.smoke.cuda_available -ne $true -or
-  -not ($BuildReceipt.smoke.gpu_name -is [string]) -or
-  -not $BuildReceipt.smoke.gpu_name.Trim() -or
-  -not ($BuildReceipt.smoke.cuda_runtime -is [string]) -or
-  -not $BuildReceipt.smoke.cuda_runtime.Trim()
-) {
-  throw "local image build receipt does not bind the approved image and revision"
-}
-$ExpectedPackages = [ordered]@{
-  "bitsandbytes" = "0.50.0"
-  "datasets" = "4.3.0"
-  "huggingface-hub" = "1.24.0"
-  "peft" = "0.19.1"
-  "pynacl" = "1.6.2"
-  "trl" = "0.24.0"
-  "unsloth" = "2026.7.4"
-  "unsloth-zoo" = "2026.7.4"
-  "xformers" = "0.0.32.post2"
-}
-foreach ($Name in $ExpectedPackages.Keys) {
-  $ObservedPackage = $BuildReceipt.smoke.packages.PSObject.Properties[$Name].Value
-  if ($ObservedPackage -ne $ExpectedPackages[$Name]) {
-    throw "local image build receipt has an unapproved package version: $Name"
-  }
-}
-$ImageBuildReceiptSha256 = (
-  Get-FileHash -LiteralPath $ImageReceipt -Algorithm SHA256
-).Hash.ToLowerInvariant()
+$ProbeProgram = @'
+import importlib.metadata
+import json
+import torch
+import unsloth
+import cryptography
+import datasets
+import transformers
+import trl
 
-$JobSpec = Join-Path $BridgeSource "queue\pending\$JobId.json"
+if not torch.cuda.is_available():
+    raise SystemExit("CUDA is not available inside the immutable image")
+properties = torch.cuda.get_device_properties(0)
+packages = {
+    name: importlib.metadata.version(name)
+    for name in (
+        "bitsandbytes",
+        "cryptography",
+        "datasets",
+        "huggingface-hub",
+        "peft",
+        "torch",
+        "trl",
+        "unsloth",
+        "unsloth-zoo",
+        "xformers",
+    )
+}
+receipt = {
+    "cuda_available": True,
+    "cuda_runtime": torch.version.cuda,
+    "gpu_name": properties.name,
+    "gpu_memory_bytes": properties.total_memory,
+    "packages": packages,
+}
+print(
+    "SZL_NEMO_IMAGE_PROBE_JSON="
+    + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+)
+'@
+$ProbeArguments = @(
+  "run",
+  "--rm",
+  "--interactive",
+  "--gpus", "all",
+  "--network", "none",
+  "--read-only",
+  "--cap-drop", "ALL",
+  "--security-opt", "no-new-privileges:true",
+  "--pids-limit", "256",
+  "--tmpfs", "/tmp:rw,noexec,nosuid,size=1073741824",
+  "--tmpfs", "/root/.cache:rw,noexec,nosuid,size=1073741824",
+  "--workdir", "/tmp",
+  "--env", "HF_HUB_OFFLINE=1",
+  "--env", "TRANSFORMERS_OFFLINE=1",
+  "--env", "XDG_CACHE_HOME=/tmp/cache",
+  "--entrypoint", "python",
+  $ObservedImageId,
+  "-"
+)
+$ProbeOutput = ($ProbeProgram | & $Docker @ProbeArguments) -join "`n"
+if ($LASTEXITCODE -ne 0) {
+  throw "immutable training image failed its offline CUDA/package probe"
+}
+$ProbePrefix = "SZL_NEMO_IMAGE_PROBE_JSON="
+$ProbeLines = @(
+  $ProbeOutput -split "`r?`n" |
+    Where-Object { $_.StartsWith($ProbePrefix) }
+)
+if ($ProbeLines.Count -ne 1) {
+  throw "immutable training image emitted an invalid probe record"
+}
+$ProbeJson = $ProbeLines[0].Substring($ProbePrefix.Length)
+$Probe = $ProbeJson | ConvertFrom-Json
+if (
+  $Probe.cuda_available -ne $true -or
+  -not ($Probe.gpu_name -is [string]) -or
+  -not $Probe.gpu_name.Trim() -or
+  -not ($Probe.cuda_runtime -is [string]) -or
+  -not $Probe.cuda_runtime.Trim()
+) {
+  throw "immutable training image probe has no usable CUDA identity"
+}
+foreach (
+  $Name in @(
+    "bitsandbytes",
+    "cryptography",
+    "datasets",
+    "huggingface-hub",
+    "peft",
+    "torch",
+    "trl",
+    "unsloth",
+    "unsloth-zoo",
+    "xformers"
+  )
+) {
+  $ObservedPackage = $Probe.packages.PSObject.Properties[$Name].Value
+  if (-not ($ObservedPackage -is [string]) -or -not $ObservedPackage.Trim()) {
+    throw "immutable training image is missing required package metadata: $Name"
+  }
+}
+$ProbeSha = [System.Security.Cryptography.SHA256]::Create()
+try {
+  $EnvironmentProbeSha256 = (
+    $ProbeSha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ProbeJson)) |
+      ForEach-Object { $_.ToString("x2") }
+  ) -join ""
+} finally {
+  $ProbeSha.Dispose()
+}
+
+$JobSpec = [System.IO.Path]::GetFullPath($EnvelopePath)
+$PendingRoot = Split-Path -Parent $JobSpec
+$QueueRoot = Split-Path -Parent $PendingRoot
+$EnvelopeSource = Split-Path -Parent $QueueRoot
+$ExpectedJobSpec = [System.IO.Path]::GetFullPath(
+  (Join-Path $EnvelopeSource "queue\pending\$JobId.json")
+)
+if ($JobSpec -cne $ExpectedJobSpec) {
+  throw "verified envelope path does not select the exact governed job"
+}
+$EnvelopeRevision = (& $Git -C $EnvelopeSource rev-parse HEAD).Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  $EnvelopeRevision -notmatch '^[0-9a-f]{40}$' -or
+  $EnvelopeRevision -eq $BridgeRevision
+) {
+  throw "envelope publication revision is not distinct immutable history"
+}
+$EnvelopeProtectedMain = (
+  & $Git -C $EnvelopeSource rev-parse refs/remotes/origin/main
+).Trim()
+if (
+  $LASTEXITCODE -ne 0 -or
+  $EnvelopeProtectedMain -ne $EnvelopeRevision -or
+  (& $Git -C $EnvelopeSource status --porcelain --untracked-files=all)
+) {
+  throw "envelope source is not exact clean protected Bridge main"
+}
+& $Git -C $EnvelopeSource merge-base --is-ancestor `
+  $BridgeRevision `
+  $EnvelopeRevision
+if ($LASTEXITCODE -ne 0) {
+  throw "signed execution revision is not protected envelope history"
+}
 $PrefetchReceipt = Join-Path $InputCache "$JobId-prefetch.json"
 foreach ($Required in @($JobSpec, $PrefetchReceipt)) {
   if (-not (Test-Path -LiteralPath $Required -PathType Leaf)) {
@@ -156,6 +246,16 @@ if (
   throw "signed job does not contain exactly one valid engine key ID"
 }
 $EnvelopeKeyId = [string]$Envelope.signatures[0].keyid
+$SignedPayloadBytes = [Convert]::FromBase64String([string]$Envelope.payload)
+$PayloadSha = [System.Security.Cryptography.SHA256]::Create()
+try {
+  $SignedPayloadSha256 = (
+    $PayloadSha.ComputeHash($SignedPayloadBytes) |
+      ForEach-Object { $_.ToString("x2") }
+  ) -join ""
+} finally {
+  $PayloadSha.Dispose()
+}
 $KeysRoot = Join-Path $BridgeSource "keys"
 $KeyringPath = Join-Path $KeysRoot "engine_keyring.json"
 if (Test-Path -LiteralPath $KeyringPath -PathType Leaf) {
@@ -202,6 +302,7 @@ foreach ($RequiredDirectory in @($HfCache, $InputCache)) {
 $Prefetch = Get-Content -LiteralPath $PrefetchReceipt -Raw | ConvertFrom-Json
 if (
   $Prefetch.jobId -ne $JobId -or
+  $Prefetch.signedJobPayloadSha256 -ne $SignedPayloadSha256 -or
   $Prefetch.remoteCodeExecuted -ne $false -or
   $Prefetch.credentialPersisted -ne $false
 ) {
@@ -309,18 +410,18 @@ $ClaimedAt = [DateTimeOffset]::UtcNow.ToString("o")
 $ClaimPath = Join-Path $Claims "$JobId.json"
 $Claim = [ordered]@{
   kind = "szl-nemo-v3-attempt-claim"
-  v = 2
+  v = 3
   jobId = $JobId
   jobEnvelopeSha256 = (
     (Get-FileHash -LiteralPath $JobSpec -Algorithm SHA256).Hash.ToLowerInvariant()
   )
   bridgeRevision = $BridgeRevision
+  envelopeRevision = $EnvelopeRevision
+  executionBridgeRevision = $BridgeRevision
   launcherSha256 = $ApprovedLauncherSha256
   trainingImage = $Image
   observedImageId = $ObservedImageId
-  observedRevisionLabel = $ObservedRevisionLabel
-  imageBuildReceiptSha256 = $ImageBuildReceiptSha256
-  imageDockerfileSha256 = $ImageDockerfileSha256
+  environmentProbeSha256 = $EnvironmentProbeSha256
   githubRunId = if ($env:GITHUB_RUN_ID) { $env:GITHUB_RUN_ID } else { $null }
   claimedAt = $ClaimedAt
 }
@@ -349,22 +450,6 @@ $NotBefore = $ClaimedAt
 $NotBeforePath = Join-Path $Control "$JobId-not-before.txt"
 Set-Content -LiteralPath $NotBeforePath -Value $NotBefore -Encoding ascii
 
-$ImageEvidenceArguments = @(
-  "--env", "SZL_CONTAINER_IMAGE_REVISION=$ObservedRevisionLabel"
-)
-if ($ImageBuildReceiptSha256) {
-  $ImageEvidenceArguments += @(
-    "--env",
-    "SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"
-  )
-}
-if ($ImageDockerfileSha256) {
-  $ImageEvidenceArguments += @(
-    "--env",
-    "SZL_CONTAINER_IMAGE_DOCKERFILE_SHA256=$ImageDockerfileSha256"
-  )
-}
-
 $Arguments = @(
   "run",
   "--rm",
@@ -381,14 +466,17 @@ $Arguments = @(
   "--mount", "type=bind,src=$InputCache,dst=/inputs,readonly",
   "--mount", "type=bind,src=$HfCache,dst=/root/.cache/huggingface/hub,readonly",
   "--mount", "type=bind,src=$SandboxWork,dst=/workspace",
+  "--workdir", "/workspace",
   "--tmpfs", "/tmp:rw,noexec,nosuid,size=4294967296",
   "--env", "SZL_INPUT_CACHE=/inputs",
   "--env", "SZL_RECEIPT_TRANSPORT=local-unsigned-outbox",
   "--env", "SZL_EXECUTION_ISOLATION=credentialless-networkless-container",
   "--env", "SZL_CONTAINER_IMAGE_REFERENCE=$Image",
   "--env", "SZL_CONTAINER_IMAGE_ID=$ObservedImageId",
-  "--env", "SZL_LAUNCHER_SHA256=$ApprovedLauncherSha256"
-) + $ImageEvidenceArguments + @(
+  "--env", "SZL_CONTAINER_ENVIRONMENT_PROBE_SHA256=$EnvironmentProbeSha256",
+  "--env", "SZL_ENVELOPE_REVISION=$EnvelopeRevision",
+  "--env", "SZL_EXECUTION_BRIDGE_REVISION=$BridgeRevision",
+  "--env", "SZL_LAUNCHER_SHA256=$ApprovedLauncherSha256",
   "--env", "HF_HUB_OFFLINE=1",
   "--env", "TRANSFORMERS_OFFLINE=1",
   "--env", "HF_DATASETS_OFFLINE=1",

@@ -19,6 +19,9 @@ from nemo_v3_contract import (  # noqa: E402
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
     CORRECTED_BRIDGE_REVISION,
+    FINAL_A11OY_SOURCE_REVISION,
+    FINAL_OWNER_WORKFLOW_BLOB,
+    FUTURE_REVIEWED_JOB_ID,
     NEXT_REVIEWED_JOB_ID,
     PROVISIONAL_ENGINE_KEY_ID,
     SETTLED_A11OY_RELOCK_RUN_URL,
@@ -114,11 +117,26 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
         )
 
     def test_quarantine_records_bind_the_exact_superseded_lineage(self) -> None:
+        attempt_4_replacement = {
+            "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
+            "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
+            "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+            "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+            "reviewedJobId": NEXT_REVIEWED_JOB_ID,
+        }
+        attempt_5_replacement = {
+            "sourceRevision": FINAL_A11OY_SOURCE_REVISION,
+            "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
+            "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+            "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+            "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+        }
         expected = {
             "job-2026-nemo-v3-governed-attempt-2": (
                 ["STALE_SOURCE", "RETIRED_KEY", "NEVER_DISPATCH"],
                 "e74ecaea040c2abb52a5613c32e0648994f96ff39910c70e1fcc3e23fc053724",
                 "84a808615ba1693935eee8cc9fa1a4c5a83d119b79ad7e9437380ec73756b90d",
+                attempt_4_replacement,
             ),
             "job-2026-nemo-v3-governed-successor-3": (
                 [
@@ -128,9 +146,25 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
                 ],
                 "bb624d301f23552617566f57167a12360bbba27afebee086a8262b1be7ee6eaa",
                 "f20bf865dca5413262e5fd3733df112486aec72bb9b47932083ffecb2470a415",
+                attempt_4_replacement,
+            ),
+            "job-2026-nemo-v3-governed-attempt-4": (
+                [
+                    "STALE_SOURCE",
+                    "TRANSPORT_UNREPRESENTABLE",
+                    "NEVER_DISPATCH",
+                ],
+                EXPECTED_ENVELOPE_FILE_SHA256,
+                EXPECTED_PAYLOAD_SHA256,
+                attempt_5_replacement,
             ),
         }
-        for job_id, (statuses, envelope_sha, payload_sha) in expected.items():
+        for job_id, (
+            statuses,
+            envelope_sha,
+            payload_sha,
+            replacement,
+        ) in expected.items():
             with self.subTest(job_id=job_id):
                 record = json.loads(
                     (ROOT / "queue" / "quarantine" / f"{job_id}.json").read_text(
@@ -140,16 +174,7 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
                 self.assertEqual(record["status"], statuses)
                 self.assertEqual(record["queueFileSha256"], envelope_sha)
                 self.assertEqual(record["signedPayloadSha256"], payload_sha)
-                self.assertEqual(
-                    record["replacement"],
-                    {
-                        "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
-                        "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
-                        "engineKeyId": COORDINATED_ENGINE_KEY_ID,
-                        "enginePublicKeySpkiSha256": (COORDINATED_ENGINE_SPKI_SHA256),
-                        "reviewedJobId": NEXT_REVIEWED_JOB_ID,
-                    },
-                )
+                self.assertEqual(record["replacement"], replacement)
 
     def test_public_pin_derives_the_exact_active_identity(self) -> None:
         pin = json.loads(
@@ -175,7 +200,7 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
             "ACTIVE",
         )
 
-    def test_signed_queue_is_exact_but_has_no_receipt_or_release_claim(self) -> None:
+    def test_signed_queue_is_exact_quarantined_evidence_without_receipt(self) -> None:
         self.assertTrue(ATTEMPT_4_QUEUE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_4_QUEUE.read_bytes()).hexdigest(),
@@ -187,8 +212,8 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 30, 19, 30, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(
@@ -203,13 +228,15 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
             report["queue"]["engine_key_id"],
             COORDINATED_ENGINE_KEY_ID,
         )
-        self.assertFalse(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
         self.assertFalse(report["receipt"]["present"])
         self.assertEqual(
             report["reviewed_spec"]["sha256"],
             EXPECTED_PAYLOAD_SHA256,
         )
-        require_nemo_v3_dispatchable(self.attempt_4)
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.attempt_4)
 
     def test_coordinated_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -252,6 +279,7 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
         for expected in (
             "jobspecs/nemo-v3-20260730-attempt-4-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-4.json",
+            "queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json",
             "tests/test_reviewed_nemo_v3_attempt_4_spec.py",
             "attempt_id: attempt-4-coordinated-recovery",
         ):

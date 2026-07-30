@@ -40,10 +40,9 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
 
     def test_image_and_source_are_immutable_identifiers(self) -> None:
         self.assertIn(
-            "[ValidatePattern('^sha256:[0-9a-f]{64}$')]",
+            "[ValidatePattern('^unsloth/unsloth@sha256:[0-9a-f]{64}$')]",
             self.source,
         )
-        self.assertNotIn("[^@\\s]+@", self.source)
         self.assertIn("[ValidatePattern('^[0-9a-f]{40}$')]", self.source)
         self.assertIn("$ObservedRevision -ne $BridgeRevision", self.source)
         self.assertIn("$PSCommandPath", self.source)
@@ -58,24 +57,18 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         )
         self.assertIn("$ImageMetadataText | ConvertFrom-Json", self.source)
         self.assertIn("$ImageMetadata.Count -ne 1", self.source)
-        self.assertIn("$ObservedImageId -ne $Image", self.source)
-        self.assertIn(
-            "Config.Labels.'org.opencontainers.image.revision'",
-            self.source,
-        )
-        self.assertNotIn("{{index .Config.Labels", self.source)
-        self.assertIn("$ObservedRevisionLabel -ne $BridgeRevision", self.source)
-        self.assertIn("$BuildReceipt.imageId -ne $ObservedImageId", self.source)
-        self.assertIn(
-            "$BuildReceipt.dockerfileSha256 -ne $ImageDockerfileSha256",
-            self.source,
-        )
-        self.assertIn("imageBuildReceiptSha256 = $ImageBuildReceiptSha256", self.source)
+        self.assertIn('$ExpectedImageId = ($Image -split "@", 2)[1]', self.source)
+        self.assertIn("$ObservedImageId -ne $ExpectedImageId", self.source)
+        self.assertIn("$ProbeProgram | & $Docker @ProbeArguments", self.source)
+        self.assertIn('"SZL_NEMO_IMAGE_PROBE_JSON="', self.source)
+        self.assertIn('"--workdir", "/tmp"', self.source)
+        self.assertIn('"--workdir", "/workspace"', self.source)
+        self.assertIn("$EnvironmentProbeSha256", self.source)
         self.assertIn("launcherSha256 = $ApprovedLauncherSha256", self.source)
         self.assertIn("observedImageId = $ObservedImageId", self.source)
         self.assertIn('"SZL_CONTAINER_IMAGE_ID=$ObservedImageId"', self.source)
         self.assertIn(
-            '"SZL_CONTAINER_IMAGE_BUILD_RECEIPT_SHA256=$ImageBuildReceiptSha256"',
+            '"SZL_CONTAINER_ENVIRONMENT_PROBE_SHA256=$EnvironmentProbeSha256"',
             self.source,
         )
         self.assertIn(
@@ -132,8 +125,10 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
     def test_attempt_is_atomically_claimed_before_docker_starts(self) -> None:
         self.assertIn("[System.IO.FileMode]::CreateNew", self.source)
         self.assertIn('"szl-nemo-v3-attempt-claim"', self.source)
-        self.assertIn("v = 2", self.source)
+        self.assertIn("v = 3", self.source)
         self.assertIn("jobEnvelopeSha256", self.source)
+        self.assertIn("envelopeRevision = $EnvelopeRevision", self.source)
+        self.assertIn("executionBridgeRevision = $BridgeRevision", self.source)
         self.assertLess(
             self.source.index("[System.IO.FileMode]::CreateNew"),
             self.source.index("& $Docker @Arguments"),
@@ -143,6 +138,7 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         for fragment in (
             "job-2026-nemo-v3-governed-attempt-2",
             "job-2026-nemo-v3-governed-successor-3",
+            "job-2026-nemo-v3-governed-attempt-4",
             "NEVER_DISPATCH",
         ):
             self.assertIn(fragment, self.source)
@@ -168,6 +164,19 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
             self.source.index("[System.IO.FileMode]::CreateNew"),
         )
 
+    def test_envelope_is_separate_data_only_protected_history(self) -> None:
+        for fragment in (
+            "[string]$EnvelopePath",
+            "$JobSpec = [System.IO.Path]::GetFullPath($EnvelopePath)",
+            "$EnvelopeRevision = (& $Git -C $EnvelopeSource rev-parse HEAD).Trim()",
+            "refs/remotes/origin/main",
+            "merge-base --is-ancestor",
+            "$BridgeRevision",
+            "$EnvelopeRevision",
+            "$Prefetch.signedJobPayloadSha256 -ne $SignedPayloadSha256",
+        ):
+            self.assertIn(fragment, self.source)
+
     def test_bootstrap_pins_resolvable_unsloth_dependencies(self) -> None:
         bootstrap = (ROOT / "laptop" / "bootstrap.ps1").read_text(encoding="utf-8")
         self.assertIn('"unsloth==2026.7.4"', bootstrap)
@@ -176,12 +185,24 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         self.assertNotIn('"datasets==5.0.0"', bootstrap)
         self.assertNotIn('"trl==1.8.0"', bootstrap)
 
+    def test_unsloth_is_imported_before_transformer_trainers(self) -> None:
+        runner = (ROOT / "laptop" / "runjob_nemo_v3.py").read_text(encoding="utf-8")
+        self.assertLess(runner.index("import unsloth"), runner.index("from trl import"))
+        self.assertLess(
+            runner.index("import unsloth"),
+            runner.index("from transformers import"),
+        )
+
     def test_container_identity_is_recorded_in_stack_evidence(self) -> None:
         runtime = (ROOT / "laptop" / "frontier_runtime.py").read_text(encoding="utf-8")
         self.assertIn('"SZL_CONTAINER_IMAGE_REFERENCE"', runtime)
         self.assertIn('"SZL_CONTAINER_IMAGE_ID"', runtime)
+        self.assertIn('"SZL_CONTAINER_ENVIRONMENT_PROBE_SHA256"', runtime)
+        self.assertIn('"SZL_ENVELOPE_REVISION"', runtime)
+        self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', runtime)
         self.assertIn('"SZL_LAUNCHER_SHA256"', runtime)
         self.assertIn('evidence["containerImage"]', runtime)
+        self.assertIn('evidence["bridgeExecution"]', runtime)
         self.assertIn('evidence["launcherSha256"]', runtime)
 
 

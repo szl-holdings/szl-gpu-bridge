@@ -35,13 +35,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   verification-only; provisional key `815714c8d4ae3e4d` is also
   verification-only; coordinated administrative-recovery key
   `b8041281c81c4caa` is the sole active execution authority. No cryptographic
-  continuity with either predecessor key is claimed. Attempt 2 and successor
-  generation 3 remain byte-preserved under explicit `NEVER_DISPATCH`
-  quarantine. Attempt 4 is bound to the settled source, workflow, and corrected
-  bridge and has a separately protected `b8041281c81c4caa` queue envelope. Its
-  status is `QUEUED_AWAITING_GPU_RECEIPT`, not execution, receipt, or release
-  proof. The cloud trusts the separately announced laptop receipt key. An
-  unverifiable claim is treated as no claim.
+  continuity with either predecessor key is claimed. Attempt 2, successor
+  generation 3, and attempt 4 remain byte-preserved under explicit
+  `NEVER_DISPATCH` quarantine. Attempt 4's flat 14-property dispatch transport
+  was rejected by GitHub before event creation, so its signed envelope is
+  evidence only. A later attempt must bind the protected nested-v3 A11oy
+  workflow and keep the signed executable Bridge revision distinct from the
+  envelope-publication revision. The cloud trusts the separately announced
+  laptop receipt key. An unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a

@@ -34,12 +34,7 @@ from frontier_contract import (  # noqa: E402
     verify_envelope,
 )
 from nemo_v3_contract import (  # noqa: E402
-    COORDINATED_ENGINE_KEY_ID,
-    COORDINATED_ENGINE_SPKI_SHA256,
-    NEXT_REVIEWED_JOB_ID,
     NEMO_V3_PAYLOAD_TYPE,
-    SETTLED_A11OY_SOURCE_REVISION,
-    SETTLED_OWNER_WORKFLOW_BLOB,
     expected_engine_key_id,
     quarantine_policy,
     validate_nemo_v3_spec,
@@ -260,13 +255,7 @@ def verify_quarantine(
         expected_queue_path = f"queue/pending/{spec['jobId']}.json"
         queue_file = root / expected_queue_path
         replacement = record.get("replacement")
-        expected_replacement = {
-            "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
-            "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
-            "engineKeyId": COORDINATED_ENGINE_KEY_ID,
-            "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
-            "reviewedJobId": NEXT_REVIEWED_JOB_ID,
-        }
+        expected_replacement = policy["replacement"]
         if (
             not isinstance(record, dict)
             or set(record) != required

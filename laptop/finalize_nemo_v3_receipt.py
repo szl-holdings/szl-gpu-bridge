@@ -136,6 +136,11 @@ def validate_intent(
     )
     if observed_container_image != expected_container_image:
         raise ValueError("receipt container image does not match the trusted claim")
+    observed_bridge_execution = (
+        stack.get("bridgeExecution") if isinstance(stack, dict) else None
+    )
+    if observed_bridge_execution != claim_bridge_execution(attempt_claim):
+        raise ValueError("receipt Bridge revisions do not match the trusted claim")
     observed_launcher_sha256 = (
         stack.get("launcherSha256") if isinstance(stack, dict) else None
     )
@@ -177,9 +182,26 @@ def validate_attempt_claim(
     not_before: datetime,
 ) -> dict[str, Any]:
     claim = json.loads(claim_path.read_text(encoding="utf-8-sig"))
+    required_fields = {
+        "kind",
+        "v",
+        "jobId",
+        "jobEnvelopeSha256",
+        "bridgeRevision",
+        "envelopeRevision",
+        "executionBridgeRevision",
+        "launcherSha256",
+        "trainingImage",
+        "observedImageId",
+        "environmentProbeSha256",
+        "githubRunId",
+        "claimedAt",
+    }
     if (
-        claim.get("kind") != "szl-nemo-v3-attempt-claim"
-        or claim.get("v") != 2
+        not isinstance(claim, dict)
+        or set(claim) != required_fields
+        or claim.get("kind") != "szl-nemo-v3-attempt-claim"
+        or claim.get("v") != 3
         or claim.get("jobId") != spec["jobId"]
     ):
         raise ValueError("one-attempt claim contract is invalid")
@@ -190,21 +212,33 @@ def validate_attempt_claim(
     if claimed_at != not_before:
         raise ValueError("one-attempt claim timestamp does not bind this execution")
     bridge_revision = claim.get("bridgeRevision")
+    envelope_revision = claim.get("envelopeRevision")
+    execution_bridge_revision = claim.get("executionBridgeRevision")
     training_image = claim.get("trainingImage")
     observed_image_id = claim.get("observedImageId")
-    observed_revision_label = claim.get("observedRevisionLabel")
-    build_receipt_sha256 = claim.get("imageBuildReceiptSha256")
-    dockerfile_sha256 = claim.get("imageDockerfileSha256")
+    environment_probe_sha256 = claim.get("environmentProbeSha256")
     launcher_sha256 = claim.get("launcherSha256")
     if (
         not isinstance(bridge_revision, str)
         or len(bridge_revision) != 40
         or any(character not in "0123456789abcdef" for character in bridge_revision)
+        or not isinstance(envelope_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", envelope_revision) is None
+        or not isinstance(execution_bridge_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", execution_bridge_revision) is None
+        or bridge_revision != execution_bridge_revision
+        or envelope_revision == execution_bridge_revision
         or not isinstance(training_image, str)
-        or re.fullmatch(r"sha256:[0-9a-f]{64}", training_image) is None
+        or re.fullmatch(
+            r"unsloth/unsloth@sha256:[0-9a-f]{64}",
+            training_image,
+        )
+        is None
         or not isinstance(observed_image_id, str)
         or re.fullmatch(r"sha256:[0-9a-f]{64}", observed_image_id) is None
-        or observed_revision_label != bridge_revision
+        or observed_image_id != training_image.rsplit("@", 1)[1]
+        or not isinstance(environment_probe_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", environment_probe_sha256) is None
     ):
         raise ValueError("one-attempt claim has no immutable execution identity")
     if (
@@ -212,14 +246,16 @@ def validate_attempt_claim(
         or re.fullmatch(r"[0-9a-f]{64}", launcher_sha256) is None
     ):
         raise ValueError("one-attempt claim has no approved launcher binding")
-    if (
-        observed_image_id != training_image
-        or not isinstance(build_receipt_sha256, str)
-        or re.fullmatch(r"[0-9a-f]{64}", build_receipt_sha256) is None
-        or not isinstance(dockerfile_sha256, str)
-        or re.fullmatch(r"[0-9a-f]{64}", dockerfile_sha256) is None
+    authorization = spec.get("authorization")
+    if isinstance(authorization, dict) and (
+        authorization.get("correctedBridgeRevision") != execution_bridge_revision
     ):
-        raise ValueError("local image claim has no approved build binding")
+        raise ValueError("one-attempt claim differs from signed Bridge authority")
+    owner_dispatch = spec.get("ownerDispatch")
+    if isinstance(owner_dispatch, dict) and (
+        owner_dispatch.get("trainingImage") != training_image
+    ):
+        raise ValueError("one-attempt claim differs from signed training image")
     return claim
 
 
@@ -228,14 +264,18 @@ def claim_container_image(claim: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {
         "reference": claim["trainingImage"],
         "id": claim["observedImageId"],
-        "revision": claim["observedRevisionLabel"],
+        "environmentProbeSha256": claim["environmentProbeSha256"],
     }
-    if claim.get("imageBuildReceiptSha256"):
-        result["localBuild"] = {
-            "receiptSha256": claim["imageBuildReceiptSha256"],
-            "dockerfileSha256": claim["imageDockerfileSha256"],
-        }
     return result
+
+
+def claim_bridge_execution(claim: dict[str, Any]) -> dict[str, str]:
+    """Return the exact envelope-data and executable Bridge revisions."""
+
+    return {
+        "envelopeRevision": claim["envelopeRevision"],
+        "executionBridgeRevision": claim["executionBridgeRevision"],
+    }
 
 
 def immutable_readback(

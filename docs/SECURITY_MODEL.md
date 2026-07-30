@@ -18,10 +18,11 @@ verifiable through the verification-only public pin.
 
 The coordinated active key is an administrative recovery trust root. No
 cryptographic continuity with either verification-only predecessor is claimed.
-Attempt 2 and successor generation 3 are immutable historical envelopes, not
-execution authority. Their quarantine records bind the original exact envelope
-and payload digests and mark them `NEVER_DISPATCH`. Quarantine must never be
-implemented by deleting, rewriting, re-signing, or retrying those bytes.
+Attempt 2, successor generation 3, and transport-unrepresentable attempt 4 are
+immutable historical envelopes, not execution authority. Their quarantine
+records bind the original exact envelope and payload digests and mark them
+`NEVER_DISPATCH`. Quarantine must never be implemented by deleting, rewriting,
+re-signing, or retrying those bytes.
 
 ## Inbound path (job specs) — threats & mitigations
 
