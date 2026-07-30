@@ -4,7 +4,7 @@
 # What it does (and nothing else):
 #   1. Creates a constrained py3.12 training environment and records the exact
 #      installed package snapshot used by receipts.
-#   2. Bakes the engine pubkey pin (the ONLY job-spec signer this laptop obeys).
+#   2. Bakes the reviewed engine public-key ring accepted by this laptop.
 #   3. Generates the laptop's ed25519 signing key (never leaves the machine).
 #   4. Installs the verify-first dispatcher plus v1/v2 and governed Nemo-v3 runners.
 #   5. Registers a scheduled task that polls the public queue and runs jobs.
@@ -35,6 +35,53 @@ if ($DerivedKeyId -ne $PinObj.keyId) {
 }
 Set-Content -Path "$Root\keys\engine_pubkey.json" -Value $EnginePin -Encoding utf8
 Write-Host "engine pubkey pinned (keyId $DerivedKeyId, self-check passed)"
+$RecoveryEnginePin = @'
+{
+  "kind": "szl-quant-engine-pubkey",
+  "keyId": "815714c8d4ae3e4d",
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEAY7nvtOfryavNF5cOYd+9xT44Z47CcY1byfDhR/g7GZM="
+}
+'@
+$RecoveryPinObj = $RecoveryEnginePin | ConvertFrom-Json
+$RecoverySpkiBytes = [Convert]::FromBase64String(
+  $RecoveryPinObj.publicKeySpkiBase64
+)
+$RecoverySha = [System.Security.Cryptography.SHA256]::Create()
+$RecoveryDerivedKeyId = (
+  (
+    $RecoverySha.ComputeHash($RecoverySpkiBytes) |
+      ForEach-Object { $_.ToString("x2") }
+  ) -join ""
+).Substring(0, 16)
+if ($RecoveryDerivedKeyId -ne $RecoveryPinObj.keyId) {
+  Write-Host "FATAL: recovery engine pubkey self-check failed." -ForegroundColor Red
+  exit 1
+}
+Set-Content `
+  -Path "$Root\keys\engine_pubkey_815714c8d4ae3e4d.json" `
+  -Value $RecoveryEnginePin `
+  -Encoding utf8
+$EngineKeyring = @'
+{
+  "kind": "szl-quant-engine-keyring",
+  "v": 1,
+  "keys": {
+    "5c6cf59741ade920": {
+      "file": "engine_pubkey.json",
+      "status": "VERIFY_ONLY"
+    },
+    "815714c8d4ae3e4d": {
+      "file": "engine_pubkey_815714c8d4ae3e4d.json",
+      "status": "ACTIVE"
+    }
+  }
+}
+'@
+Set-Content `
+  -Path "$Root\keys\engine_keyring.json" `
+  -Value $EngineKeyring `
+  -Encoding utf8
+Write-Host "recovery engine pubkey pinned (keyId $RecoveryDerivedKeyId)"
 
 # ---- 2. constrained training stack + exact installed snapshot ---------------
 $CondaBase = "$env:USERPROFILE\miniconda3"

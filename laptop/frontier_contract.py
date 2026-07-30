@@ -36,6 +36,8 @@ _REPO_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
 _JOB_ID = re.compile(r"^job-[0-9]{4}-[a-z0-9][a-z0-9-]{2,80}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REVISION = re.compile(r"^[0-9a-f]{40,64}$")
+_ENGINE_KEY_ID = re.compile(r"^[0-9a-f]{16}$")
+_PIN_FILE = re.compile(r"^engine_pubkey(?:_[0-9a-f]{16})?\.json$")
 _SAFE_RELATIVE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _ALLOWED_QUANTS = {"q4_k_m", "q5_k_m", "q6_k", "q8_0", "f16"}
 
@@ -60,6 +62,75 @@ def pae(payload_type: str, payload: bytes) -> bytes:
 
 def derive_key_id(spki: bytes) -> str:
     return hashlib.sha256(spki).hexdigest()[:16]
+
+
+def load_engine_pin_for_envelope(
+    keys_dir: str | pathlib.Path,
+    envelope: dict[str, Any],
+    *,
+    require_active: bool = False,
+) -> dict[str, Any]:
+    """Resolve one admitted engine pin without trusting signed payload fields."""
+
+    if not isinstance(envelope, dict):
+        raise ContractError("envelope must be an object")
+    signatures = envelope.get("signatures")
+    if (
+        not isinstance(signatures, list)
+        or len(signatures) != 1
+        or not isinstance(signatures[0], dict)
+    ):
+        raise ContractError("exactly one DSSE signature is required")
+    key_id = signatures[0].get("keyid")
+    if not isinstance(key_id, str) or not _ENGINE_KEY_ID.fullmatch(key_id):
+        raise ContractError("DSSE signature keyid must be lowercase 16-hex")
+
+    root = pathlib.Path(keys_dir).resolve()
+    keyring_path = root / "engine_keyring.json"
+    if not keyring_path.is_file():
+        pin = load_pin(root / "engine_pubkey.json")
+        if pin.get("keyId") != key_id:
+            raise ContractError(f"engine key {key_id} is not pinned")
+        spki = _decode_b64(
+            pin.get("publicKeySpkiBase64"),
+            "engine pin publicKeySpkiBase64",
+        )
+        if derive_key_id(spki) != key_id:
+            raise ContractError(f"engine key {key_id} public bytes are mislabeled")
+        return pin
+    keyring = json.loads(keyring_path.read_text(encoding="utf-8-sig"))
+    if (
+        not isinstance(keyring, dict)
+        or keyring.get("kind") != "szl-quant-engine-keyring"
+        or keyring.get("v") != 1
+        or not isinstance(keyring.get("keys"), dict)
+    ):
+        raise ContractError("engine keyring contract is invalid")
+    entry = keyring["keys"].get(key_id)
+    if not isinstance(entry, dict) or set(entry) != {"file", "status"}:
+        raise ContractError(f"engine key {key_id} is not enrolled")
+    if entry["status"] not in {"ACTIVE", "VERIFY_ONLY"}:
+        raise ContractError(f"engine key {key_id} has invalid status")
+    if require_active and entry["status"] != "ACTIVE":
+        raise ContractError(f"engine key {key_id} is verification-only")
+    filename = entry["file"]
+    if not isinstance(filename, str) or not _PIN_FILE.fullmatch(filename):
+        raise ContractError(f"engine key {key_id} has an unsafe pin file")
+    pin_path = (root / filename).resolve()
+    try:
+        pin_path.relative_to(root)
+    except ValueError as exc:
+        raise ContractError("engine pin path escapes the key directory") from exc
+    pin = load_pin(pin_path)
+    if pin.get("keyId") != key_id:
+        raise ContractError(f"engine keyring entry {key_id} differs from its pin")
+    spki = _decode_b64(
+        pin.get("publicKeySpkiBase64"),
+        "engine pin publicKeySpkiBase64",
+    )
+    if derive_key_id(spki) != key_id:
+        raise ContractError(f"engine key {key_id} public bytes are mislabeled")
+    return pin
 
 
 def _decode_b64(value: Any, field: str) -> bytes:
@@ -104,6 +175,8 @@ def verify_envelope(
     signatures = envelope.get("signatures")
     if not isinstance(signatures, list) or len(signatures) != 1:
         raise ContractError("exactly one DSSE signature is required")
+    if signatures[0].get("keyid") != derived:
+        raise ContractError("DSSE signature keyid differs from the pinned engine key")
     signature = _decode_b64(signatures[0].get("sig"), "signatures[0].sig")
     payload = _decode_b64(envelope.get("payload"), "payload")
 

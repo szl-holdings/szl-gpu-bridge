@@ -1,0 +1,14 @@
+{
+  "kind": "szl-quant-engine-keyring",
+  "v": 1,
+  "keys": {
+    "5c6cf59741ade920": {
+      "file": "engine_pubkey.json",
+      "status": "VERIFY_ONLY"
+    },
+    "815714c8d4ae3e4d": {
+      "file": "engine_pubkey_815714c8d4ae3e4d.json",
+      "status": "ACTIVE"
+    }
+  }
+}

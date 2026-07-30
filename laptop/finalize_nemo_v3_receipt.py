@@ -16,7 +16,11 @@ from typing import Any
 import frontier_job
 from frontier_contract import canonicalize, load_pin, verify_envelope
 from frontier_runtime import artifact_manifest, manifest_digest
-from nemo_v3_contract import NEMO_V3_PAYLOAD_TYPE, validate_nemo_v3_spec
+from nemo_v3_contract import (
+    NEMO_V3_PAYLOAD_TYPE,
+    expected_engine_key_id,
+    validate_nemo_v3_spec,
+)
 
 
 ALLOWED_NAMES = {
@@ -39,14 +43,17 @@ def load_verified_job(
     spec_path: pathlib.Path, engine_key_path: pathlib.Path
 ) -> tuple[dict[str, Any], bytes]:
     envelope = json.loads(spec_path.read_text(encoding="utf-8-sig"))
+    pin = load_pin(engine_key_path)
     spec, exact_payload, payload_type = verify_envelope(
         envelope,
-        load_pin(engine_key_path),
+        pin,
         allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,),
     )
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         raise ValueError("signed job is not a Nemo v3 payload")
     validate_nemo_v3_spec(spec)
+    if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
+        raise ValueError("Nemo v3 engine authorization key mismatch")
     return spec, exact_payload
 
 

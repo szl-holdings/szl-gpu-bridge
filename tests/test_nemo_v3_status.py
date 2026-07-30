@@ -163,6 +163,43 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertTrue(report["queue"]["valid"])
         self.assertEqual(report["queue"]["engine_key_id"], self.engine_key_id)
 
+    def test_keyring_managed_nonlegacy_key_requires_explicit_authorization(
+        self,
+    ) -> None:
+        pin_file = f"engine_pubkey_{self.engine_key_id}.json"
+        (self.root / "keys" / pin_file).write_text(
+            json.dumps(
+                {
+                    "keyId": self.engine_key_id,
+                    "publicKeySpkiBase64": base64.b64encode(self.engine_spki).decode(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        (self.root / "keys" / "engine_keyring.json").write_text(
+            json.dumps(
+                {
+                    "kind": "szl-quant-engine-keyring",
+                    "v": 1,
+                    "keys": {
+                        self.engine_key_id: {
+                            "file": pin_file,
+                            "status": "ACTIVE",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.enqueue()
+        report = nemo_v3_status.evaluate(
+            root=self.root,
+            receipt_loader=lambda _spec, _token: None,
+            now=self.now,
+        )
+        self.assertEqual(report["status"], "INVALID_QUEUE_ENVELOPE")
+        self.assertIn("wrong engine authorization", report["queue"]["error"])
+
     def test_valid_queue_without_private_receipt_token_fails_closed(self) -> None:
         self.enqueue()
         report = nemo_v3_status.evaluate(root=self.root, now=self.now)

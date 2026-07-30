@@ -144,6 +144,26 @@
         "receiptsRepoId": {"const": "SZLHOLDINGS/szl-training-receipts"}
       }
     },
+    "authorization": {
+      "type": "object",
+      "required": [
+        "engineKeyId",
+        "previousEngineKeyId",
+        "recoveryIssueUrl",
+        "rotationMode",
+        "oldKeyStatus",
+        "decisionAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "engineKeyId": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "previousEngineKeyId": {"const": "5c6cf59741ade920"},
+        "recoveryIssueUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/25"},
+        "rotationMode": {"const": "LOST_PRIVATE_KEY_NEW_GENERATION"},
+        "oldKeyStatus": {"const": "VERIFY_ONLY"},
+        "decisionAt": {"type": "string", "format": "date-time"}
+      }
+    },
     "notes": {"type": "string"},
     "lineage": {
       "type": "object",

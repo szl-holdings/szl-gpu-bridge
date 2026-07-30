@@ -14,7 +14,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from frontier_contract import load_pin, verify_envelope
-from nemo_v3_contract import NEMO_V3_PAYLOAD_TYPE, validate_nemo_v3_spec
+from nemo_v3_contract import (
+    NEMO_V3_PAYLOAD_TYPE,
+    expected_engine_key_id,
+    validate_nemo_v3_spec,
+)
 
 
 def now_iso() -> str:
@@ -86,6 +90,8 @@ def load_verified_job(
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         raise ValueError("signed job is not a Nemo v3 payload")
     validate_nemo_v3_spec(spec)
+    if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
+        raise ValueError("Nemo v3 engine authorization key mismatch")
     return spec, exact_payload
 
 

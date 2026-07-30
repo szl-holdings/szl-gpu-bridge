@@ -6,10 +6,15 @@
 
 | Party | Trusts | Established by |
 |---|---|---|
-| Laptop | engine pubkey `5c6cf59741ade920` | baked into `bootstrap.ps1` at paste time (TOFU — see limits) |
+| Laptop | reviewed engine keyring: `5c6cf59741ade920` verification-only and `815714c8d4ae3e4d` active | baked into `bootstrap.ps1` and independently bound by the signed job authorization |
 | Cloud | laptop keyId announced by owner after bootstrap prints it | out-of-band (owner tells the session; cloud pins it for `verify-receipt.mjs --expect-keyid`) |
 
-Private keys never move: engine key stays in the cloud workspace; laptop seed is generated on-metal and never uploaded.
+Private keys never move: an engine signing key stays ACL-locked on the
+controlled signing host; the laptop receipt seed is generated on-metal and
+never uploaded. Losing an engine private key does not authorize rewriting its
+public pin. Recovery requires a recorded incident, a new public keyring entry,
+a distinct job generation, and a protected change. Historical envelopes remain
+verifiable through the verification-only public pin.
 
 ## Inbound path (job specs) — threats & mitigations
 

@@ -22,8 +22,10 @@ _SHA = re.compile(r"^[0-9a-f]{40,64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _JOB = re.compile(r"^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$")
+_ENGINE_KEY_ID = re.compile(r"^[0-9a-f]{16}$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _HOLDOUT_NAMES = ("original-v2", "shadow-v2", "challenge-v3")
+LEGACY_ENGINE_KEY_ID = "5c6cf59741ade920"
 _OWNER_WORKFLOW_IDENTITY = (
     "szl-holdings/a11oy/"
     ".github/workflows/nemo-v3-isolated-owner-dispatch.yml"
@@ -50,6 +52,7 @@ _ALLOWED_TOP = {
     "notes",
     "lineage",
     "ownerDispatch",
+    "authorization",
 }
 
 
@@ -148,10 +151,22 @@ def _pinned_file(
     return value
 
 
+def expected_engine_key_id(spec: dict[str, Any]) -> str:
+    authorization = spec.get("authorization")
+    if authorization is None:
+        return LEGACY_ENGINE_KEY_ID
+    return str(authorization["engineKeyId"])
+
+
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ContractError("Nemo v3 spec must be an object")
-    required = _ALLOWED_TOP - {"notes", "lineage", "ownerDispatch"}
+    required = _ALLOWED_TOP - {
+        "notes",
+        "lineage",
+        "ownerDispatch",
+        "authorization",
+    }
     missing = required - spec.keys()
     extra = spec.keys() - _ALLOWED_TOP
     if missing:
@@ -166,6 +181,44 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     expires = _timestamp(spec.get("expiresAt"), "expiresAt")
     if expires <= created:
         raise ContractError("expiresAt must be later than createdAt")
+
+    if "authorization" in spec:
+        authorization_fields = {
+            "engineKeyId",
+            "previousEngineKeyId",
+            "recoveryIssueUrl",
+            "rotationMode",
+            "oldKeyStatus",
+            "decisionAt",
+        }
+        authorization = _object(
+            spec,
+            "authorization",
+            authorization_fields,
+            authorization_fields,
+        )
+        for field in ("engineKeyId", "previousEngineKeyId"):
+            if not isinstance(
+                authorization[field], str
+            ) or not _ENGINE_KEY_ID.fullmatch(authorization[field]):
+                raise ContractError(f"authorization.{field} must be lowercase 16-hex")
+        if authorization["engineKeyId"] == authorization["previousEngineKeyId"]:
+            raise ContractError("authorization must enroll a distinct engine key")
+        if authorization["previousEngineKeyId"] != LEGACY_ENGINE_KEY_ID:
+            raise ContractError(
+                "authorization does not preserve the historical trust root"
+            )
+        if authorization["rotationMode"] != "LOST_PRIVATE_KEY_NEW_GENERATION":
+            raise ContractError("authorization.rotationMode is not admitted")
+        if authorization["oldKeyStatus"] != "VERIFY_ONLY":
+            raise ContractError("authorization.oldKeyStatus must be VERIFY_ONLY")
+        if authorization["recoveryIssueUrl"] != (
+            "https://github.com/szl-holdings/szl-gpu-bridge/issues/25"
+        ):
+            raise ContractError(
+                "authorization.recoveryIssueUrl is not the recorded incident"
+            )
+        _timestamp(authorization["decisionAt"], "authorization.decisionAt")
 
     if "ownerDispatch" in spec:
         owner_fields = {
