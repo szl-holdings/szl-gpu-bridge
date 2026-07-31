@@ -43,8 +43,10 @@ on:
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-10.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-11.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-12.json
+      - queue/quarantine/job-2026-nemo-v3-governed-attempt-13.json
       - queue/evidence/job-2026-nemo-v3-governed-attempt-11.json
       - queue/evidence/job-2026-nemo-v3-governed-attempt-12.json
+      - queue/evidence/job-2026-nemo-v3-governed-attempt-13.json
       - keys/engine_keyring.json
       - keys/engine_pubkey.json
       - keys/engine_pubkey_815714c8d4ae3e4d.json
@@ -57,6 +59,7 @@ on:
       - laptop/dispatcher.py
       - laptop/finalize_nemo_v3_receipt.py
       - laptop/frontier_contract.py
+      - laptop/frontier_job.py
       - laptop/nemo_v3_contract.py
       - laptop/prefetch_nemo_v3.py
       - laptop/run_nemo_v3_isolated.ps1
@@ -80,6 +83,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_11_spec.py
       - tests/test_reviewed_nemo_v3_attempt_12_spec.py
       - tests/test_reviewed_nemo_v3_attempt_13_spec.py
+      - tests/test_nemo_v3_sftconfig_compat.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -241,6 +245,7 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_11_spec.py \
             tests/test_reviewed_nemo_v3_attempt_12_spec.py \
             tests/test_reviewed_nemo_v3_attempt_13_spec.py \
+            tests/test_nemo_v3_sftconfig_compat.py \
             tests/test_engine_keyring.py \
             tests/test_isolated_nemo_launcher_contract.py \
             tests/test_nemo_v3_dispatcher_engine_key_scope.py \

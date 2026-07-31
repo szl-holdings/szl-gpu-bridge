@@ -79,6 +79,7 @@ ATTEMPT_11_CORRECTED_BRIDGE_REVISION = "f07263bc37ef6e90b313ba5576ef425d845cf287
 ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
 ATTEMPT_12_CORRECTED_BRIDGE_REVISION = "d110abb8ea48c9382a70c3eead22dddf555f292b"
 ATTEMPT_13_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-13"
+ATTEMPT_14_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-14"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -148,6 +149,13 @@ _ATTEMPT_13_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_13_REVIEWED_JOB_ID,
+}
+_ATTEMPT_14_REPLACEMENT = {
+    "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_14_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -390,6 +398,75 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
             "promoted": False,
         },
     },
+    ATTEMPT_13_REVIEWED_JOB_ID: {
+        "statuses": (
+            "SFTCONFIG_STRATEGY_KEY_BLOCKED",
+            "POST_CLAIM",
+            "PRE_TRAINING",
+            "SIGNED_BLOCKED_RECEIPT",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0"
+        ),
+        "payload_sha256": (
+            "82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_14_REPLACEMENT,
+        "execution_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-13.json"
+        ),
+        "execution_evidence_sha256": (
+            "8d9c7e4b37138a2b61de9e15f3c622dc1291f2c38f909a7a9f48115385831c4a"
+        ),
+        "execution_evidence": {
+            "workflowRunId": "30629929196",
+            "workflowRunAttempt": 1,
+            "workflowJobId": "91153664576",
+            "failurePhase": "POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY",
+            "errorType": "TypeError",
+            "error": (
+                "SFTConfig.__init__() got an unexpected keyword argument "
+                "'evaluation_strategy'"
+            ),
+            "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+            "envelopeRevision": "b929bae4230ffe39ee63b34b8e9f9974cffc66ca",
+            "executionBridgeRevision": "2783b3518abcec9f38d3f6504c06e305a4723801",
+            "attemptClaimSha256": (
+                "bb1fd12fb73289864503d5f8d65aacb4b34d0db0d0ba2fcce73a975c71364293"
+            ),
+            "prefetchReceiptSha256": (
+                "b290716a5bc9427a20bf954893770a5401d9b70c0530c51cf0e958aadc9e3e64"
+            ),
+            "claimCreated": True,
+            "jobDirectoryCreated": True,
+            "prefetchReceiptCreated": True,
+            "trainingStarted": False,
+            "receiptIntentProduced": True,
+            "receiptUploaded": True,
+            "receiptRevision": "ac219fe87da9acf57141ff24ffbd330216584f7c",
+            "receiptFileSha256": (
+                "384e64b0ebd43fcfd2f52a3b1139cf1bca04f23c43ccfd9738af3a1fdfe46d02"
+            ),
+            "receiptBodySha256": (
+                "ec5f8b173f3e8f13c252bf9c7eb52625210b3bf936c7dec88fc640e032275876"
+            ),
+            "receiptKeyId": "167c14fbddbe97cc",
+            "receiptVerdict": "BLOCKED",
+            "receiptReason": (
+                "TypeError: SFTConfig.__init__() got an unexpected keyword argument "
+                "'evaluation_strategy'"
+            ),
+            "candidateUploaded": False,
+            "adapterUploaded": False,
+            "modelCardUploaded": False,
+            "datasetUploaded": False,
+            "deployed": False,
+            "promoted": False,
+        },
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -484,6 +561,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
         "runtimeBound": True,
         "successorGeneration": 13,
+    },
+    ATTEMPT_14_REVIEWED_JOB_ID: {
+        "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 14,
     },
 }
 _ALLOWED_TOP = {
@@ -636,6 +721,7 @@ def require_nemo_v3_dispatchable(
         ATTEMPT_11_REVIEWED_JOB_ID,
         ATTEMPT_12_REVIEWED_JOB_ID,
         ATTEMPT_13_REVIEWED_JOB_ID,
+        ATTEMPT_14_REVIEWED_JOB_ID,
     }:
         expected = _revision(
             expected_execution_bridge_revision,
@@ -979,6 +1065,17 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                     "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING"
                 )
                 expected_event_created = True
+            elif predecessor == ATTEMPT_13_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30629929196"
+                )
+                expected_failure_phase = "POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY"
+                expected_event_created = True
+                expected_claim_created = True
+                expected_holdouts_accessed = True
+                expected_receipt_intent_produced = True
+                expected_model_repository_code_imported = True
+                expected_terminal_ledger_written = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -1397,6 +1494,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-13 runtime-binding recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_14_REVIEWED_JOB_ID:
+            exact_sftconfig_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_13_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0"
+                ),
+                "predecessorPayloadSha256": (
+                    "82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "b929bae4230ffe39ee63b34b8e9f9974cffc66ca"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    "2783b3518abcec9f38d3f6504c06e305a4723801"
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30629929196"
+                ),
+                "failurePhase": "POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY",
+                "successorGeneration": 14,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": True,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": True,
+                "holdoutsAccessed": True,
+                "candidateProduced": False,
+                "receiptIntentProduced": True,
+                "terminalLedgerWritten": True,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_sftconfig_recovery_lineage:
+                raise ContractError(
+                    "attempt-14 SFTConfig recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1427,6 +1560,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             ATTEMPT_11_REVIEWED_JOB_ID,
             ATTEMPT_12_REVIEWED_JOB_ID,
             ATTEMPT_13_REVIEWED_JOB_ID,
+            ATTEMPT_14_REVIEWED_JOB_ID,
         }
         and base["licenseId"] != "nvidia-nemotron-open-model-license"
     ):

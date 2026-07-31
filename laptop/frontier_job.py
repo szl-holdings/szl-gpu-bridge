@@ -165,6 +165,56 @@ def _filtered_kwargs(callable_obj: Any, values: dict[str, Any]) -> dict[str, Any
     return {key: value for key, value in values.items() if key in parameters}
 
 
+_SFT_CONFIG_STRATEGY_ALIASES = ("eval_strategy", "evaluation_strategy")
+
+
+def _normalize_sft_config_kwargs(
+    callable_obj: Any, values: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind the one evaluation-strategy value to an explicit SFTConfig field.
+
+    Unsloth's patched TRL constructor exposes ``eval_strategy`` plus ``**kwargs``.
+    Treating ``**kwargs`` as proof that the retired ``evaluation_strategy`` alias
+    is supported caused attempt 13 to fail before training.  This boundary is
+    intentionally stricter than the generic trainer compatibility helper: every
+    supplied setting must be explicit in the observed constructor signature, and
+    exactly one strategy alias must exist on each side.
+    """
+
+    try:
+        parameters = inspect.signature(callable_obj).parameters
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("SFTConfig signature is not inspectable") from exc
+
+    signature_aliases = [
+        name
+        for name in _SFT_CONFIG_STRATEGY_ALIASES
+        if name in parameters
+        and parameters[name].kind is not inspect.Parameter.VAR_KEYWORD
+    ]
+    if len(signature_aliases) != 1:
+        raise RuntimeError(
+            "SFTConfig signature must expose exactly one evaluation strategy field"
+        )
+
+    supplied_aliases = [name for name in _SFT_CONFIG_STRATEGY_ALIASES if name in values]
+    if len(supplied_aliases) != 1:
+        raise RuntimeError(
+            "SFTConfig values must contain exactly one evaluation strategy field"
+        )
+
+    supplied_alias = supplied_aliases[0]
+    unsupported = sorted(set(values) - set(parameters) - {supplied_alias})
+    if unsupported:
+        raise RuntimeError(
+            f"SFTConfig values contain unsupported fields: {unsupported}"
+        )
+
+    normalized = {key: value for key, value in values.items() if key != supplied_alias}
+    normalized[signature_aliases[0]] = values[supplied_alias]
+    return normalized
+
+
 def _build_sft_config(
     SFTConfig: Any, recipe: dict[str, Any], torch: Any, output_dir: pathlib.Path
 ):
@@ -178,7 +228,6 @@ def _build_sft_config(
         "output_dir": str(output_dir),
         "logging_steps": 10,
         "save_strategy": "epoch",
-        "eval_strategy": "epoch",
         "evaluation_strategy": "epoch",
         "report_to": [],
         "bf16": bool(torch.cuda.is_bf16_supported()),
@@ -192,7 +241,7 @@ def _build_sft_config(
         "max_length": recipe["maxSeqLength"],
         "max_seq_length": recipe["maxSeqLength"],
     }
-    return SFTConfig(**_filtered_kwargs(SFTConfig, values))
+    return SFTConfig(**_normalize_sft_config_kwargs(SFTConfig, values))
 
 
 def _build_sft_trainer(
