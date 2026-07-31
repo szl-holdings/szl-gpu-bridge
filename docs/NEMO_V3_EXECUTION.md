@@ -660,7 +660,11 @@ immutable image, receipt-only destination, and disabled candidate, adapter,
 model-card, and dataset publication boundaries. Its canonical plaintext payload
 SHA-256 is
 `a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
-Status is `AWAITING_ENGINE_SIGNATURE`; no queue envelope, runner, dispatch,
-claim, training, receipt, deployment, promotion, or Hugging Face publication
-is authorized until a separate b804 signing/publication PR passes its own
-protected gates.
+Its exclusive-create b804 DSSE envelope now exists at
+`queue/pending/job-2026-nemo-v3-governed-attempt-12.json`, with raw SHA-256
+`a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f`
+and signer-canonical payload SHA-256
+`a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
+Status is `QUEUED_AWAITING_GPU_RECEIPT`. No runner, dispatch, claim, training,
+receipt, deployment, promotion, or Hugging Face publication is authorized
+until the separate measured GPU execution gate passes.

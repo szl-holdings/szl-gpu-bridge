@@ -131,8 +131,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   base license and science inputs, and binds corrected Bridge runtime
   `d110abb8ea48c9382a70c3eead22dddf555f292b`, where the exact local tokenizer
   artifacts are verified before Unsloth receives their snapshot path. It has no
-  queue envelope, runner, dispatch, claim, receipt, or publication authority;
-  only a separate protected b804 signing stage may advance it.
+  runner, dispatch, claim, receipt, or publication authority. Its one
+  exclusive-create b804 envelope is at
+  `queue/pending/job-2026-nemo-v3-governed-attempt-12.json`, with raw SHA-256
+  `a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f`
+  and signer-canonical payload SHA-256
+  `a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
+  Runner activation and dispatch remain locked behind a separate measured GPU
+  gate; no claim, receipt, candidate, model card, dataset, or publication exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
