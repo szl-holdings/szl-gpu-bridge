@@ -1,0 +1,28 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-13",
+  "recordedAt": "2026-07-31T12:34:58Z",
+  "status": [
+    "SFTCONFIG_STRATEGY_KEY_BLOCKED",
+    "POST_CLAIM",
+    "PRE_TRAINING",
+    "SIGNED_BLOCKED_RECEIPT",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-13.json",
+  "queueFileSha256": "de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0",
+  "signedPayloadSha256": "82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-14"
+  },
+  "reason": "Attempt 13 created exactly one owner-dispatch workflow run 30629929196 and attempt claim SHA-256 bb1fd12fb73289864503d5f8d65aacb4b34d0db0d0ba2fcce73a975c71364293. Credentialless networkless execution in immutable image sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123 reached the Bridge-owned SFTConfig boundary under TRL 0.23.1 and Transformers 4.57.6, then failed before trainer construction or training because the Unsloth-patched signature explicitly accepts eval_strategy while the generic compatibility helper also forwarded the obsolete evaluation_strategy alias through **kwargs. Trusted finalization published the immutable signed BLOCKED receipt at revision ac219fe87da9acf57141ff24ffbd330216584f7c with file SHA-256 384e64b0ebd43fcfd2f52a3b1139cf1bca04f23c43ccfd9738af3a1fdfe46d02 and body SHA-256 ec5f8b173f3e8f13c252bf9c7eb52625210b3bf936c7dec88fc640e032275876 under key 167c14fbddbe97cc. Candidate, adapter, model-card, dataset, deployment, promotion, and all other publication effects are false. Attempt 13 remains immutable evidence and is never retry, resend, re-sign, or dispatch authority."
+}

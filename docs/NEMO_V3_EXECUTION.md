@@ -710,8 +710,38 @@ are unchanged.
 Attempt 13's one exclusive-create b804 DSSE envelope now exists at
 `queue/pending/job-2026-nemo-v3-governed-attempt-13.json`, with raw SHA-256
 `de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0`.
-Its status is `QUEUED_AWAITING_GPU_RECEIPT`; no receipt or publication output
-exists. Its reviewed raw Git JSON SHA-256 is
+Its reviewed raw Git JSON SHA-256 is
 `bd394cbb68f60ac181333156cb53d9c0074b234352843aa976533021f5f396e5`;
 its signer-canonical payload SHA-256 is
 `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`.
+
+Attempt 13 consumed its one authorized dispatch in A11oy run `30629929196`
+and created exact attempt claim SHA-256
+`bb1fd12fb73289864503d5f8d65aacb4b34d0db0d0ba2fcce73a975c71364293`.
+The credentialless, networkless pinned-image process reached the Bridge-owned
+training configuration boundary, where TRL `0.23.1` / Transformers `4.57.6`
+rejected the obsolete `evaluation_strategy` alias. The Unsloth-patched
+constructor explicitly exposes `eval_strategy` and `**kwargs`; the old generic
+filter incorrectly treated `**kwargs` as evidence that both aliases were safe.
+No trainer was constructed and training did not start.
+
+Trusted finalization published the immutable signed BLOCKED receipt under key
+`167c14fbddbe97cc` at revision
+`ac219fe87da9acf57141ff24ffbd330216584f7c`. Its file SHA-256 is
+`384e64b0ebd43fcfd2f52a3b1139cf1bca04f23c43ccfd9738af3a1fdfe46d02`
+and its canonical body SHA-256 is
+`ec5f8b173f3e8f13c252bf9c7eb52625210b3bf936c7dec88fc640e032275876`.
+The exact run evidence is hash-pinned at
+`queue/evidence/job-2026-nemo-v3-governed-attempt-13.json`; the quarantine
+record preserves the signed spec and envelope byte-for-byte and marks attempt
+13 `SFTCONFIG_STRATEGY_KEY_BLOCKED + POST_CLAIM + PRE_TRAINING +
+SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`. Candidate, adapter, model-card,
+dataset, deployment, promotion, and all other publication effects are false.
+
+The Bridge-owned correction inspects the actual `SFTConfig` signature, requires
+exactly one explicit strategy field, normalizes the one logical strategy value
+to that field, and rejects missing, ambiguous, or unsupported shapes before
+constructor invocation. The distinct next reviewed identity is attempt 14;
+its signed runtime revision must be the separately protected commit containing
+this correction. Attempt 13 is never retry, resend, re-sign, or dispatch
+authority.

@@ -156,14 +156,25 @@ cloud/verify-receipt.mjs ◄─────────────────�
   inputs, and protected Bridge runtime
   `2783b3518abcec9f38d3f6504c06e305a4723801`. Its lineage records attempt
   12's single run `30626533443` as exact pre-claim
-  `RUNTIME_JOB_BINDING_REJECTED + NEVER_DISPATCH` evidence. This phase is
-  Its exclusive-create b804 DSSE queue envelope is now present with raw
-  SHA-256
+  `RUNTIME_JOB_BINDING_REJECTED + NEVER_DISPATCH` evidence. Its
+  exclusive-create b804 DSSE queue envelope is preserved with raw SHA-256
   `de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0`.
   Its canonical payload SHA-256 is
-  `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`,
-  status is `QUEUED_AWAITING_GPU_RECEIPT`, and all candidate, adapter, model-card,
-  dataset, deployment, promotion, and publication effects remain false.
+  `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`.
+  Its one dispatch created A11oy run `30629929196` and claim SHA-256
+  `bb1fd12fb73289864503d5f8d65aacb4b34d0db0d0ba2fcce73a975c71364293`.
+  Credentialless, networkless execution then stopped before trainer construction
+  because the pinned TRL `0.23.1` `SFTConfig` accepts `eval_strategy`, while the
+  old compatibility helper also forwarded `evaluation_strategy` through the
+  Unsloth wrapper's `**kwargs`. Trusted finalization published only the signed
+  BLOCKED receipt at revision `ac219fe87da9acf57141ff24ffbd330216584f7c`;
+  its file SHA-256 is
+  `384e64b0ebd43fcfd2f52a3b1139cf1bca04f23c43ccfd9738af3a1fdfe46d02`.
+  Attempt 13 is now `SFTCONFIG_STRATEGY_KEY_BLOCKED + POST_CLAIM + PRE_TRAINING +
+  SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`; the exact run truth is hash-pinned
+  under `queue/evidence/`. Candidate, adapter, model-card, dataset, deployment,
+  promotion, and all other publication effects remain false. The next reviewed
+  identity is attempt 14, bound to a separately protected corrected runtime.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

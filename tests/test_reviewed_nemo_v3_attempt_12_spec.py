@@ -284,14 +284,10 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_13), attempt_13)
-        require_nemo_v3_dispatchable(
-            attempt_13,
-            expected_execution_bridge_revision="c" * 40,
-        )
-        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+        with self.assertRaisesRegex(ContractError, "quarantined"):
             require_nemo_v3_dispatchable(
                 attempt_13,
-                expected_execution_bridge_revision="d" * 40,
+                expected_execution_bridge_revision="c" * 40,
             )
 
         skipped = copy.deepcopy(attempt_13)
@@ -300,7 +296,7 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
             validate_nemo_v3_spec(skipped)
 
         unknown = copy.deepcopy(attempt_13)
-        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-14"
+        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-15"
         with self.assertRaisesRegex(ContractError, "exact reviewed job binding"):
             validate_nemo_v3_spec(unknown)
 
