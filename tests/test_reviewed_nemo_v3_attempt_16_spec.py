@@ -201,8 +201,12 @@ class ReviewedNemoV3Attempt16SpecTests(unittest.TestCase):
                 )
                 self.assertEqual(hashlib.sha256(content).hexdigest(), digest)
 
-    def test_plaintext_attempt_16_waits_for_separate_engine_signature(self) -> None:
-        self.assertFalse(ATTEMPT_16_QUEUE.exists())
+    def test_signed_attempt_16_is_queued_awaiting_gpu_receipt(self) -> None:
+        self.assertTrue(ATTEMPT_16_QUEUE.exists())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_16_QUEUE.read_bytes()).hexdigest(),
+            "5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756",
+        )
         reviewed_bytes = subprocess.check_output(
             [
                 "git",
@@ -229,9 +233,12 @@ class ReviewedNemoV3Attempt16SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 16, 5, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
+        self.assertEqual(report["queue"]["payload_sha256"], payload_sha256)
         self.assertFalse(report["receipt"]["present"])
         self.assertFalse(report["reviewed_spec"]["candidate_publication_enabled"])
 
