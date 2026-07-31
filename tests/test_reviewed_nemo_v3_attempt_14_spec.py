@@ -9,6 +9,8 @@ import sys
 import unittest
 from datetime import datetime, timezone
 
+from jsonschema.validators import Draft202012Validator
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
@@ -32,6 +34,7 @@ ATTEMPT_14_CORRECTED_BRIDGE_REVISION = "e150711a6ba6a0c29109a00da7fc82af2967f588
 ATTEMPT_13_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-13-reviewed.json"
 ATTEMPT_14_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-14-reviewed.json"
 ATTEMPT_14_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_14_REVIEWED_JOB_ID}.json"
+NEMO_SCHEMA_PATH = ROOT / "schema" / "nemo-v3-jobspec.v1.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -79,6 +82,26 @@ class ReviewedNemoV3Attempt14SpecTests(unittest.TestCase):
             self.attempt_14,
             expected_execution_bridge_revision=ATTEMPT_14_CORRECTED_BRIDGE_REVISION,
         )
+
+    def test_json_schema_admits_only_the_exact_attempt_14_binding(self) -> None:
+        schema = json.loads(NEMO_SCHEMA_PATH.read_text(encoding="utf-8"))
+        validator = Draft202012Validator(
+            schema,
+            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        )
+        validator.validate(self.attempt_14)
+
+        for path, value in (
+            (("authorization", "correctedBridgeRevision"), "2" * 40),
+            (("lineage", "predecessorJobId"), ATTEMPT_13_REVIEWED_JOB_ID + "-old"),
+            (("lineage", "predecessorEnvelopeSha256"), "3" * 64),
+            (("lineage", "failurePhase"), "POST_CLAIM_TOKENIZER_LOAD"),
+            (("lineage", "successorGeneration"), 12),
+        ):
+            with self.subTest(path=path):
+                mutated = copy.deepcopy(self.attempt_14)
+                mutated[path[0]][path[1]] = value
+                self.assertTrue(list(validator.iter_errors(mutated)))
 
     def test_exact_attempt_13_signed_blocked_lineage(self) -> None:
         self.assertEqual(
