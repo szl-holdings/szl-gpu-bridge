@@ -20,20 +20,26 @@ from nemo_v3_contract import (  # noqa: E402
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
     FUTURE_REVIEWED_JOB_ID,
+    NEXT_RUNTIME_REVIEWED_JOB_ID,
     SUCCESSOR_A11OY_RELOCK_RUN_URL,
     SUCCESSOR_A11OY_SOURCE_REVISION,
     SUCCESSOR_CORRECTED_BRIDGE_REVISION,
     SUCCESSOR_OWNER_WORKFLOW_BLOB,
+    require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
 )
 
 ATTEMPT_6_PATH = ROOT / "jobspecs" / "nemo-v3-20260730-attempt-6-reviewed.json"
 ATTEMPT_7_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-7-reviewed.json"
 ATTEMPT_7_QUEUE = ROOT / "queue" / "pending" / f"{FUTURE_REVIEWED_JOB_ID}.json"
+ATTEMPT_7_QUARANTINE = ROOT / "queue" / "quarantine" / f"{FUTURE_REVIEWED_JOB_ID}.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
 SIGNER_SOURCE = (ROOT / "cloud" / "sign-nemo-v3-job.mjs").read_text(encoding="utf-8")
+PREFETCH_SOURCE = (ROOT / "laptop" / "prefetch_nemo_v3.py").read_text(encoding="utf-8")
+DISPATCHER_SOURCE = (ROOT / "laptop" / "dispatcher.py").read_text(encoding="utf-8")
+RUNNER_SOURCE = (ROOT / "laptop" / "runjob_nemo_v3.py").read_text(encoding="utf-8")
 
 
 class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
@@ -167,8 +173,9 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             "c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70",
         )
 
-    def test_signed_envelope_is_valid_and_waits_for_gpu_receipt(self) -> None:
+    def test_signed_envelope_is_quarantined_after_runtime_rejection(self) -> None:
         self.assertTrue(ATTEMPT_7_QUEUE.is_file())
+        self.assertTrue(ATTEMPT_7_QUARANTINE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_7_QUEUE.read_bytes()).hexdigest(),
             "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96",
@@ -177,10 +184,10 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             root=ROOT,
             spec_path=ATTEMPT_7_PATH,
             receipt_loader=lambda _spec, _token: None,
-            now=datetime(2026, 7, 31, 4, 25, tzinfo=timezone.utc),
+            now=datetime(2026, 7, 31, 4, 53, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(
@@ -191,8 +198,73 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             report["queue"]["engine_key_id"],
             COORDINATED_ENGINE_KEY_ID,
         )
-        self.assertFalse(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(
+            report["quarantine"]["valid"],
+            report["quarantine"]["error"],
+        )
+        self.assertEqual(
+            report["quarantine"]["statuses"],
+            (
+                "RUNTIME_CONTRACT_BINDING_REJECTED",
+                "PRE_CLAIM",
+                "NEVER_DISPATCH",
+            ),
+        )
         self.assertFalse(report["receipt"]["present"])
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.attempt_7)
+
+    def test_runtime_bound_attempt_8_requires_the_exact_execution_revision(
+        self,
+    ) -> None:
+        attempt_8 = copy.deepcopy(self.attempt_7)
+        attempt_8["jobId"] = NEXT_RUNTIME_REVIEWED_JOB_ID
+        attempt_8["authorization"]["correctedBridgeRevision"] = "f" * 40
+        attempt_8["lineage"] = {
+            "predecessorJobId": FUTURE_REVIEWED_JOB_ID,
+            "predecessorEnvelopeSha256": (
+                "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96"
+            ),
+            "predecessorPayloadSha256": (
+                "0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7"
+            ),
+            "predecessorEnvelopeRevision": ("21553a898db76dddba3227e91518835185b55a6f"),
+            "predecessorExecutionBridgeRevision": (
+                "2f33607d8fcbec76fe98290258ec3dfa728fb509"
+            ),
+            "transportEvidenceUrl": (
+                "https://github.com/szl-holdings/a11oy/actions/runs/30605081533"
+            ),
+            "failurePhase": "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION",
+            "successorGeneration": 8,
+            "automaticRetry": False,
+            "eventCreated": True,
+            "workflowRunCreated": True,
+            "claimCreated": False,
+            "trainingStarted": False,
+            "modelRepositoryCodeImported": False,
+            "holdoutsAccessed": False,
+            "candidateProduced": False,
+            "receiptIntentProduced": False,
+            "terminalLedgerWritten": False,
+            "scienceInputsReused": True,
+        }
+        self.assertIs(validate_nemo_v3_spec(attempt_8), attempt_8)
+        with self.assertRaisesRegex(ContractError, "execution Bridge revision"):
+            require_nemo_v3_dispatchable(attempt_8)
+        with self.assertRaisesRegex(ContractError, "does not match"):
+            require_nemo_v3_dispatchable(
+                attempt_8,
+                expected_execution_bridge_revision="e" * 40,
+            )
+        require_nemo_v3_dispatchable(
+            attempt_8,
+            expected_execution_bridge_revision="f" * 40,
+        )
+        self.assertIn('"EXECUTION_BRIDGE_REVISION"', PREFETCH_SOURCE)
+        self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', DISPATCHER_SOURCE)
+        self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', RUNNER_SOURCE)
 
     def test_attempt_7_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -233,6 +305,7 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-7-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-7.json",
+            "queue/quarantine/job-2026-nemo-v3-governed-attempt-7.json",
             "tests/test_reviewed_nemo_v3_attempt_7_spec.py",
             "attempt_id: attempt-7-validator-lineage-recovery",
         ):

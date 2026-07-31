@@ -58,6 +58,7 @@ SUCCESSOR_A11OY_RELOCK_RUN_URL = (
 )
 SUCCESSOR_CORRECTED_BRIDGE_REVISION = "2f33607d8fcbec76fe98290258ec3dfa728fb509"
 FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-7"
+NEXT_RUNTIME_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-8"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -85,6 +86,13 @@ _ATTEMPT_7_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+}
+_ATTEMPT_8_REPLACEMENT = {
+    "sourceRevision": SUCCESSOR_A11OY_SOURCE_REVISION,
+    "workflowBlob": SUCCESSOR_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": NEXT_RUNTIME_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -165,6 +173,22 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "source_revision": EXECUTION_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_7_REPLACEMENT,
     },
+    FUTURE_REVIEWED_JOB_ID: {
+        "statuses": (
+            "RUNTIME_CONTRACT_BINDING_REJECTED",
+            "PRE_CLAIM",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96"
+        ),
+        "payload_sha256": (
+            "0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": SUCCESSOR_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_8_REPLACEMENT,
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -211,6 +235,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": SUCCESSOR_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": SUCCESSOR_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 7,
+    },
+    NEXT_RUNTIME_REVIEWED_JOB_ID: {
+        "sourceRevision": SUCCESSOR_A11OY_SOURCE_REVISION,
+        "workflowBlob": SUCCESSOR_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": SUCCESSOR_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 8,
     },
 }
 _ALLOWED_TOP = {
@@ -345,7 +377,11 @@ def quarantine_policy(spec_or_job_id: dict[str, Any] | str) -> dict[str, Any] | 
     return QUARANTINE_POLICIES.get(str(job_id))
 
 
-def require_nemo_v3_dispatchable(spec: dict[str, Any]) -> None:
+def require_nemo_v3_dispatchable(
+    spec: dict[str, Any],
+    *,
+    expected_execution_bridge_revision: str | None = None,
+) -> None:
     """Reject immutable historical envelopes before any execution side effect."""
 
     policy = quarantine_policy(spec)
@@ -353,6 +389,21 @@ def require_nemo_v3_dispatchable(spec: dict[str, Any]) -> None:
         raise ContractError(
             "Nemo v3 job is quarantined: " + " + ".join(policy["statuses"])
         )
+    if spec.get("jobId") == NEXT_RUNTIME_REVIEWED_JOB_ID:
+        expected = _revision(
+            expected_execution_bridge_revision,
+            "expected execution Bridge revision",
+            exact40=True,
+        )
+        authorization = spec.get("authorization")
+        if (
+            not isinstance(authorization, dict)
+            or authorization.get("correctedBridgeRevision") != expected
+        ):
+            raise ContractError(
+                "runtime-bound successor does not match the exact execution "
+                "Bridge revision"
+            )
 
 
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
@@ -489,7 +540,8 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 exact40=True,
             )
             if (
-                authorization["correctedBridgeRevision"]
+                not coordinated_binding.get("runtimeBound")
+                and authorization["correctedBridgeRevision"]
                 != coordinated_binding["correctedBridgeRevision"]
             ):
                 raise ContractError(
@@ -625,6 +677,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 )
                 expected_failure_phase = "PRE_DISPATCH_VALIDATOR_REJECTION"
                 expected_event_created = False
+            elif predecessor == FUTURE_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30605081533"
+                )
+                expected_failure_phase = "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION"
+                expected_event_created = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -826,6 +884,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             if lineage != exact_validator_rejection_lineage:
                 raise ContractError(
                     "attempt-7 validator-rejection recovery lineage is not exact"
+                )
+        if spec["jobId"] == NEXT_RUNTIME_REVIEWED_JOB_ID:
+            exact_runtime_binding_lineage = {
+                "predecessorJobId": FUTURE_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96"
+                ),
+                "predecessorPayloadSha256": (
+                    "0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "21553a898db76dddba3227e91518835185b55a6f"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    "2f33607d8fcbec76fe98290258ec3dfa728fb509"
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30605081533"
+                ),
+                "failurePhase": "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION",
+                "successorGeneration": 8,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_runtime_binding_lineage:
+                raise ContractError(
+                    "attempt-8 runtime-binding recovery lineage is not exact"
                 )
 
     base = _object(

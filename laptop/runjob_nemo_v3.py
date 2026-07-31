@@ -371,7 +371,12 @@ def main(spec_path: str) -> int:
             allowed_payload_types=(NEMO_V3_PAYLOAD_TYPE,),
         )
         validate_nemo_v3_spec(spec)
-        require_nemo_v3_dispatchable(spec)
+        require_nemo_v3_dispatchable(
+            spec,
+            expected_execution_bridge_revision=os.environ.get(
+                "SZL_EXECUTION_BRIDGE_REVISION"
+            ),
+        )
         if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
             raise ValueError("Nemo v3 engine authorization key mismatch")
     except Exception as exc:  # noqa: BLE001

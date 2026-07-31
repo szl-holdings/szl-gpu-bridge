@@ -55,8 +55,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
   protected Bridge revision `2f33607d8fcbec76fe98290258ec3dfa728fb509`,
   preserves the frozen science inputs, and keeps all candidate, model-card,
   and dataset uploads disabled. Its separately protected b804-signed queue
-  envelope is valid, so it is `QUEUED_AWAITING_GPU_RECEIPT`; no attempt-7
-  claim, training, candidate, or receipt exists.
+  envelope created one exact workflow run, but the older signed execution
+  runtime rejected the new reviewed binding before prefetch output or claim.
+  Attempt 7 is immutable evidence under
+  `RUNTIME_CONTRACT_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`; no
+  training, candidate, or receipt exists. A fresh attempt 8 must bind this
+  protected runtime recovery revision, and that exact revision must be
+  supplied again at dispatch.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -94,7 +95,12 @@ def main(spec_path: str) -> int:
     elif payload_type == NEMO_V3_PAYLOAD_TYPE and spec.get("kind") == NEMO_V3_KIND:
         try:
             validate_nemo_v3_spec(spec)
-            require_nemo_v3_dispatchable(spec)
+            require_nemo_v3_dispatchable(
+                spec,
+                expected_execution_bridge_revision=os.environ.get(
+                    "SZL_EXECUTION_BRIDGE_REVISION"
+                ),
+            )
             if (
                 "authorization" in spec
                 or (ROOT / "keys" / "engine_keyring.json").is_file()
