@@ -80,6 +80,7 @@ ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
 ATTEMPT_12_CORRECTED_BRIDGE_REVISION = "d110abb8ea48c9382a70c3eead22dddf555f292b"
 ATTEMPT_13_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-13"
 ATTEMPT_14_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-14"
+ATTEMPT_15_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-15"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -156,6 +157,13 @@ _ATTEMPT_14_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_14_REVIEWED_JOB_ID,
+}
+_ATTEMPT_15_REPLACEMENT = {
+    "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_15_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -458,6 +466,76 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
             "receiptReason": (
                 "TypeError: SFTConfig.__init__() got an unexpected keyword argument "
                 "'evaluation_strategy'"
+            ),
+            "candidateUploaded": False,
+            "adapterUploaded": False,
+            "modelCardUploaded": False,
+            "datasetUploaded": False,
+            "deployed": False,
+            "promoted": False,
+        },
+    },
+    ATTEMPT_14_REVIEWED_JOB_ID: {
+        "statuses": (
+            "META_TENSOR_MATERIALIZATION_BLOCKED",
+            "POST_CLAIM",
+            "PRE_TRAINING",
+            "SIGNED_BLOCKED_RECEIPT",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82"
+        ),
+        "payload_sha256": (
+            "162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_15_REPLACEMENT,
+        "execution_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-14.json"
+        ),
+        "execution_evidence_sha256": (
+            "430aa2494b6b1bbcae45f99409075cfbe525ab628582806e3be1c8ae18204bc4"
+        ),
+        "execution_evidence": {
+            "workflowRunId": "30634484969",
+            "workflowRunAttempt": 1,
+            "workflowJobId": "91168515330",
+            "failurePhase": "POST_CLAIM_TRAINER_META_TENSOR",
+            "errorType": "NotImplementedError",
+            "error": "Cannot copy out of meta tensor; no data!",
+            "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+            "envelopeRevision": "fd97065eb2aa9fc3299706c531597538a65eb735",
+            "executionBridgeRevision": "e150711a6ba6a0c29109a00da7fc82af2967f588",
+            "attemptClaimSha256": (
+                "fc93d880beb0ff183e7da4f7a9a42f0fd075addfc07056e9d260539d9f1dfd92"
+            ),
+            "runtimeClaimSha256": (
+                "b0f7c68e357692a68f8d436c417e7c76a852ab0635c3e4a49c3713a53dc16243"
+            ),
+            "prefetchReceiptSha256": (
+                "bd315a4a97356451781ceee3e390b847c559381c69eaf50d5efed8c191d2e28c"
+            ),
+            "claimCreated": True,
+            "jobDirectoryCreated": True,
+            "prefetchReceiptCreated": True,
+            "modelRepositoryCodeImported": True,
+            "holdoutsAccessed": True,
+            "trainingStarted": False,
+            "receiptIntentProduced": True,
+            "receiptUploaded": True,
+            "receiptRevision": "8c504d466d6b1b3fb0a755768341a34e58b82c11",
+            "receiptFileSha256": (
+                "f45c7b319f5f762d03b100149732a4287dfda0d7c91046f21d580fc6f7684ecd"
+            ),
+            "receiptBodySha256": (
+                "cb4dc5cce83797f5d39f86f1c7078230344dc176c854dd3f07988177cafd2500"
+            ),
+            "receiptKeyId": "167c14fbddbe97cc",
+            "receiptVerdict": "BLOCKED",
+            "receiptReason": (
+                "NotImplementedError: Cannot copy out of meta tensor; no data!"
             ),
             "candidateUploaded": False,
             "adapterUploaded": False,

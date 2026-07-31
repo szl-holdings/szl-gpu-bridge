@@ -84,6 +84,7 @@ const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-11',
   'job-2026-nemo-v3-governed-attempt-12',
   'job-2026-nemo-v3-governed-attempt-13',
+  'job-2026-nemo-v3-governed-attempt-14',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {

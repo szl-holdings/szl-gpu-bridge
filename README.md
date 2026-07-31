@@ -188,8 +188,15 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `queue/pending/job-2026-nemo-v3-governed-attempt-14.json`, with raw SHA-256
   `207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82`.
   The signature verifies under keyId `b8041281c81c4caa` and binds the same
-  canonical payload. Its honest status is `QUEUED_AWAITING_GPU_RECEIPT` with no
-  receipt; runner activation and dispatch remain a separate measured gate.
+  canonical payload. Its only run (`30634484969`) reached trainer construction
+  but stopped before training when Unsloth tried to copy the frozen,
+  CPU-offloaded `lm_head.weight` meta placeholder. Trusted finalization uploaded
+  only the signed BLOCKED receipt at revision
+  `8c504d466d6b1b3fb0a755768341a34e58b82c11`. Attempt 14 is now
+  `META_TENSOR_MATERIALIZATION_BLOCKED + POST_CLAIM + PRE_TRAINING +
+  SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`; its spec and envelope remain
+  immutable. All publication flags are false. The next reviewed identity is
+  attempt 15, bound to a separately protected corrected runtime.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
