@@ -167,17 +167,30 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             "c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70",
         )
 
-    def test_plaintext_waits_for_a_distinct_engine_signature(self) -> None:
-        self.assertFalse(ATTEMPT_7_QUEUE.exists())
+    def test_signed_envelope_is_valid_and_waits_for_gpu_receipt(self) -> None:
+        self.assertTrue(ATTEMPT_7_QUEUE.is_file())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_7_QUEUE.read_bytes()).hexdigest(),
+            "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96",
+        )
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=ATTEMPT_7_PATH,
             receipt_loader=lambda _spec, _token: None,
-            now=datetime(2026, 7, 31, 4, 16, tzinfo=timezone.utc),
+            now=datetime(2026, 7, 31, 4, 25, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(
+            report["queue"]["payload_sha256"],
+            "0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7",
+        )
+        self.assertEqual(
+            report["queue"]["engine_key_id"],
+            COORDINATED_ENGINE_KEY_ID,
+        )
         self.assertFalse(report["quarantine"]["present"])
         self.assertFalse(report["receipt"]["present"])
 

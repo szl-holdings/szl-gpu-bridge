@@ -51,11 +51,12 @@ cloud/verify-receipt.mjs ◄─────────────────�
   A future attempt 7 must bind protected A11oy main
   `2b190b3806a5d2b3faa58f34c2db41c5dc4668fa`, owner-workflow blob
   `d29d937b2d398e9c207777a9a819aadd050ac231`, and a separately reviewed
-  protected Bridge runtime. That distinct attempt-7 plaintext now binds
+  protected Bridge runtime. That distinct attempt-7 contract binds
   protected Bridge revision `2f33607d8fcbec76fe98290258ec3dfa728fb509`,
   preserves the frozen science inputs, and keeps all candidate, model-card,
-  and dataset uploads disabled. It remains `AWAITING_ENGINE_SIGNATURE`; no
-  attempt-7 queue envelope exists in this review stage.
+  and dataset uploads disabled. Its separately protected b804-signed queue
+  envelope is valid, so it is `QUEUED_AWAITING_GPU_RECEIPT`; no attempt-7
+  claim, training, candidate, or receipt exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
