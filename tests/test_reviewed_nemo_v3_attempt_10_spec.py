@@ -18,6 +18,7 @@ from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
     ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_10_REVIEWED_JOB_ID,
+    ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_11_REVIEWED_JOB_ID,
     ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_9_REVIEWED_JOB_ID,
@@ -266,7 +267,9 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
         attempt_11["authorization"]["settledA11oyRelockRunUrl"] = (
             EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL
         )
-        attempt_11["authorization"]["correctedBridgeRevision"] = "d" * 40
+        attempt_11["authorization"]["correctedBridgeRevision"] = (
+            ATTEMPT_11_CORRECTED_BRIDGE_REVISION
+        )
         attempt_11["lineage"] = {
             "predecessorJobId": ATTEMPT_10_REVIEWED_JOB_ID,
             "predecessorEnvelopeSha256": (
@@ -299,7 +302,7 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
         self.assertIs(validate_nemo_v3_spec(attempt_11), attempt_11)
         require_nemo_v3_dispatchable(
             attempt_11,
-            expected_execution_bridge_revision="d" * 40,
+            expected_execution_bridge_revision=ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
         )
         with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
             require_nemo_v3_dispatchable(
@@ -328,7 +331,7 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_track_plaintext_attempt_10(self) -> None:
+    def test_status_preserves_attempt_10_while_signer_advances(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-10-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-10.json",
@@ -338,9 +341,10 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
         ):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIn(
-            "signer is locked to ${ATTEMPT_10_REVIEWED_JOB_ID}", SIGNER_SOURCE
+            "signer is locked to ${ATTEMPT_11_REVIEWED_JOB_ID}", SIGNER_SOURCE
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-9',", SIGNER_SOURCE)
+        self.assertIn("'job-2026-nemo-v3-governed-attempt-10',", SIGNER_SOURCE)
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)
 

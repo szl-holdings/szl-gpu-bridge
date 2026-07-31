@@ -605,3 +605,22 @@ A11oy source, workflow blob, and executable Bridge revision explicitly.
 Trusted finalization must independently receive and match the same executable
 revision against the durable claim. Attempt 10 is never dispatch authority and
 will not be retried.
+
+## Reviewed attempt 11 runtime-admission recovery
+
+`jobspecs/nemo-v3-20260731-attempt-11-reviewed.json` is the fresh plaintext
+successor to quarantined attempt 10. It binds protected A11oy source
+`434d653eaf100b9b3e5484687db1e6e6ca7116c9`, owner workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, canonical relock run
+`30613619902`, and protected Bridge runtime
+`f07263bc37ef6e90b313ba5576ef425d845cf287`. The runtime admits this future
+job only because the protected plaintext contract freezes its exact source,
+workflow, predecessor, license, and science bindings; execution must still
+match the explicit runtime revision before prefetch or finalization can proceed.
+
+Attempt 11 preserves the frozen dataset, recipe, evaluation, immutable image,
+receipt-only destination, and disabled candidate/model-card/dataset uploads.
+Plaintext status is `AWAITING_ENGINE_SIGNATURE`. No queue envelope, runner,
+dispatch, claim, training, receipt, deployment, promotion, or Hugging Face
+publication is authorized until a separate b804 signing/publication PR passes
+its own protected gates.
