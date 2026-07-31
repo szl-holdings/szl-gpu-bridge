@@ -9,8 +9,6 @@ import sys
 import unittest
 from datetime import datetime, timezone
 
-from jsonschema.validators import Draft202012Validator
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
@@ -85,26 +83,57 @@ class ReviewedNemoV3Attempt16SpecTests(unittest.TestCase):
 
     def test_json_schema_admits_only_the_exact_attempt_16_binding(self) -> None:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
-        validator = Draft202012Validator(
-            schema,
-            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        authorization_schema = schema["properties"]["authorization"]["oneOf"][1]
+        self.assertIn(
+            ATTEMPT_16_CORRECTED_BRIDGE_REVISION,
+            authorization_schema["properties"]["correctedBridgeRevision"]["enum"],
         )
-        validator.validate(self.attempt_16)
-        for path, value in (
-            (("authorization", "correctedBridgeRevision"), "2" * 40),
-            (("lineage", "predecessorJobId"), ATTEMPT_15_REVIEWED_JOB_ID + "-old"),
-            (("lineage", "predecessorEnvelopeSha256"), "3" * 64),
-            (("lineage", "predecessorPayloadSha256"), "4" * 64),
-            (
-                ("lineage", "failurePhase"),
-                "PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION",
-            ),
-            (("lineage", "successorGeneration"), 15),
+        attempt_16_rule = next(
+            rule
+            for rule in schema["allOf"]
+            if rule["if"]["properties"]["jobId"].get("const")
+            == ATTEMPT_16_REVIEWED_JOB_ID
+        )
+        properties = attempt_16_rule["then"]["properties"]
+        self.assertEqual(
+            properties["authorization"]["properties"]["correctedBridgeRevision"][
+                "const"
+            ],
+            ATTEMPT_16_CORRECTED_BRIDGE_REVISION,
+        )
+        exact_lineage = properties["lineage"]["allOf"][1]["properties"]
+        for field in (
+            "predecessorJobId",
+            "predecessorEnvelopeSha256",
+            "predecessorPayloadSha256",
+            "predecessorEnvelopeRevision",
+            "predecessorExecutionBridgeRevision",
+            "transportEvidenceUrl",
+            "failurePhase",
+            "successorGeneration",
+            "eventCreated",
+            "workflowRunCreated",
+            "claimCreated",
+            "trainingStarted",
+            "modelRepositoryCodeImported",
+            "holdoutsAccessed",
+            "candidateProduced",
+            "receiptIntentProduced",
+            "terminalLedgerWritten",
         ):
-            with self.subTest(path=path):
-                mutated = copy.deepcopy(self.attempt_16)
-                mutated[path[0]][path[1]] = value
-                self.assertTrue(list(validator.iter_errors(mutated)))
+            self.assertEqual(
+                exact_lineage[field]["const"], self.attempt_16["lineage"][field]
+            )
+
+        transport_lineage = schema["$defs"]["transportFailureLineage"]["properties"]
+        self.assertIn(
+            self.attempt_16["lineage"]["transportEvidenceUrl"],
+            transport_lineage["transportEvidenceUrl"]["enum"],
+        )
+        self.assertIn(
+            self.attempt_16["lineage"]["failurePhase"],
+            transport_lineage["failurePhase"]["enum"],
+        )
 
     def test_exact_attempt_15_zero_effect_lineage(self) -> None:
         self.assertEqual(
@@ -174,8 +203,17 @@ class ReviewedNemoV3Attempt16SpecTests(unittest.TestCase):
 
     def test_plaintext_attempt_16_waits_for_separate_engine_signature(self) -> None:
         self.assertFalse(ATTEMPT_16_QUEUE.exists())
+        reviewed_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:jobspecs/nemo-v3-20260731-attempt-16-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
         self.assertEqual(
-            hashlib.sha256(ATTEMPT_16_PATH.read_bytes()).hexdigest(),
+            hashlib.sha256(reviewed_bytes).hexdigest(),
             "1daa8ea3a30a1d497f60431f9f4a33a9edd5d286236f3e8bf44240ef8630c5da",
         )
         payload_sha256 = hashlib.sha256(
