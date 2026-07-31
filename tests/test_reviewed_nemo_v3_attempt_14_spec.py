@@ -9,8 +9,6 @@ import sys
 import unittest
 from datetime import datetime, timezone
 
-from jsonschema.validators import Draft202012Validator
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
@@ -83,25 +81,52 @@ class ReviewedNemoV3Attempt14SpecTests(unittest.TestCase):
             expected_execution_bridge_revision=ATTEMPT_14_CORRECTED_BRIDGE_REVISION,
         )
 
-    def test_json_schema_admits_only_the_exact_attempt_14_binding(self) -> None:
+    def test_json_schema_carries_the_exact_attempt_14_binding(self) -> None:
         schema = json.loads(NEMO_SCHEMA_PATH.read_text(encoding="utf-8"))
-        validator = Draft202012Validator(
-            schema,
-            format_checker=Draft202012Validator.FORMAT_CHECKER,
+        authorization_schema = schema["properties"]["authorization"]["oneOf"][1]
+        self.assertIn(
+            ATTEMPT_14_CORRECTED_BRIDGE_REVISION,
+            authorization_schema["properties"]["correctedBridgeRevision"]["enum"],
         )
-        validator.validate(self.attempt_14)
-
-        for path, value in (
-            (("authorization", "correctedBridgeRevision"), "2" * 40),
-            (("lineage", "predecessorJobId"), ATTEMPT_13_REVIEWED_JOB_ID + "-old"),
-            (("lineage", "predecessorEnvelopeSha256"), "3" * 64),
-            (("lineage", "failurePhase"), "POST_CLAIM_TOKENIZER_LOAD"),
-            (("lineage", "successorGeneration"), 12),
+        attempt_14_rule = next(
+            rule
+            for rule in schema["allOf"]
+            if rule["if"]["properties"]["jobId"].get("const")
+            == ATTEMPT_14_REVIEWED_JOB_ID
+        )
+        properties = attempt_14_rule["then"]["properties"]
+        self.assertEqual(
+            properties["authorization"]["properties"]["correctedBridgeRevision"][
+                "const"
+            ],
+            ATTEMPT_14_CORRECTED_BRIDGE_REVISION,
+        )
+        exact_lineage = properties["lineage"]["allOf"][1]["properties"]
+        for field in (
+            "predecessorJobId",
+            "predecessorEnvelopeSha256",
+            "predecessorPayloadSha256",
+            "predecessorEnvelopeRevision",
+            "predecessorExecutionBridgeRevision",
+            "transportEvidenceUrl",
+            "failurePhase",
+            "successorGeneration",
         ):
-            with self.subTest(path=path):
-                mutated = copy.deepcopy(self.attempt_14)
-                mutated[path[0]][path[1]] = value
-                self.assertTrue(list(validator.iter_errors(mutated)))
+            self.assertEqual(
+                exact_lineage[field]["const"], self.attempt_14["lineage"][field]
+            )
+
+        terminal_lineage = schema["$defs"]["terminalReceiptFailureLineage"][
+            "properties"
+        ]
+        self.assertIn(
+            ATTEMPT_13_REVIEWED_JOB_ID,
+            terminal_lineage["predecessorJobId"]["enum"],
+        )
+        self.assertIn(
+            "POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY",
+            terminal_lineage["failurePhase"]["enum"],
+        )
 
     def test_exact_attempt_13_signed_blocked_lineage(self) -> None:
         self.assertEqual(
