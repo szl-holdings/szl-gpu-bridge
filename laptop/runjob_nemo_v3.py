@@ -61,6 +61,29 @@ SENSITIVE_ENVIRONMENT_NAMES = {
     "HF_TOKEN",
     "HUGGING_FACE_HUB_TOKEN",
 }
+PINNED_OFFLINE_TOKENIZERS: dict[tuple[str, str], dict[str, tuple[int, str]]] = {
+    (
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
+    ): {
+        "chat_template.jinja": (
+            10504,
+            "ab7813c3abdd9cb655905a410728b26c7884eca45ddfab8d9f931553485a7862",
+        ),
+        "special_tokens_map.json": (
+            420,
+            "e3a4f63da745f02317a45e00e6476c17fc66ac41faf14bb1b0be1f3211b0ca53",
+        ),
+        "tokenizer.json": (
+            17077484,
+            "623c34567aebb18582765289fbe23d901c62704d6518d71866e0e58db892b5b7",
+        ),
+        "tokenizer_config.json": (
+            188034,
+            "48de4056b0b17de26e03232fdc1f55b70595c9354ceb2ed061f724f45620aa41",
+        ),
+    },
+}
 
 
 def _raw_url(repo_id: str, revision: str, path: str) -> str:
@@ -348,6 +371,94 @@ def _require_remote_code_isolation(spec: dict[str, Any]) -> None:
         raise RuntimeError("isolated remote code can access the laptop signing key")
 
 
+def _verified_offline_tokenizer_snapshot(spec: dict[str, Any]) -> pathlib.Path:
+    """Resolve and verify the exact tokenizer bytes admitted for offline loading."""
+    base = spec["base"]
+    identity = (base["repoId"], base["revision"])
+    artifact_manifest = PINNED_OFFLINE_TOKENIZERS.get(identity)
+    if artifact_manifest is None:
+        raise RuntimeError(
+            "base model/revision has no admitted offline tokenizer manifest"
+        )
+
+    cache_value = os.environ.get("HF_HUB_CACHE", "").strip()
+    if not cache_value:
+        raise RuntimeError("HF_HUB_CACHE is required for pinned offline tokenizer")
+    cache_root = pathlib.Path(cache_value)
+    if not cache_root.is_absolute():
+        raise RuntimeError("HF_HUB_CACHE must be an absolute path")
+    try:
+        resolved_cache = cache_root.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("HF_HUB_CACHE does not resolve") from exc
+    if not resolved_cache.is_dir():
+        raise RuntimeError("HF_HUB_CACHE is not a directory")
+
+    owner, name = base["repoId"].split("/", 1)
+    snapshot = (
+        resolved_cache / f"models--{owner}--{name}" / "snapshots" / base["revision"]
+    )
+    try:
+        resolved_snapshot = snapshot.resolve(strict=True)
+        resolved_snapshot.relative_to(resolved_cache)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            "pinned tokenizer snapshot does not resolve inside cache"
+        ) from exc
+    if not resolved_snapshot.is_dir() or snapshot.is_symlink():
+        raise RuntimeError("pinned tokenizer snapshot is not an immutable directory")
+
+    for relative_path, (expected_bytes, expected_sha256) in artifact_manifest.items():
+        candidate = resolved_snapshot / relative_path
+        try:
+            resolved_candidate = candidate.resolve(strict=True)
+            resolved_candidate.relative_to(resolved_snapshot)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"pinned tokenizer artifact is absent or escapes snapshot: {relative_path}"
+            ) from exc
+        if not resolved_candidate.is_file() or candidate.is_symlink():
+            raise RuntimeError(
+                f"pinned tokenizer artifact is not an immutable file: {relative_path}"
+            )
+        observed_bytes = resolved_candidate.stat().st_size
+        observed_sha256 = sha256_file(resolved_candidate)
+        if observed_bytes != expected_bytes or observed_sha256 != expected_sha256:
+            raise RuntimeError(
+                f"pinned tokenizer artifact mismatch for {relative_path}: "
+                f"bytes={observed_bytes}, sha256={observed_sha256}"
+            )
+    return resolved_snapshot
+
+
+def _require_loaded_tokenizer(
+    tokenizer: Any,
+    tokenizer_base_type: type[Any],
+    expected_snapshot: pathlib.Path,
+) -> str:
+    if tokenizer is None:
+        raise RuntimeError("base model loader returned no tokenizer")
+    if not isinstance(tokenizer, tokenizer_base_type):
+        raise RuntimeError(
+            f"base model loader returned unsupported tokenizer type: {type(tokenizer)!r}"
+        )
+    name_or_path = getattr(tokenizer, "name_or_path", None)
+    if not isinstance(name_or_path, str) or not name_or_path:
+        raise RuntimeError("base tokenizer does not expose its source snapshot")
+    try:
+        observed_snapshot = pathlib.Path(name_or_path).resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError("base tokenizer source snapshot does not resolve") from exc
+    if observed_snapshot != expected_snapshot:
+        raise RuntimeError(
+            "base tokenizer source snapshot is not the verified snapshot"
+        )
+    template = getattr(tokenizer, "chat_template", None)
+    if not isinstance(template, str) or not template:
+        raise RuntimeError("base tokenizer has no chat template")
+    return template
+
+
 def _complete_terminal_evaluation_failure(
     spec: dict[str, Any],
     exact_payload: bytes,
@@ -462,23 +573,27 @@ def main(spec_path: str) -> int:
         import torch
         import unsloth
         from datasets import Dataset
-        from transformers import TrainerCallback
+        from transformers import PreTrainedTokenizerBase, TrainerCallback
         from trl import SFTConfig, SFTTrainer
 
         FastLanguageModel = unsloth.FastLanguageModel
         if not torch.cuda.is_available():
             blocked(spec, "gate:cuda", "CUDA is unavailable")
         torch.cuda.reset_peak_memory_stats()
+        tokenizer_snapshot = _verified_offline_tokenizer_snapshot(spec)
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=spec["base"]["repoId"],
+            tokenizer_name=str(tokenizer_snapshot),
             revision=spec["base"]["revision"],
             max_seq_length=recipe["maxSeqLength"],
             load_in_4bit=True,
             trust_remote_code=spec["base"]["trustRemoteCode"],
         )
-        template = getattr(tokenizer, "chat_template", None)
-        if not isinstance(template, str) or not template:
-            blocked(spec, "gate:chat-template", "base tokenizer has no chat template")
+        _require_loaded_tokenizer(
+            tokenizer,
+            PreTrainedTokenizerBase,
+            tokenizer_snapshot,
+        )
         model = FastLanguageModel.get_peft_model(
             model,
             r=recipe["loraR"],

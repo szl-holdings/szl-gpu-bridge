@@ -76,6 +76,7 @@ EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = (
 )
 ATTEMPT_11_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-11"
 ATTEMPT_11_CORRECTED_BRIDGE_REVISION = "f07263bc37ef6e90b313ba5576ef425d845cf287"
+ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -131,6 +132,13 @@ _ATTEMPT_11_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_11_REVIEWED_JOB_ID,
+}
+_ATTEMPT_12_REPLACEMENT = {
+    "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_12_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -275,6 +283,50 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "engine_key_id": COORDINATED_ENGINE_KEY_ID,
         "source_revision": RECOVERY_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_11_REPLACEMENT,
+    },
+    ATTEMPT_11_REVIEWED_JOB_ID: {
+        "statuses": (
+            "TOKENIZER_LOAD_BLOCKED",
+            "POST_CLAIM",
+            "SIGNED_BLOCKED_RECEIPT",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918"
+        ),
+        "payload_sha256": (
+            "85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_12_REPLACEMENT,
+        "execution_evidence": {
+            "workflowRunId": "30620232291",
+            "workflowRunAttempt": 1,
+            "runtimeClaimSha256": (
+                "f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2"
+            ),
+            "attemptClaimSha256": (
+                "3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80"
+            ),
+            "receiptRevision": "1a74ad3f5fc2682e6bbdd034a68399dee7e79525",
+            "receiptFileSha256": (
+                "f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3"
+            ),
+            "receiptKeyId": "167c14fbddbe97cc",
+            "receiptVerdict": "BLOCKED",
+            "receiptReason": (
+                "RuntimeError: Unsloth: The tokenizer is weirdly not loaded? "
+                "Please check if there is one."
+            ),
+            "trainingStarted": False,
+            "candidateUploaded": False,
+            "adapterUploaded": False,
+            "modelCardUploaded": False,
+            "datasetUploaded": False,
+            "deployed": False,
+            "promoted": False,
+        },
     },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)

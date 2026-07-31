@@ -300,14 +300,10 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_11), attempt_11)
-        require_nemo_v3_dispatchable(
-            attempt_11,
-            expected_execution_bridge_revision=ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
-        )
-        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+        with self.assertRaisesRegex(ContractError, "quarantined"):
             require_nemo_v3_dispatchable(
                 attempt_11,
-                expected_execution_bridge_revision="e" * 40,
+                expected_execution_bridge_revision=ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
             )
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
