@@ -499,6 +499,56 @@ test('Nemo v3 attempt 13 binds exact pre-claim runtime-binding recovery', () => 
   );
 });
 
+test('Nemo v3 attempt 14 binds exact post-claim SFTConfig recovery', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-14-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+  assert.equal(
+    createHash('sha256').update(Buffer.from(canonicalize(reviewed), 'utf8')).digest('hex'),
+    '162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da',
+  );
+
+  for (const [field, value] of [
+    ['eventCreated', false],
+    ['workflowRunCreated', false],
+    ['claimCreated', false],
+    ['trainingStarted', true],
+    ['modelRepositoryCodeImported', false],
+    ['holdoutsAccessed', false],
+    ['receiptIntentProduced', false],
+    ['terminalLedgerWritten', false],
+  ]) {
+    const mutated = structuredClone(reviewed);
+    mutated.lineage[field] = value;
+    assert.throws(
+      () => validateNemoV3Spec(mutated),
+      new RegExp(field),
+    );
+  }
+
+  const runtimeBound = structuredClone(reviewed);
+  runtimeBound.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.equal(validateNemoV3Spec(runtimeBound), NEMO_V3_PAYLOAD_TYPE);
+
+  const malformedRuntime = structuredClone(reviewed);
+  malformedRuntime.authorization.correctedBridgeRevision = 'a'.repeat(39);
+  assert.throws(
+    () => validateNemoV3Spec(malformedRuntime),
+    /coordinated authorization/,
+  );
+
+  const replayedPredecessor = structuredClone(reviewed);
+  replayedPredecessor.lineage.predecessorJobId = 'job-2026-nemo-v3-governed-attempt-12';
+  assert.throws(
+    () => validateNemoV3Spec(replayedPredecessor),
+    /lineage/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');

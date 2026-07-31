@@ -745,3 +745,33 @@ constructor invocation. The distinct next reviewed identity is attempt 14;
 its signed runtime revision must be the separately protected commit containing
 this correction. Attempt 13 is never retry, resend, re-sign, or dispatch
 authority.
+
+## Reviewed attempt 14 SFTConfig recovery
+
+`jobspecs/nemo-v3-20260731-attempt-14-reviewed.json` is the distinct plaintext
+successor to immutable attempt 13. It preserves the frozen source, owner
+workflow, immutable image, local snapshot, license, science inputs,
+receipt-only destination, and disabled candidate/model-card/dataset uploads.
+Its execution authorization binds protected corrected Bridge runtime
+`e150711a6ba6a0c29109a00da7fc82af2967f588`.
+
+Attempt 14 records attempt 13's exact single-run lineage: A11oy run
+`30629929196`, envelope SHA-256
+`de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0`,
+payload SHA-256
+`82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`,
+and `POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY`. The predecessor reached an
+exclusive claim and trusted BLOCKED receipt, but no trainer was constructed,
+training did not start, and no candidate or other release artifact was
+published.
+
+The reviewed attempt-14 JSON has raw SHA-256
+`99e293ab4c2dd4282bd39a5f741b8359652792c68215c0e7100114a77bbacdf6`;
+its signer-canonical payload SHA-256 is
+`162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da`.
+There is deliberately no
+`queue/pending/job-2026-nemo-v3-governed-attempt-14.json` in this phase.
+Therefore the status is `AWAITING_ENGINE_SIGNATURE`, not queued or executable.
+Only a later, separate exclusive-create b804 signing and protected publication
+may establish queue authority, and that publication cannot modify or re-sign
+attempt 13.

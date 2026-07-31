@@ -175,6 +175,17 @@ cloud/verify-receipt.mjs ◄─────────────────�
   under `queue/evidence/`. Candidate, adapter, model-card, dataset, deployment,
   promotion, and all other publication effects remain false. The next reviewed
   identity is attempt 14, bound to a separately protected corrected runtime.
+  Reviewed plaintext attempt 14 is at
+  `jobspecs/nemo-v3-20260731-attempt-14-reviewed.json`. It binds protected
+  Bridge runtime `e150711a6ba6a0c29109a00da7fc82af2967f588`, whose
+  fail-closed compatibility boundary maps the one logical evaluation strategy
+  only to the explicit field exposed by the installed `SFTConfig` signature.
+  Its raw reviewed JSON SHA-256 is
+  `99e293ab4c2dd4282bd39a5f741b8359652792c68215c0e7100114a77bbacdf6`
+  and its signer-canonical payload SHA-256 is
+  `162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da`.
+  No attempt-14 queue envelope exists in this plaintext phase, so its honest
+  status is `AWAITING_ENGINE_SIGNATURE`; it is not dispatch authority.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
