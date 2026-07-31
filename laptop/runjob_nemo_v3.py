@@ -459,6 +459,148 @@ def _require_loaded_tokenizer(
     return template
 
 
+def _canonical_device_map_name(parameter_name: str) -> str:
+    for prefix in ("base_model.model.", "model."):
+        if parameter_name.startswith(prefix):
+            return parameter_name[len(prefix) :].rsplit(".", 1)[0]
+    return parameter_name.rsplit(".", 1)[0]
+
+
+def _device_map_assignment(model: Any, parameter_name: str) -> Any:
+    device_map = getattr(model, "hf_device_map", None)
+    if not isinstance(device_map, dict) or not device_map:
+        raise RuntimeError("model does not expose an immutable device map")
+    module_name = _canonical_device_map_name(parameter_name)
+    candidates = [
+        (name, assignment)
+        for name, assignment in device_map.items()
+        if module_name == name or module_name.startswith(f"{name}.")
+    ]
+    if not candidates:
+        raise RuntimeError(
+            f"model device map does not bind parameter: {parameter_name}"
+        )
+    return max(candidates, key=lambda item: len(item[0]))[1]
+
+
+def _offloaded_meta_backing(model: Any, parameter_name: str, parameter: Any) -> Any:
+    if bool(getattr(parameter, "requires_grad", False)):
+        raise RuntimeError(f"trainable parameter is meta: {parameter_name}")
+    if str(_device_map_assignment(model, parameter_name)).lower() != "cpu":
+        raise RuntimeError(
+            f"meta parameter is not assigned to CPU offload: {parameter_name}"
+        )
+
+    module_name, tensor_name = parameter_name.rsplit(".", 1)
+    module = dict(model.named_modules()).get(module_name)
+    if module is None:
+        raise RuntimeError(f"meta parameter owner is absent: {parameter_name}")
+    hook = getattr(module, "_hf_hook", None)
+    if hook is None or type(hook).__name__ != "AlignDevicesHook":
+        raise RuntimeError(
+            f"meta parameter lacks the expected offload hook: {parameter_name}"
+        )
+    if not bool(getattr(hook, "offload", False)):
+        raise RuntimeError(f"meta parameter hook is not offloading: {parameter_name}")
+    if str(getattr(hook, "execution_device", "")) not in {"0", "cuda:0"}:
+        raise RuntimeError(
+            f"meta parameter has an unexpected execution device: {parameter_name}"
+        )
+    weights_map = getattr(hook, "weights_map", None)
+    if weights_map is None or tensor_name not in weights_map:
+        raise RuntimeError(f"meta parameter has no backing data: {parameter_name}")
+    backing = weights_map[tensor_name]
+    if bool(getattr(backing, "is_meta", False)):
+        raise RuntimeError(f"meta parameter backing is also meta: {parameter_name}")
+    if bool(getattr(backing, "requires_grad", False)):
+        raise RuntimeError(
+            f"meta parameter backing unexpectedly requires gradients: {parameter_name}"
+        )
+    if str(getattr(getattr(backing, "device", None), "type", "")) != "cpu":
+        raise RuntimeError(f"meta parameter backing is not on CPU: {parameter_name}")
+    if getattr(backing, "shape", None) != getattr(parameter, "shape", None) or getattr(
+        backing, "dtype", None
+    ) != getattr(parameter, "dtype", None):
+        raise RuntimeError(
+            f"meta parameter backing metadata mismatches: {parameter_name}"
+        )
+    return backing
+
+
+def _require_nemo_model_materialization(
+    model: Any, target_modules: list[str], *, phase: str
+) -> list[str]:
+    if not target_modules or any(
+        not isinstance(name, str) or not name for name in target_modules
+    ):
+        raise RuntimeError("LoRA target module list is invalid")
+    seen_targets = {name: 0 for name in target_modules}
+    meta_names: list[str] = []
+    for parameter_name, parameter in model.named_parameters():
+        target = next(
+            (name for name in target_modules if f".{name}." in f".{parameter_name}."),
+            None,
+        )
+        if target is not None:
+            seen_targets[target] += 1
+            if bool(getattr(parameter, "is_meta", False)):
+                raise RuntimeError(
+                    f"{phase} LoRA target parameter is meta: {parameter_name}"
+                )
+        if bool(getattr(parameter, "requires_grad", False)) and bool(
+            getattr(parameter, "is_meta", False)
+        ):
+            raise RuntimeError(f"{phase} trainable parameter is meta: {parameter_name}")
+        if bool(getattr(parameter, "is_meta", False)):
+            _offloaded_meta_backing(model, parameter_name, parameter)
+            meta_names.append(parameter_name)
+    missing = sorted(name for name, count in seen_targets.items() if count == 0)
+    if missing:
+        raise RuntimeError(f"{phase} LoRA target modules are absent: {missing}")
+    return meta_names
+
+
+def _materialize_nemo_lm_head_for_trainer(
+    model: Any, *, tensor_setter: Any | None = None
+) -> None:
+    output_embeddings = model.get_output_embeddings()
+    if output_embeddings is None or not hasattr(output_embeddings, "weight"):
+        raise RuntimeError("model has no output embedding weight")
+    weight = output_embeddings.weight
+    if not bool(getattr(weight, "is_meta", False)):
+        if bool(getattr(weight, "requires_grad", False)):
+            raise RuntimeError("materialized lm_head unexpectedly requires gradients")
+        return
+
+    parameter_name = next(
+        (
+            name
+            for name, parameter in model.named_parameters()
+            if parameter is weight and name.endswith("lm_head.weight")
+        ),
+        None,
+    )
+    if parameter_name is None:
+        raise RuntimeError("meta lm_head is not a named model parameter")
+    backing = _offloaded_meta_backing(model, parameter_name, weight)
+    if tensor_setter is None:
+        from accelerate.utils.modeling import set_module_tensor_to_device
+
+        tensor_setter = set_module_tensor_to_device
+    tensor_setter(output_embeddings, "weight", "cpu", value=backing)
+    materialized = output_embeddings.weight
+    if bool(getattr(materialized, "is_meta", False)):
+        raise RuntimeError("lm_head remains meta after materialization")
+    if str(getattr(getattr(materialized, "device", None), "type", "")) != "cpu":
+        raise RuntimeError("lm_head did not materialize on CPU")
+    if bool(getattr(materialized, "requires_grad", False)):
+        raise RuntimeError("materialized lm_head unexpectedly requires gradients")
+    if getattr(materialized, "shape", None) != getattr(
+        backing, "shape", None
+    ) or getattr(materialized, "dtype", None) != getattr(backing, "dtype", None):
+        raise RuntimeError("materialized lm_head metadata changed")
+
+
 def _complete_terminal_evaluation_failure(
     spec: dict[str, Any],
     exact_payload: bytes,
@@ -594,6 +736,9 @@ def main(spec_path: str) -> int:
             PreTrainedTokenizerBase,
             tokenizer_snapshot,
         )
+        _require_nemo_model_materialization(
+            model, recipe["targetModules"], phase="before adapter construction"
+        )
         model = FastLanguageModel.get_peft_model(
             model,
             r=recipe["loraR"],
@@ -608,6 +753,9 @@ def main(spec_path: str) -> int:
             max_seq_length=recipe["maxSeqLength"],
             use_rslora=True,
             loftq_config=None,
+        )
+        _require_nemo_model_materialization(
+            model, recipe["targetModules"], phase="after adapter construction"
         )
         full_train = Dataset.from_list(train_rows)
         split = full_train.train_test_split(
@@ -651,6 +799,10 @@ def main(spec_path: str) -> int:
             "useRsLoRA": True,
         }
         config = _build_sft_config(SFTConfig, frontier_recipe, torch, trainer_output)
+        _materialize_nemo_lm_head_for_trainer(model)
+        _require_nemo_model_materialization(
+            model, recipe["targetModules"], phase="before trainer construction"
+        )
         trainer = _build_sft_trainer(
             SFTTrainer,
             model=model,
