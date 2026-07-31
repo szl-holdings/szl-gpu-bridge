@@ -620,7 +620,11 @@ match the explicit runtime revision before prefetch or finalization can proceed.
 
 Attempt 11 preserves the frozen dataset, recipe, evaluation, immutable image,
 receipt-only destination, and disabled candidate/model-card/dataset uploads.
-Plaintext status is `AWAITING_ENGINE_SIGNATURE`. No queue envelope, runner,
-dispatch, claim, training, receipt, deployment, promotion, or Hugging Face
-publication is authorized until a separate b804 signing/publication PR passes
-its own protected gates.
+Its exclusive-create b804 DSSE envelope now exists at
+`queue/pending/job-2026-nemo-v3-governed-attempt-11.json`, with raw SHA-256
+`7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918`
+and signer-canonical payload SHA-256
+`85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994`.
+Status is `QUEUED_AWAITING_GPU_RECEIPT`. No runner, dispatch, claim, training,
+receipt, deployment, promotion, or Hugging Face publication is authorized
+until the separate measured GPU execution gate passes.
