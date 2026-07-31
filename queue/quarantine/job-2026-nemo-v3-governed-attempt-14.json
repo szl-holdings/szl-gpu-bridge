@@ -1,0 +1,28 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-14",
+  "recordedAt": "2026-07-31T14:34:07Z",
+  "status": [
+    "META_TENSOR_MATERIALIZATION_BLOCKED",
+    "POST_CLAIM",
+    "PRE_TRAINING",
+    "SIGNED_BLOCKED_RECEIPT",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-14.json",
+  "queueFileSha256": "207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82",
+  "signedPayloadSha256": "162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-15"
+  },
+  "reason": "Attempt 14 created exactly one owner-dispatch workflow run 30634484969 and exact A11oy claim SHA-256 fc93d880beb0ff183e7da4f7a9a42f0fd075addfc07056e9d260539d9f1dfd92. Credentialless networkless execution in immutable image sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123 reached trainer construction after authenticated prefetch, model import, tokenizer validation, and the corrected SFTConfig boundary. The pinned Unsloth loader left frozen CPU-offloaded lm_head.weight as a meta placeholder backed by Accelerate hooks; Unsloth fix_untrained_tokens attempted to copy that meta tensor to CPU before LoRA or training and raised NotImplementedError: Cannot copy out of meta tensor; no data! Trusted finalization published the immutable signed BLOCKED receipt at revision 8c504d466d6b1b3fb0a755768341a34e58b82c11 with file SHA-256 f45c7b319f5f762d03b100149732a4287dfda0d7c91046f21d580fc6f7684ecd and body SHA-256 cb4dc5cce83797f5d39f86f1c7078230344dc176c854dd3f07988177cafd2500 under key 167c14fbddbe97cc. Training did not start. Candidate, adapter, model-card, dataset, deployment, promotion, and all other publication effects are false. Attempt 14 remains immutable evidence and is never retry, resend, re-sign, or dispatch authority."
+}

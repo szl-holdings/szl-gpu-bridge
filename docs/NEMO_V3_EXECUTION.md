@@ -774,7 +774,25 @@ envelope at `queue/pending/job-2026-nemo-v3-governed-attempt-14.json`. Its raw
 SHA-256 is
 `207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82`;
 its signature verifies under keyId `b8041281c81c4caa` and its decoded payload
-matches the reviewed canonical payload byte-for-byte. The honest status is now
-`QUEUED_AWAITING_GPU_RECEIPT`: no receipt exists, and signing alone does not
-authorize runner activation or dispatch without the separate measured
-execution gate. Attempt 13 remains immutable and was not modified or re-signed.
+matches the reviewed canonical payload byte-for-byte.
+
+The single governed attempt-14 run `30634484969` created the exact exclusive
+claim and authenticated prefetch receipt, then reached trainer construction.
+The pinned Unsloth loader represented the frozen, CPU-offloaded
+`lm_head.weight` as a meta placeholder backed by an Accelerate hook;
+`fix_untrained_tokens` tried to copy that placeholder to CPU and raised
+`NotImplementedError: Cannot copy out of meta tensor; no data!` before LoRA or
+training. Trusted finalization uploaded only the signed BLOCKED receipt at
+revision `8c504d466d6b1b3fb0a755768341a34e58b82c11`, file SHA-256
+`f45c7b319f5f762d03b100149732a4287dfda0d7c91046f21d580fc6f7684ecd`,
+under key `167c14fbddbe97cc`.
+
+The exact run evidence is hash-pinned at
+`queue/evidence/job-2026-nemo-v3-governed-attempt-14.json`. The quarantine
+record preserves attempt 14's reviewed spec and signed envelope byte-for-byte
+and marks it `META_TENSOR_MATERIALIZATION_BLOCKED + POST_CLAIM + PRE_TRAINING +
+SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`. Candidate, adapter, model-card,
+dataset, deployment, promotion, and all other publication effects are false.
+The distinct next reviewed identity is attempt 15, bound only to a separately
+protected corrected runtime. Attempts 13 and 14 are never retry, resend,
+re-sign, or dispatch authority.

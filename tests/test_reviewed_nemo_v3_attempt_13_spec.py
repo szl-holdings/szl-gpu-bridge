@@ -319,10 +319,11 @@ class ReviewedNemoV3Attempt13SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_14), attempt_14)
-        require_nemo_v3_dispatchable(
-            attempt_14,
-            expected_execution_bridge_revision="c" * 40,
-        )
+        with self.assertRaisesRegex(ContractError, "quarantined"):
+            require_nemo_v3_dispatchable(
+                attempt_14,
+                expected_execution_bridge_revision="c" * 40,
+            )
 
         for field, value in (
             ("predecessorJobId", ATTEMPT_12_REVIEWED_JOB_ID),

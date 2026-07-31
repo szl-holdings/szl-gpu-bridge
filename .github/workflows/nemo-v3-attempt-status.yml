@@ -46,9 +46,11 @@ on:
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-11.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-12.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-13.json
+      - queue/quarantine/job-2026-nemo-v3-governed-attempt-14.json
       - queue/evidence/job-2026-nemo-v3-governed-attempt-11.json
       - queue/evidence/job-2026-nemo-v3-governed-attempt-12.json
       - queue/evidence/job-2026-nemo-v3-governed-attempt-13.json
+      - queue/evidence/job-2026-nemo-v3-governed-attempt-14.json
       - keys/engine_keyring.json
       - keys/engine_pubkey.json
       - keys/engine_pubkey_815714c8d4ae3e4d.json
