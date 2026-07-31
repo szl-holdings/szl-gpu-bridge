@@ -69,6 +69,12 @@ ATTEMPT_9_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-9"
 ATTEMPT_9_CORRECTED_BRIDGE_REVISION = "eeabd1b52380d2b24439e53d5e4ad38f8114556c"
 ATTEMPT_10_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-10"
 ATTEMPT_10_CORRECTED_BRIDGE_REVISION = "37479c23af3228a57ad6018b3f9134186e6d7fa7"
+EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION = "434d653eaf100b9b3e5484687db1e6e6ca7116c9"
+EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB = "7cf0c877399471a084d3e70638ef50ec28d7f646"
+EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"
+)
+ATTEMPT_11_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-11"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -117,6 +123,13 @@ _ATTEMPT_10_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_10_REVIEWED_JOB_ID,
+}
+_ATTEMPT_11_REPLACEMENT = {
+    "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_11_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -246,6 +259,22 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "source_revision": RECOVERY_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_10_REPLACEMENT,
     },
+    ATTEMPT_10_REVIEWED_JOB_ID: {
+        "statuses": (
+            "IMMUTABLE_RUNTIME_JOB_BINDING_REJECTED",
+            "PRE_CLAIM",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b"
+        ),
+        "payload_sha256": (
+            "2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": RECOVERY_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_11_REPLACEMENT,
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -316,6 +345,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": RECOVERY_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 10,
+    },
+    ATTEMPT_11_REVIEWED_JOB_ID: {
+        "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 11,
     },
 }
 _ALLOWED_TOP = {
@@ -465,6 +502,7 @@ def require_nemo_v3_dispatchable(
     if spec.get("jobId") in {
         NEXT_RUNTIME_REVIEWED_JOB_ID,
         ATTEMPT_9_REVIEWED_JOB_ID,
+        ATTEMPT_11_REVIEWED_JOB_ID,
     }:
         expected = _revision(
             expected_execution_bridge_revision,
@@ -779,6 +817,14 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 expected_claim_created = True
                 expected_holdouts_accessed = True
                 expected_receipt_intent_produced = True
+            elif predecessor == ATTEMPT_10_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30612658302"
+                )
+                expected_failure_phase = (
+                    "PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION"
+                )
+                expected_event_created = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -1089,6 +1135,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-10 cache/license/finalizer recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_11_REVIEWED_JOB_ID:
+            exact_runtime_admission_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_10_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b"
+                ),
+                "predecessorPayloadSha256": (
+                    "2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "5c0aa8e9949b1cf2593acc269eb3fefffeaa36e1"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    ATTEMPT_10_CORRECTED_BRIDGE_REVISION
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30612658302"
+                ),
+                "failurePhase": ("PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION"),
+                "successorGeneration": 11,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_runtime_admission_recovery_lineage:
+                raise ContractError(
+                    "attempt-11 runtime-admission recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1113,11 +1195,15 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(base["licenseId"], str) or not base["licenseId"].strip():
         raise ContractError("base.licenseId is required")
     if (
-        spec["jobId"] == ATTEMPT_10_REVIEWED_JOB_ID
+        spec["jobId"]
+        in {
+            ATTEMPT_10_REVIEWED_JOB_ID,
+            ATTEMPT_11_REVIEWED_JOB_ID,
+        }
         and base["licenseId"] != "nvidia-nemotron-open-model-license"
     ):
         raise ContractError(
-            "attempt-10 must bind the exact immutable custom license ID"
+            "runtime recovery must bind the exact immutable custom license ID"
         )
     if (
         not isinstance(base["licenseAcknowledgement"], str)

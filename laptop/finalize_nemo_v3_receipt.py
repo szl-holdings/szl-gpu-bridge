@@ -259,12 +259,18 @@ def validate_attempt_claim(
 
 
 def require_claim_bound_dispatchable(
-    spec: dict[str, Any], attempt_claim: dict[str, Any]
+    spec: dict[str, Any],
+    attempt_claim: dict[str, Any],
+    expected_execution_bridge_revision: str,
 ) -> None:
     """Bind finalization to the execution revision proven by the durable claim."""
+    if attempt_claim["executionBridgeRevision"] != expected_execution_bridge_revision:
+        raise ValueError(
+            "one-attempt claim differs from the explicit execution Bridge revision"
+        )
     require_nemo_v3_dispatchable(
         spec,
-        expected_execution_bridge_revision=attempt_claim["executionBridgeRevision"],
+        expected_execution_bridge_revision=expected_execution_bridge_revision,
     )
 
 
@@ -320,6 +326,7 @@ def main() -> int:
     parser.add_argument("--bridge-root", type=pathlib.Path, required=True)
     parser.add_argument("--not-before", required=True)
     parser.add_argument("--claim", type=pathlib.Path, required=True)
+    parser.add_argument("--execution-bridge-revision", required=True)
     parser.add_argument("--ledger", type=pathlib.Path, required=True)
     args = parser.parse_args()
 
@@ -342,7 +349,11 @@ def main() -> int:
 
     not_before = parse_timestamp(args.not_before)
     attempt_claim = validate_attempt_claim(args.claim, args.spec, spec, not_before)
-    require_claim_bound_dispatchable(spec, attempt_claim)
+    require_claim_bound_dispatchable(
+        spec,
+        attempt_claim,
+        args.execution_bridge_revision,
+    )
     receipt, state, requested_name = validate_intent(
         args.intent,
         spec,
