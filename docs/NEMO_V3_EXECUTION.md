@@ -420,6 +420,20 @@ Its raw SHA-256 is
 It verifies under active key `b8041281c81c4caa` and binds canonical payload
 SHA-256
 `d0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d`.
-Status is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists.
-Candidate, model-card, dataset, deployment, promotion, and all non-receipt
-uploads remain disabled.
+Pre-dispatch validation proved the then-pinned A11oy validator rejected this
+immediate attempt-5 predecessor, so no repository dispatch was sent. No event,
+workflow run, runner, claim, job directory, prefetch, image use, training,
+holdout access, finalization, or receipt exists.
+
+The immutable quarantine record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-6.json` therefore marks
+attempt 6
+`STALE_SOURCE + PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT + NEVER_DISPATCH`.
+Its reviewed spec and signed envelope remain byte-for-byte evidence and must
+never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
+7 must bind protected A11oy main
+`2b190b3806a5d2b3faa58f34c2db41c5dc4668fa`, owner-workflow blob
+`d29d937b2d398e9c207777a9a819aadd050ac231`, active key
+`b8041281c81c4caa`, and a separately reviewed protected Bridge runtime
+revision. Candidate, model-card, dataset, deployment, promotion, and all
+non-receipt uploads remain disabled.

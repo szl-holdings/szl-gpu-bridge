@@ -36,19 +36,22 @@ cloud/verify-receipt.mjs ◄─────────────────�
   verification-only; coordinated administrative-recovery key
   `b8041281c81c4caa` is the sole active execution authority. No cryptographic
   continuity with either predecessor key is claimed. Attempt 2, successor
-  generation 3, attempt 4, and attempt 5 remain byte-preserved under explicit
+  generation 3, attempts 4, 5, and 6 remain byte-preserved under explicit
   `NEVER_DISPATCH` quarantine. Attempt 4's flat 14-property dispatch transport
   was rejected before event creation. Attempt 5 created exactly one workflow
   run, but Windows host execution policy rejected the generated PowerShell
   script before validator admission, claim, image use, training, or receipt.
   Its signed envelope is evidence only under
-  `HOST_EXECUTION_POLICY_BLOCKED + PRE_ADMISSION + NEVER_DISPATCH`. A future
-  attempt 6 must bind protected A11oy main `78b35d244b89c7663063372ff459894bab2977b6`
-  and owner-workflow blob `d29d937b2d398e9c207777a9a819aadd050ac231`.
-  Its distinct reviewed plaintext binds protected Bridge revision
-  `69a097d2eb0619506d673464353f1aea7174cf05`. The separately protected
-  b804-signed envelope now verifies and is `QUEUED_AWAITING_GPU_RECEIPT`; no
-  attempt-6 claim, dispatch, or receipt exists.
+  `HOST_EXECUTION_POLICY_BLOCKED + PRE_ADMISSION + NEVER_DISPATCH`. Attempt 6
+  was never submitted: pre-dispatch validation proved its then-pinned A11oy
+  validator rejected the immediate attempt-5 predecessor. Its reviewed spec
+  and b804-signed envelope remain immutable evidence under
+  `STALE_SOURCE + PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT +
+  NEVER_DISPATCH`; no event, workflow run, claim, training, or receipt exists.
+  A future attempt 7 must bind protected A11oy main
+  `2b190b3806a5d2b3faa58f34c2db41c5dc4668fa`, owner-workflow blob
+  `d29d937b2d398e9c207777a9a819aadd050ac231`, and a separately reviewed
+  protected Bridge runtime.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
