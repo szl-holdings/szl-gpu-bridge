@@ -546,7 +546,11 @@ Its lineage records the one attempt-8 workflow run, authenticated prefetch,
 and exact absence of a claim, training, candidate, terminal ledger, or
 training receipt. The frozen science inputs are unchanged. Candidate,
 model-card, dataset, deployment, promotion, and every non-receipt upload
-remain disabled. This reviewed plaintext is not dispatch authority: a
-separate protected PR must invoke the b804 signer exactly once and publish
-an exclusive-create DSSE queue envelope before any runner or dispatch gate
-can open.
+remain disabled. The exclusive-create b804 DSSE envelope at
+`queue/pending/job-2026-nemo-v3-governed-attempt-9.json` has raw SHA-256
+`a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49`
+and binds canonical payload SHA-256
+`f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b`.
+Its verified publication moves attempt 9 to
+`QUEUED_AWAITING_GPU_RECEIPT`; it does not create a runner, dispatch, claim,
+training, receipt, or publication effect.

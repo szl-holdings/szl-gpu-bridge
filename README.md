@@ -74,9 +74,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `30607399378`, and protected Bridge runtime
   `eeabd1b52380d2b24439e53d5e4ad38f8114556c`. Its reviewed plaintext
   contract preserves the frozen science inputs and disables candidate,
-  model-card, dataset, deployment, and promotion effects. It is not
-  executable until a separate b804-signed queue-envelope PR is protected,
-  merged, and read back.
+  model-card, dataset, deployment, and promotion effects. Its exclusive-create
+  b804 envelope at
+  `queue/pending/job-2026-nemo-v3-governed-attempt-9.json` has raw SHA-256
+  `a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49`
+  and binds canonical payload SHA-256
+  `f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b`.
+  It is queued awaiting a governed GPU receipt; no runner, dispatch, claim,
+  training, or receipt effect is implied by publication.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
