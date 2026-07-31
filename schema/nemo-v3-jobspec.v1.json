@@ -195,9 +195,9 @@
             "provisionalEngineKeyId": {"const": "815714c8d4ae3e4d"},
             "provisionalKeyStatus": {"const": "VERIFY_ONLY"},
             "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
-            "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971"]},
+            "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025"]},
             "cryptographicContinuityClaimed": {"const": false},
-            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2"]}
+            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05"]}
           }
         }
       ]
@@ -272,7 +272,54 @@
                   "predecessorEnvelopeRevision": {"const": "7045fe223703ba8fb2d710a59989f971080e7702"},
                   "predecessorExecutionBridgeRevision": {"const": "2237bb3f36663343ace29d98cda6c32e165450a0"},
                   "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"},
+                  "failurePhase": {"const": "PRE_EVENT_TRANSPORT_VALIDATION"},
+                  "eventCreated": {"const": false},
+                  "workflowRunCreated": {"const": false},
                   "successorGeneration": {"const": 5}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"jobId": {"const": "job-2026-nemo-v3-governed-attempt-6"}},
+        "required": ["jobId"]
+      },
+      "then": {
+        "required": ["ownerDispatch", "authorization", "lineage"],
+        "properties": {
+          "source": {"properties": {"revision": {"const": "78b35d244b89c7663063372ff459894bab2977b6"}}},
+          "ownerDispatch": {
+            "properties": {
+              "workflowBlob": {"const": "d29d937b2d398e9c207777a9a819aadd050ac231"},
+              "workflowVersion": {"const": "nemo-v3-owner-dispatch.v4"}
+            }
+          },
+          "authorization": {
+            "properties": {
+              "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30592401025"},
+              "correctedBridgeRevision": {"const": "69a097d2eb0619506d673464353f1aea7174cf05"}
+            }
+          },
+          "lineage": {
+            "allOf": [
+              {"$ref": "#/$defs/transportFailureLineage"},
+              {
+                "properties": {
+                  "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-5"},
+                  "predecessorEnvelopeSha256": {"const": "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009"},
+                  "predecessorPayloadSha256": {"const": "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b"},
+                  "predecessorEnvelopeRevision": {"const": "d127d7bcd734235fba83e786de923787ab90c51b"},
+                  "predecessorExecutionBridgeRevision": {"const": "a2015accc0be8060c4084455e829a9373e5c99e2"},
+                  "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30591897165"},
+                  "failurePhase": {"const": "PRE_ADMISSION_HOST_EXECUTION_POLICY"},
+                  "successorGeneration": {"const": 6},
+                  "eventCreated": {"const": true},
+                  "workflowRunCreated": {"const": true},
+                  "claimCreated": {"const": false}
                 }
               }
             ]
@@ -364,12 +411,12 @@
         "predecessorPayloadSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "predecessorEnvelopeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
         "predecessorExecutionBridgeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"},
-        "failurePhase": {"const": "PRE_EVENT_TRANSPORT_VALIDATION"},
+        "transportEvidenceUrl": {"enum": ["https://github.com/szl-holdings/szl-gpu-bridge/issues/32", "https://github.com/szl-holdings/a11oy/actions/runs/30591897165"]},
+        "failurePhase": {"enum": ["PRE_EVENT_TRANSPORT_VALIDATION", "PRE_ADMISSION_HOST_EXECUTION_POLICY"]},
         "successorGeneration": {"type": "integer", "minimum": 5},
         "automaticRetry": {"const": false},
-        "eventCreated": {"const": false},
-        "workflowRunCreated": {"const": false},
+        "eventCreated": {"type": "boolean"},
+        "workflowRunCreated": {"type": "boolean"},
         "claimCreated": {"const": false},
         "trainingStarted": {"const": false},
         "modelRepositoryCodeImported": {"const": false},

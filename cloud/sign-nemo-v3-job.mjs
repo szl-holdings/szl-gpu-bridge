@@ -42,7 +42,12 @@ const FINAL_A11OY_SOURCE_REVISION = 'e3d4a46724b222c8a5b2b6f04877bc115a6c82cb';
 const FINAL_OWNER_WORKFLOW_BLOB = '2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f';
 const FINAL_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30588489971';
 const FINAL_CORRECTED_BRIDGE_REVISION = 'a2015accc0be8060c4084455e829a9373e5c99e2';
-const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';
+const ATTEMPT_5_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';
+const EXECUTION_A11OY_SOURCE_REVISION = '78b35d244b89c7663063372ff459894bab2977b6';
+const EXECUTION_OWNER_WORKFLOW_BLOB = 'd29d937b2d398e9c207777a9a819aadd050ac231';
+const EXECUTION_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30592401025';
+const EXECUTION_CORRECTED_BRIDGE_REVISION = '69a097d2eb0619506d673464353f1aea7174cf05';
+const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -59,13 +64,21 @@ const COORDINATED_JOB_BINDINGS = {
     correctedBridgeRevision: CORRECTED_BRIDGE_REVISION,
     successorGeneration: 4,
   },
-  [FUTURE_REVIEWED_JOB_ID]: {
+  [ATTEMPT_5_REVIEWED_JOB_ID]: {
     sourceRevision: FINAL_A11OY_SOURCE_REVISION,
     workflowBlob: FINAL_OWNER_WORKFLOW_BLOB,
     workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
     relockRunUrl: FINAL_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: FINAL_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 5,
+  },
+  [FUTURE_REVIEWED_JOB_ID]: {
+    sourceRevision: EXECUTION_A11OY_SOURCE_REVISION,
+    workflowBlob: EXECUTION_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: EXECUTION_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: EXECUTION_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 6,
   },
 };
 
@@ -149,14 +162,28 @@ function validateLineage(spec) {
   if (!SHA256.test(lineage.predecessorEnvelopeSha256 ?? '')) {
     throw new Error('lineage predecessor envelope digest invalid');
   }
+  let expectedEventCreated = false;
   if (transport) {
     if (!SHA256.test(lineage.predecessorPayloadSha256 ?? '')
         || !/^[0-9a-f]{40}$/.test(lineage.predecessorEnvelopeRevision ?? '')
         || !/^[0-9a-f]{40}$/.test(lineage.predecessorExecutionBridgeRevision ?? '')) {
       throw new Error('lineage predecessor transport identity invalid');
     }
-    if (lineage.transportEvidenceUrl !== 'https://github.com/szl-holdings/szl-gpu-bridge/issues/32'
-        || lineage.failurePhase !== 'PRE_EVENT_TRANSPORT_VALIDATION') {
+    let expectedEvidence;
+    let expectedFailurePhase;
+    if (lineage.predecessorJobId === NEXT_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/szl-gpu-bridge/issues/32';
+      expectedFailurePhase = 'PRE_EVENT_TRANSPORT_VALIDATION';
+      expectedEventCreated = false;
+    } else if (lineage.predecessorJobId === ATTEMPT_5_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30591897165';
+      expectedFailurePhase = 'PRE_ADMISSION_HOST_EXECUTION_POLICY';
+      expectedEventCreated = true;
+    } else {
+      throw new Error('lineage predecessor transport recovery is not admitted');
+    }
+    if (lineage.transportEvidenceUrl !== expectedEvidence
+        || lineage.failurePhase !== expectedFailurePhase) {
       throw new Error('lineage predecessor transport evidence invalid');
     }
   } else {
@@ -188,8 +215,8 @@ function validateLineage(spec) {
   };
   if (transport) {
     Object.assign(boundaries, {
-      eventCreated: false,
-      workflowRunCreated: false,
+      eventCreated: expectedEventCreated,
+      workflowRunCreated: expectedEventCreated,
       claimCreated: false,
     });
   }
@@ -314,7 +341,7 @@ export function validateNemoV3Spec(spec) {
           || spec.lineage?.successorGeneration !== coordinatedBinding.successorGeneration)) {
     throw new Error('coordinated recovery binding is invalid');
   }
-  if (spec.jobId === FUTURE_REVIEWED_JOB_ID) {
+  if (spec.jobId === ATTEMPT_5_REVIEWED_JOB_ID) {
     const exactTransportLineage = {
       predecessorJobId: NEXT_REVIEWED_JOB_ID,
       predecessorEnvelopeSha256: 'e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2',
@@ -338,6 +365,32 @@ export function validateNemoV3Spec(spec) {
     };
     if (canonicalize(spec.lineage) !== canonicalize(exactTransportLineage)) {
       throw new Error('attempt-5 transport recovery lineage is not exact');
+    }
+  }
+  if (spec.jobId === FUTURE_REVIEWED_JOB_ID) {
+    const exactHostPolicyLineage = {
+      predecessorJobId: ATTEMPT_5_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: '30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009',
+      predecessorPayloadSha256: '374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b',
+      predecessorEnvelopeRevision: 'd127d7bcd734235fba83e786de923787ab90c51b',
+      predecessorExecutionBridgeRevision: FINAL_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30591897165',
+      failurePhase: 'PRE_ADMISSION_HOST_EXECUTION_POLICY',
+      successorGeneration: 6,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactHostPolicyLineage)) {
+      throw new Error('attempt-6 host-policy recovery lineage is not exact');
     }
   }
   object(spec.base, 'base');

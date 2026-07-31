@@ -165,6 +165,14 @@ _COORDINATED_JOB_BINDINGS = {
         "correctedBridgeRevision": FINAL_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 5,
     },
+    FUTURE_REVIEWED_JOB_ID: {
+        "sourceRevision": EXECUTION_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXECUTION_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": "69a097d2eb0619506d673464353f1aea7174cf05",
+        "successorGeneration": 6,
+    },
 }
 _ALLOWED_TOP = {
     "jobId",
@@ -560,14 +568,27 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 "predecessorExecutionBridgeRevision",
             ):
                 _revision(lineage[field], f"lineage.{field}", exact40=True)
-            if (
-                lineage["transportEvidenceUrl"]
-                != "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"
-            ):
+            if predecessor == NEXT_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/szl-gpu-bridge/issues/32"
+                )
+                expected_failure_phase = "PRE_EVENT_TRANSPORT_VALIDATION"
+                expected_event_created = False
+            elif predecessor == ATTEMPT_5_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30591897165"
+                )
+                expected_failure_phase = "PRE_ADMISSION_HOST_EXECUTION_POLICY"
+                expected_event_created = True
+            else:
+                raise ContractError(
+                    "lineage predecessor is not an admitted transport recovery"
+                )
+            if lineage["transportEvidenceUrl"] != expected_transport_evidence:
                 raise ContractError(
                     "lineage.transportEvidenceUrl is not the recorded transport evidence"
                 )
-            if lineage["failurePhase"] != "PRE_EVENT_TRANSPORT_VALIDATION":
+            if lineage["failurePhase"] != expected_failure_phase:
                 raise ContractError(
                     "lineage.failurePhase is not an admitted transport recovery phase"
                 )
@@ -615,8 +636,8 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         }
         if transport_lineage:
             expected_boundaries |= {
-                "eventCreated": False,
-                "workflowRunCreated": False,
+                "eventCreated": expected_event_created,
+                "workflowRunCreated": expected_event_created,
                 "claimCreated": False,
             }
         for field, expected in expected_boundaries.items():
@@ -691,6 +712,40 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             }
             if lineage != exact_transport_lineage:
                 raise ContractError("attempt-5 transport recovery lineage is not exact")
+        if spec["jobId"] == FUTURE_REVIEWED_JOB_ID:
+            exact_host_policy_lineage = {
+                "predecessorJobId": ATTEMPT_5_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009"
+                ),
+                "predecessorPayloadSha256": (
+                    "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "d127d7bcd734235fba83e786de923787ab90c51b"
+                ),
+                "predecessorExecutionBridgeRevision": FINAL_CORRECTED_BRIDGE_REVISION,
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30591897165"
+                ),
+                "failurePhase": "PRE_ADMISSION_HOST_EXECUTION_POLICY",
+                "successorGeneration": 6,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_host_policy_lineage:
+                raise ContractError(
+                    "attempt-6 host-policy recovery lineage is not exact"
+                )
 
     base = _object(
         spec,

@@ -209,6 +209,37 @@ test('Nemo v3 attempt 5 binds nested-v3 transport and zero predecessor effects',
   );
 });
 
+test('Nemo v3 attempt 6 binds the one-run pre-admission host-policy failure', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260730-attempt-6-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+
+  const missingRun = structuredClone(reviewed);
+  missingRun.lineage.workflowRunCreated = false;
+  assert.throws(
+    () => validateNemoV3Spec(missingRun),
+    /workflowRunCreated/,
+  );
+
+  const wrongEvidence = structuredClone(reviewed);
+  wrongEvidence.lineage.transportEvidenceUrl = 'https://github.com/szl-holdings/szl-gpu-bridge/issues/32';
+  assert.throws(
+    () => validateNemoV3Spec(wrongEvidence),
+    /transport evidence/,
+  );
+
+  const staleRuntime = structuredClone(reviewed);
+  staleRuntime.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleRuntime),
+    /coordinated authorization/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
