@@ -157,10 +157,12 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `2783b3518abcec9f38d3f6504c06e305a4723801`. Its lineage records attempt
   12's single run `30626533443` as exact pre-claim
   `RUNTIME_JOB_BINDING_REJECTED + NEVER_DISPATCH` evidence. This phase is
-  plaintext only: its canonical payload SHA-256 is
+  Its exclusive-create b804 DSSE queue envelope is now present with raw
+  SHA-256
+  `de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0`.
+  Its canonical payload SHA-256 is
   `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`,
-  the attempt-13 queue envelope is absent, status is
-  `AWAITING_ENGINE_SIGNATURE`, and all candidate, adapter, model-card,
+  status is `QUEUED_AWAITING_GPU_RECEIPT`, and all candidate, adapter, model-card,
   dataset, deployment, promotion, and publication effects remain false.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.

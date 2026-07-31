@@ -707,9 +707,11 @@ byte-for-byte. The frozen base license, science inputs, immutable image,
 receipt-only destination, and disabled candidate/model-card/dataset uploads
 are unchanged.
 
-This stage publishes no queue envelope. Attempt 13 remains
-`AWAITING_ENGINE_SIGNATURE` until a separate exclusive-create b804 signing and
-protected publication gate completes. Its reviewed raw JSON SHA-256 is
+Attempt 13's one exclusive-create b804 DSSE envelope now exists at
+`queue/pending/job-2026-nemo-v3-governed-attempt-13.json`, with raw SHA-256
+`de31cbb574cdeeaaf611a25fe1e40616b7fe8d4f6e2e138b66697474f5d800b0`.
+Its status is `QUEUED_AWAITING_GPU_RECEIPT`; no receipt or publication output
+exists. Its reviewed raw Git JSON SHA-256 is
 `bd394cbb68f60ac181333156cb53d9c0074b234352843aa976533021f5f396e5`;
 its signer-canonical payload SHA-256 is
 `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`.
