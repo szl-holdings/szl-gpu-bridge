@@ -116,8 +116,15 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918`
   and signer-canonical payload SHA-256
   `85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994`.
-  Runner activation and dispatch remain locked behind a separate measured GPU
-  gate; no claim, receipt, candidate, model card, dataset, or publication exists.
+  Its one dispatch created run `30620232291` and exact claims, but immutable
+  offline execution stopped before training because the Bridge did not pass the
+  pinned local tokenizer snapshot to Unsloth. The signed BLOCKED receipt is
+  preserved at revision `1a74ad3f5fc2682e6bbdd034a68399dee7e79525` with
+  file SHA-256
+  `f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3`.
+  Attempt 11 is `TOKENIZER_LOAD_BLOCKED + POST_CLAIM +
+  SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`; candidate, adapter, model-card,
+  dataset, deployment, and promotion effects are all false.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

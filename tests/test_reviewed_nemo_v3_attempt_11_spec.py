@@ -77,10 +77,11 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             self.attempt_11["base"]["licenseId"],
             "nvidia-nemotron-open-model-license",
         )
-        require_nemo_v3_dispatchable(
-            self.attempt_11,
-            expected_execution_bridge_revision=ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
-        )
+        with self.assertRaisesRegex(ContractError, "quarantined"):
+            require_nemo_v3_dispatchable(
+                self.attempt_11,
+                expected_execution_bridge_revision=ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
+            )
 
     def test_exact_attempt_10_zero_effect_lineage(self) -> None:
         self.assertEqual(
@@ -164,7 +165,7 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b",
         )
 
-    def test_signed_status_awaits_separate_gpu_receipt(self) -> None:
+    def test_signed_blocked_receipt_is_quarantined_and_never_retried(self) -> None:
         self.assertTrue(ATTEMPT_11_QUEUE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_11_QUEUE.read_bytes()).hexdigest(),
@@ -180,8 +181,8 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 8, 6, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(
@@ -191,6 +192,40 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
         self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
         self.assertFalse(report["receipt"]["present"])
         self.assertFalse(report["reviewed_spec"]["candidate_publication_enabled"])
+        quarantine = json.loads(
+            (
+                ROOT / "queue" / "quarantine" / f"{ATTEMPT_11_REVIEWED_JOB_ID}.json"
+            ).read_text(encoding="utf-8")
+        )
+        evidence = quarantine["executionEvidence"]
+        self.assertEqual(evidence["workflowRunId"], "30620232291")
+        self.assertEqual(
+            evidence["runtimeClaimSha256"],
+            "f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2",
+        )
+        self.assertEqual(
+            evidence["attemptClaimSha256"],
+            "3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80",
+        )
+        self.assertEqual(
+            evidence["receiptRevision"],
+            "1a74ad3f5fc2682e6bbdd034a68399dee7e79525",
+        )
+        self.assertEqual(
+            evidence["receiptFileSha256"],
+            "f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3",
+        )
+        self.assertEqual(evidence["receiptVerdict"], "BLOCKED")
+        for field in (
+            "trainingStarted",
+            "candidateUploaded",
+            "adapterUploaded",
+            "modelCardUploaded",
+            "datasetUploaded",
+            "deployed",
+            "promoted",
+        ):
+            self.assertFalse(evidence[field])
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -213,7 +248,7 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+        with self.assertRaisesRegex(ContractError, "quarantined"):
             require_nemo_v3_dispatchable(
                 self.attempt_11,
                 expected_execution_bridge_revision="4" * 40,

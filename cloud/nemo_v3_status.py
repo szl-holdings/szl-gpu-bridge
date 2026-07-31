@@ -251,6 +251,9 @@ def verify_quarantine(
             "replacement",
             "reason",
         }
+        expected_execution_evidence = policy.get("execution_evidence")
+        if expected_execution_evidence is not None:
+            required.add("executionEvidence")
         statuses = tuple(policy["statuses"])
         expected_queue_path = f"queue/pending/{spec['jobId']}.json"
         queue_file = root / expected_queue_path
@@ -278,6 +281,7 @@ def verify_quarantine(
             or record.get("preserveEnvelope") is not True
             or record.get("dispatchAuthorized") is not False
             or replacement != expected_replacement
+            or record.get("executionEvidence") != expected_execution_evidence
             or not isinstance(record.get("reason"), str)
             or not record["reason"].strip()
         ):

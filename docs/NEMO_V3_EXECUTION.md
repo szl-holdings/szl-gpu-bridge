@@ -625,6 +625,16 @@ Its exclusive-create b804 DSSE envelope now exists at
 `7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918`
 and signer-canonical payload SHA-256
 `85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994`.
-Status is `QUEUED_AWAITING_GPU_RECEIPT`. No runner, dispatch, claim, training,
-receipt, deployment, promotion, or Hugging Face publication is authorized
-until the separate measured GPU execution gate passes.
+Its single dispatch created workflow run `30620232291`, runtime claim SHA-256
+`f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2`,
+and attempt claim SHA-256
+`3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80`.
+Immutable offline execution stopped before training because the Bridge supplied
+the model revision but not an explicit pinned local tokenizer snapshot to
+Unsloth. The receipt-only finalizer published a signed `BLOCKED` receipt at
+revision `1a74ad3f5fc2682e6bbdd034a68399dee7e79525`, file SHA-256
+`f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3`.
+Attempt 11 is now immutable `TOKENIZER_LOAD_BLOCKED + POST_CLAIM +
+SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH` evidence and will not be retried,
+resent, or re-signed. Candidate, adapter, model-card, dataset, deployment, and
+promotion effects are all false.
