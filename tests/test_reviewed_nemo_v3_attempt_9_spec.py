@@ -256,7 +256,9 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_workflow_track_signed_attempt_9(self) -> None:
+    def test_status_preserves_attempt_9_while_signer_advances_to_attempt_10(
+        self,
+    ) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-9-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-9.json",
@@ -265,11 +267,11 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
         ):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIn(
-            "const ATTEMPT_9_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-9';",
+            "const ATTEMPT_10_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-10';",
             SIGNER_SOURCE,
         )
         self.assertIn(
-            "signer is locked to ${ATTEMPT_9_REVIEWED_JOB_ID}",
+            "signer is locked to ${ATTEMPT_10_REVIEWED_JOB_ID}",
             SIGNER_SOURCE,
         )
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)

@@ -68,6 +68,7 @@ RECOVERY_A11OY_RELOCK_RUN_URL = (
 ATTEMPT_9_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-9"
 ATTEMPT_9_CORRECTED_BRIDGE_REVISION = "eeabd1b52380d2b24439e53d5e4ad38f8114556c"
 ATTEMPT_10_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-10"
+ATTEMPT_10_CORRECTED_BRIDGE_REVISION = "37479c23af3228a57ad6018b3f9134186e6d7fa7"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -307,6 +308,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": RECOVERY_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 9,
+    },
+    ATTEMPT_10_REVIEWED_JOB_ID: {
+        "sourceRevision": RECOVERY_A11OY_SOURCE_REVISION,
+        "workflowBlob": RECOVERY_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": RECOVERY_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
+        "successorGeneration": 10,
     },
 }
 _ALLOWED_TOP = {
@@ -716,6 +725,9 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             lineage["predecessorEnvelopeSha256"],
             "lineage.predecessorEnvelopeSha256",
         )
+        expected_claim_created = False
+        expected_holdouts_accessed = False
+        expected_receipt_intent_produced = False
         if transport_lineage:
             _sha256(
                 lineage["predecessorPayloadSha256"],
@@ -756,6 +768,17 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 )
                 expected_failure_phase = "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT"
                 expected_event_created = True
+            elif predecessor == ATTEMPT_9_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30609977388"
+                )
+                expected_failure_phase = (
+                    "POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING"
+                )
+                expected_event_created = True
+                expected_claim_created = True
+                expected_holdouts_accessed = True
+                expected_receipt_intent_produced = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -804,9 +827,9 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             "automaticRetry": False,
             "trainingStarted": False,
             "modelRepositoryCodeImported": False,
-            "holdoutsAccessed": False,
+            "holdoutsAccessed": expected_holdouts_accessed,
             "candidateProduced": False,
-            "receiptIntentProduced": False,
+            "receiptIntentProduced": expected_receipt_intent_produced,
             "terminalLedgerWritten": False,
             "scienceInputsReused": True,
         }
@@ -814,7 +837,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             expected_boundaries |= {
                 "eventCreated": expected_event_created,
                 "workflowRunCreated": expected_event_created,
-                "claimCreated": False,
+                "claimCreated": expected_claim_created,
             }
         for field, expected in expected_boundaries.items():
             if lineage[field] is not expected:
@@ -1030,6 +1053,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-9 prefetch-checkout recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_10_REVIEWED_JOB_ID:
+            exact_cache_license_finalizer_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_9_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49"
+                ),
+                "predecessorPayloadSha256": (
+                    "f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "4fa21a298e9b8f8dd6827f6dd0406ba6de02421e"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    ATTEMPT_9_CORRECTED_BRIDGE_REVISION
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30609977388"
+                ),
+                "failurePhase": "POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING",
+                "successorGeneration": 10,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": True,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": True,
+                "candidateProduced": False,
+                "receiptIntentProduced": True,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_cache_license_finalizer_recovery_lineage:
+                raise ContractError(
+                    "attempt-10 cache/license/finalizer recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1053,6 +1112,13 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     _revision(base["revision"], "base.revision")
     if not isinstance(base["licenseId"], str) or not base["licenseId"].strip():
         raise ContractError("base.licenseId is required")
+    if (
+        spec["jobId"] == ATTEMPT_10_REVIEWED_JOB_ID
+        and base["licenseId"] != "nvidia-nemotron-open-model-license"
+    ):
+        raise ContractError(
+            "attempt-10 must bind the exact immutable custom license ID"
+        )
     if (
         not isinstance(base["licenseAcknowledgement"], str)
         or len(base["licenseAcknowledgement"].strip()) < 20

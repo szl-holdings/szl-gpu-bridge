@@ -60,6 +60,8 @@ const RECOVERY_OWNER_WORKFLOW_BLOB = 'f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d';
 const RECOVERY_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30607399378';
 const ATTEMPT_9_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-9';
 const ATTEMPT_9_CORRECTED_BRIDGE_REVISION = 'eeabd1b52380d2b24439e53d5e4ad38f8114556c';
+const ATTEMPT_10_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-10';
+const ATTEMPT_10_CORRECTED_BRIDGE_REVISION = '37479c23af3228a57ad6018b3f9134186e6d7fa7';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -68,6 +70,7 @@ const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-6',
   'job-2026-nemo-v3-governed-attempt-7',
   'job-2026-nemo-v3-governed-attempt-8',
+  'job-2026-nemo-v3-governed-attempt-9',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -118,6 +121,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: RECOVERY_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 9,
+  },
+  [ATTEMPT_10_REVIEWED_JOB_ID]: {
+    sourceRevision: RECOVERY_A11OY_SOURCE_REVISION,
+    workflowBlob: RECOVERY_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: RECOVERY_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 10,
   },
 };
 
@@ -202,6 +213,9 @@ function validateLineage(spec) {
     throw new Error('lineage predecessor envelope digest invalid');
   }
   let expectedEventCreated = false;
+  let expectedClaimCreated = false;
+  let expectedHoldoutsAccessed = false;
+  let expectedReceiptIntentProduced = false;
   if (transport) {
     if (!SHA256.test(lineage.predecessorPayloadSha256 ?? '')
         || !/^[0-9a-f]{40}$/.test(lineage.predecessorEnvelopeRevision ?? '')
@@ -230,6 +244,13 @@ function validateLineage(spec) {
       expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30606664591';
       expectedFailurePhase = 'PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT';
       expectedEventCreated = true;
+    } else if (lineage.predecessorJobId === ATTEMPT_9_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30609977388';
+      expectedFailurePhase = 'POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING';
+      expectedEventCreated = true;
+      expectedClaimCreated = true;
+      expectedHoldoutsAccessed = true;
+      expectedReceiptIntentProduced = true;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
     }
@@ -258,9 +279,9 @@ function validateLineage(spec) {
     automaticRetry: false,
     trainingStarted: false,
     modelRepositoryCodeImported: false,
-    holdoutsAccessed: false,
+    holdoutsAccessed: expectedHoldoutsAccessed,
     candidateProduced: false,
-    receiptIntentProduced: false,
+    receiptIntentProduced: expectedReceiptIntentProduced,
     terminalLedgerWritten: false,
     scienceInputsReused: true,
   };
@@ -268,7 +289,7 @@ function validateLineage(spec) {
     Object.assign(boundaries, {
       eventCreated: expectedEventCreated,
       workflowRunCreated: expectedEventCreated,
-      claimCreated: false,
+      claimCreated: expectedClaimCreated,
     });
   }
   for (const [field, expected] of Object.entries(boundaries)) {
@@ -522,9 +543,39 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-9 prefetch-checkout recovery lineage is not exact');
     }
   }
+  if (spec.jobId === ATTEMPT_10_REVIEWED_JOB_ID) {
+    const exactCacheLicenseFinalizerRecoveryLineage = {
+      predecessorJobId: ATTEMPT_9_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: 'a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49',
+      predecessorPayloadSha256: 'f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b',
+      predecessorEnvelopeRevision: '4fa21a298e9b8f8dd6827f6dd0406ba6de02421e',
+      predecessorExecutionBridgeRevision: ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30609977388',
+      failurePhase: 'POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING',
+      successorGeneration: 10,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: true,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: true,
+      candidateProduced: false,
+      receiptIntentProduced: true,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactCacheLicenseFinalizerRecoveryLineage)) {
+      throw new Error('attempt-10 cache/license/finalizer recovery lineage is not exact');
+    }
+  }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
+  if (spec.jobId === ATTEMPT_10_REVIEWED_JOB_ID
+      && spec.base.licenseId !== 'nvidia-nemotron-open-model-license') {
+    throw new Error('attempt-10 must bind the exact immutable custom license ID');
+  }
   if (typeof spec.base.licenseAcknowledgement !== 'string' || spec.base.licenseAcknowledgement.trim().length < 20) {
     throw new Error('explicit base license acknowledgement required');
   }
@@ -592,8 +643,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== ATTEMPT_9_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${ATTEMPT_9_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_10_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_10_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');
