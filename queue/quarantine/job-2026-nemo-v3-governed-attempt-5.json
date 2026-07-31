@@ -1,0 +1,27 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-5",
+  "recordedAt": "2026-07-31T00:19:29Z",
+  "status": [
+    "STALE_SOURCE",
+    "HOST_EXECUTION_POLICY_BLOCKED",
+    "PRE_ADMISSION",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-5.json",
+  "queueFileSha256": "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009",
+  "signedPayloadSha256": "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "e3d4a46724b222c8a5b2b6f04877bc115a6c82cb",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "78b35d244b89c7663063372ff459894bab2977b6",
+    "workflowBlob": "d29d937b2d398e9c207777a9a819aadd050ac231",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-6"
+  },
+  "reason": "Attempt 5 created exactly one A11oy workflow run, but Windows host execution policy rejected the generated PowerShell script before validator admission. Envelope verification, image use, prefetch, claim, training, finalization, and receipt upload were skipped. The reviewed spec and b804 DSSE envelope remain immutable evidence and are never dispatch authority."
+}

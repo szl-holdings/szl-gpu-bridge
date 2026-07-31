@@ -16,12 +16,12 @@ sys.path.insert(0, str(ROOT / "laptop"))
 import nemo_v3_status  # noqa: E402
 from frontier_contract import ContractError, derive_key_id  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
+    ATTEMPT_5_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
     CORRECTED_BRIDGE_REVISION,
     FINAL_A11OY_SOURCE_REVISION,
     FINAL_OWNER_WORKFLOW_BLOB,
-    FUTURE_REVIEWED_JOB_ID,
     NEXT_REVIEWED_JOB_ID,
     PROVISIONAL_ENGINE_KEY_ID,
     SETTLED_A11OY_RELOCK_RUN_URL,
@@ -129,7 +129,7 @@ class ReviewedNemoV3Attempt4SpecTests(unittest.TestCase):
             "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
             "engineKeyId": COORDINATED_ENGINE_KEY_ID,
             "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
-            "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+            "reviewedJobId": ATTEMPT_5_REVIEWED_JOB_ID,
         }
         expected = {
             "job-2026-nemo-v3-governed-attempt-2": (

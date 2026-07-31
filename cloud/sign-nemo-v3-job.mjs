@@ -43,6 +43,12 @@ const FINAL_OWNER_WORKFLOW_BLOB = '2522d3b54eeb7adc37ffc47e7c685a5ce7edf68f';
 const FINAL_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30588489971';
 const FINAL_CORRECTED_BRIDGE_REVISION = 'a2015accc0be8060c4084455e829a9373e5c99e2';
 const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';
+const QUARANTINED_JOB_IDS = new Set([
+  'job-2026-nemo-v3-governed-attempt-2',
+  'job-2026-nemo-v3-governed-successor-3',
+  'job-2026-nemo-v3-governed-attempt-4',
+  'job-2026-nemo-v3-governed-attempt-5',
+]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
   [NEXT_REVIEWED_JOB_ID]: {
@@ -400,6 +406,9 @@ export function main(argv = process.argv.slice(2), env = process.env) {
     validateNemoV3Spec(spec);
   } catch (error) {
     fail(error.message);
+  }
+  if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
+    fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
   if (spec.jobId !== FUTURE_REVIEWED_JOB_ID) {
     fail(`signer is locked to ${FUTURE_REVIEWED_JOB_ID}`);

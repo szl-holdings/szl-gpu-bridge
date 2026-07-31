@@ -16,20 +16,25 @@ sys.path.insert(0, str(ROOT / "laptop"))
 import nemo_v3_status  # noqa: E402
 from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
+    ATTEMPT_5_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
+    EXECUTION_A11OY_RELOCK_RUN_URL,
+    EXECUTION_A11OY_SOURCE_REVISION,
+    EXECUTION_OWNER_WORKFLOW_BLOB,
     FINAL_A11OY_RELOCK_RUN_URL,
     FINAL_A11OY_SOURCE_REVISION,
     FINAL_CORRECTED_BRIDGE_REVISION,
     FINAL_OWNER_WORKFLOW_BLOB,
     FUTURE_REVIEWED_JOB_ID,
     NEXT_REVIEWED_JOB_ID,
+    require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
 )
 
 ATTEMPT_4_PATH = ROOT / "jobspecs" / "nemo-v3-20260730-attempt-4-reviewed.json"
 ATTEMPT_5_PATH = ROOT / "jobspecs" / "nemo-v3-20260730-attempt-5-reviewed.json"
-ATTEMPT_5_QUEUE = ROOT / "queue" / "pending" / f"{FUTURE_REVIEWED_JOB_ID}.json"
+ATTEMPT_5_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_5_REVIEWED_JOB_ID}.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -44,7 +49,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
 
     def test_contract_binds_final_source_workflow_runtime_and_key(self) -> None:
         self.assertIs(validate_nemo_v3_spec(self.attempt_5), self.attempt_5)
-        self.assertEqual(self.attempt_5["jobId"], FUTURE_REVIEWED_JOB_ID)
+        self.assertEqual(self.attempt_5["jobId"], ATTEMPT_5_REVIEWED_JOB_ID)
         self.assertEqual(
             self.attempt_5["source"]["revision"], FINAL_A11OY_SOURCE_REVISION
         )
@@ -164,7 +169,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             "e240a176849b1f6c0d453ac55277cd7732b3a302ea9679db78d3c612501f27f2",
         )
 
-    def test_signed_envelope_is_valid_and_receipt_is_absent(self) -> None:
+    def test_signed_envelope_is_valid_quarantined_and_receipt_is_absent(self) -> None:
         self.assertTrue(ATTEMPT_5_QUEUE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_5_QUEUE.read_bytes()).hexdigest(),
@@ -176,8 +181,8 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 30, 23, 31, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
@@ -186,6 +191,69 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b",
         )
         self.assertFalse(report["receipt"]["present"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
+        self.assertEqual(
+            report["quarantine"]["statuses"],
+            (
+                "STALE_SOURCE",
+                "HOST_EXECUTION_POLICY_BLOCKED",
+                "PRE_ADMISSION",
+                "NEVER_DISPATCH",
+            ),
+        )
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.attempt_5)
+
+    def test_attempt_5_bytes_and_replacement_binding_are_exact(self) -> None:
+        spec_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:jobspecs/nemo-v3-20260730-attempt-5-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
+        envelope_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                f"HEAD:queue/pending/{ATTEMPT_5_REVIEWED_JOB_ID}.json",
+            ],
+            cwd=ROOT,
+        )
+        self.assertEqual(
+            hashlib.sha256(spec_bytes).hexdigest(),
+            "f78bbbbe95a9c77d92825dd6021a5bc656e719461d12126afde3c52bd49ae594",
+        )
+        self.assertEqual(
+            hashlib.sha256(envelope_bytes).hexdigest(),
+            "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009",
+        )
+        record = json.loads(
+            (
+                ROOT
+                / "queue"
+                / "quarantine"
+                / f"{ATTEMPT_5_REVIEWED_JOB_ID}.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            record["replacement"],
+            {
+                "sourceRevision": EXECUTION_A11OY_SOURCE_REVISION,
+                "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
+                "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+                "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+                "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+            },
+        )
+        self.assertEqual(
+            EXECUTION_A11OY_RELOCK_RUN_URL,
+            "https://github.com/szl-holdings/a11oy/actions/runs/30592401025",
+        )
 
     def test_attempt_5_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -230,6 +298,8 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             "const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';",
             SIGNER_SOURCE,
         )
+        self.assertIn("'job-2026-nemo-v3-governed-attempt-5',", SIGNER_SOURCE)
+        self.assertIn("is quarantined and marked NEVER_DISPATCH", SIGNER_SOURCE)
         self.assertIn("signer is locked to ${FUTURE_REVIEWED_JOB_ID}", SIGNER_SOURCE)
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)

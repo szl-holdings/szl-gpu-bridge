@@ -44,7 +44,13 @@ FINAL_A11OY_RELOCK_RUN_URL = (
     "https://github.com/szl-holdings/a11oy/actions/runs/30588489971"
 )
 FINAL_CORRECTED_BRIDGE_REVISION = "a2015accc0be8060c4084455e829a9373e5c99e2"
-FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-5"
+ATTEMPT_5_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-5"
+EXECUTION_A11OY_SOURCE_REVISION = "78b35d244b89c7663063372ff459894bab2977b6"
+EXECUTION_OWNER_WORKFLOW_BLOB = "d29d937b2d398e9c207777a9a819aadd050ac231"
+EXECUTION_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30592401025"
+)
+FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-6"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -55,6 +61,13 @@ _ATTEMPT_4_REPLACEMENT = {
 _ATTEMPT_5_REPLACEMENT = {
     "sourceRevision": FINAL_A11OY_SOURCE_REVISION,
     "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_5_REVIEWED_JOB_ID,
+}
+_ATTEMPT_6_REPLACEMENT = {
+    "sourceRevision": EXECUTION_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
@@ -104,6 +117,23 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "source_revision": SETTLED_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_5_REPLACEMENT,
     },
+    ATTEMPT_5_REVIEWED_JOB_ID: {
+        "statuses": (
+            "STALE_SOURCE",
+            "HOST_EXECUTION_POLICY_BLOCKED",
+            "PRE_ADMISSION",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009"
+        ),
+        "payload_sha256": (
+            "374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": FINAL_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_6_REPLACEMENT,
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -127,7 +157,7 @@ _COORDINATED_JOB_BINDINGS = {
         "correctedBridgeRevision": CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 4,
     },
-    FUTURE_REVIEWED_JOB_ID: {
+    ATTEMPT_5_REVIEWED_JOB_ID: {
         "sourceRevision": FINAL_A11OY_SOURCE_REVISION,
         "workflowBlob": FINAL_OWNER_WORKFLOW_BLOB,
         "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
@@ -629,7 +659,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             raise ContractError(
                 "coordinated recovery requires its exact successor generation"
             )
-        if spec["jobId"] == FUTURE_REVIEWED_JOB_ID:
+        if spec["jobId"] == ATTEMPT_5_REVIEWED_JOB_ID:
             exact_transport_lineage = {
                 "predecessorJobId": NEXT_REVIEWED_JOB_ID,
                 "predecessorEnvelopeSha256": (
