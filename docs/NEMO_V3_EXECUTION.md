@@ -580,6 +580,12 @@ correcting the immutable model card's exact custom license identifier to
 `37479c23af3228a57ad6018b3f9134186e6d7fa7`, which uses `/hf-cache` for the
 read-only credentialless model cache and validates the exact execution revision
 from the durable claim before finalization. Candidate, model-card, dataset, and
-every non-receipt upload remain disabled. This plaintext is
-`AWAITING_ENGINE_SIGNATURE`; it is not executable until a separate protected
-b804 envelope publication.
+every non-receipt upload remain disabled. This plaintext is authorized only by
+the exclusive-create b804 DSSE envelope at
+`queue/pending/job-2026-nemo-v3-governed-attempt-10.json`, whose raw SHA-256 is
+`b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b`
+and canonical payload SHA-256 is
+`2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9`.
+Verified publication moves the attempt to `QUEUED_AWAITING_GPU_RECEIPT`; it
+does not register a runner, dispatch, claim, train, upload a receipt, or publish
+any artifact.
