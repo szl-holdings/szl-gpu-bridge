@@ -17,6 +17,7 @@ import nemo_v3_status  # noqa: E402
 from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
     ATTEMPT_5_REVIEWED_JOB_ID,
+    ATTEMPT_6_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
     EXECUTION_A11OY_RELOCK_RUN_URL,
@@ -26,7 +27,6 @@ from nemo_v3_contract import (  # noqa: E402
     FINAL_A11OY_SOURCE_REVISION,
     FINAL_CORRECTED_BRIDGE_REVISION,
     FINAL_OWNER_WORKFLOW_BLOB,
-    FUTURE_REVIEWED_JOB_ID,
     NEXT_REVIEWED_JOB_ID,
     require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
@@ -244,7 +244,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
                 "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
                 "engineKeyId": COORDINATED_ENGINE_KEY_ID,
                 "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
-                "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
+                "reviewedJobId": ATTEMPT_6_REVIEWED_JOB_ID,
             },
         )
         self.assertEqual(
@@ -296,7 +296,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
             SIGNER_SOURCE,
         )
         self.assertIn(
-            "const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';",
+            "const ATTEMPT_6_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';",
             SIGNER_SOURCE,
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-5',", SIGNER_SOURCE)

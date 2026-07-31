@@ -47,12 +47,14 @@ const EXECUTION_A11OY_SOURCE_REVISION = '78b35d244b89c7663063372ff459894bab2977b
 const EXECUTION_OWNER_WORKFLOW_BLOB = 'd29d937b2d398e9c207777a9a819aadd050ac231';
 const EXECUTION_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30592401025';
 const EXECUTION_CORRECTED_BRIDGE_REVISION = '69a097d2eb0619506d673464353f1aea7174cf05';
-const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';
+const ATTEMPT_6_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';
+const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-7';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
   'job-2026-nemo-v3-governed-attempt-4',
   'job-2026-nemo-v3-governed-attempt-5',
+  'job-2026-nemo-v3-governed-attempt-6',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -72,7 +74,7 @@ const COORDINATED_JOB_BINDINGS = {
     correctedBridgeRevision: FINAL_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 5,
   },
-  [FUTURE_REVIEWED_JOB_ID]: {
+  [ATTEMPT_6_REVIEWED_JOB_ID]: {
     sourceRevision: EXECUTION_A11OY_SOURCE_REVISION,
     workflowBlob: EXECUTION_OWNER_WORKFLOW_BLOB,
     workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
@@ -367,7 +369,7 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-5 transport recovery lineage is not exact');
     }
   }
-  if (spec.jobId === FUTURE_REVIEWED_JOB_ID) {
+  if (spec.jobId === ATTEMPT_6_REVIEWED_JOB_ID) {
     const exactHostPolicyLineage = {
       predecessorJobId: ATTEMPT_5_REVIEWED_JOB_ID,
       predecessorEnvelopeSha256: '30549fc522238193b4985dbf96a690518bad2ae8c399dc3ee78fb9dd7f551009',

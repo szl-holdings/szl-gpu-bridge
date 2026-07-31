@@ -50,7 +50,13 @@ EXECUTION_OWNER_WORKFLOW_BLOB = "d29d937b2d398e9c207777a9a819aadd050ac231"
 EXECUTION_A11OY_RELOCK_RUN_URL = (
     "https://github.com/szl-holdings/a11oy/actions/runs/30592401025"
 )
-FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-6"
+ATTEMPT_6_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-6"
+SUCCESSOR_A11OY_SOURCE_REVISION = "2b190b3806a5d2b3faa58f34c2db41c5dc4668fa"
+SUCCESSOR_OWNER_WORKFLOW_BLOB = "d29d937b2d398e9c207777a9a819aadd050ac231"
+SUCCESSOR_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30601635066"
+)
+FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-7"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -68,6 +74,13 @@ _ATTEMPT_5_REPLACEMENT = {
 _ATTEMPT_6_REPLACEMENT = {
     "sourceRevision": EXECUTION_A11OY_SOURCE_REVISION,
     "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_6_REVIEWED_JOB_ID,
+}
+_ATTEMPT_7_REPLACEMENT = {
+    "sourceRevision": SUCCESSOR_A11OY_SOURCE_REVISION,
+    "workflowBlob": SUCCESSOR_OWNER_WORKFLOW_BLOB,
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": FUTURE_REVIEWED_JOB_ID,
@@ -134,6 +147,23 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "source_revision": FINAL_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_6_REPLACEMENT,
     },
+    ATTEMPT_6_REVIEWED_JOB_ID: {
+        "statuses": (
+            "STALE_SOURCE",
+            "PRE_DISPATCH_VALIDATOR_REJECTED",
+            "PRE_EVENT",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70"
+        ),
+        "payload_sha256": (
+            "d0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXECUTION_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_7_REPLACEMENT,
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -165,7 +195,7 @@ _COORDINATED_JOB_BINDINGS = {
         "correctedBridgeRevision": FINAL_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 5,
     },
-    FUTURE_REVIEWED_JOB_ID: {
+    ATTEMPT_6_REVIEWED_JOB_ID: {
         "sourceRevision": EXECUTION_A11OY_SOURCE_REVISION,
         "workflowBlob": EXECUTION_OWNER_WORKFLOW_BLOB,
         "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
@@ -712,7 +742,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             }
             if lineage != exact_transport_lineage:
                 raise ContractError("attempt-5 transport recovery lineage is not exact")
-        if spec["jobId"] == FUTURE_REVIEWED_JOB_ID:
+        if spec["jobId"] == ATTEMPT_6_REVIEWED_JOB_ID:
             exact_host_policy_lineage = {
                 "predecessorJobId": ATTEMPT_5_REVIEWED_JOB_ID,
                 "predecessorEnvelopeSha256": (

@@ -1,0 +1,27 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-6",
+  "recordedAt": "2026-07-31T04:01:46Z",
+  "status": [
+    "STALE_SOURCE",
+    "PRE_DISPATCH_VALIDATOR_REJECTED",
+    "PRE_EVENT",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-6.json",
+  "queueFileSha256": "c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70",
+  "signedPayloadSha256": "d0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "78b35d244b89c7663063372ff459894bab2977b6",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "2b190b3806a5d2b3faa58f34c2db41c5dc4668fa",
+    "workflowBlob": "d29d937b2d398e9c207777a9a819aadd050ac231",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-7"
+  },
+  "reason": "Attempt 6 was never submitted because pre-dispatch validation proved its then-pinned A11oy validator rejected the immediate attempt-5 predecessor. No repository-dispatch event, workflow run, runner, claim, job directory, prefetch, image use, training, finalization, or receipt exists. The reviewed spec and b804 DSSE envelope remain immutable evidence and are never dispatch authority."
+}
