@@ -184,8 +184,12 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `99e293ab4c2dd4282bd39a5f741b8359652792c68215c0e7100114a77bbacdf6`
   and its signer-canonical payload SHA-256 is
   `162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da`.
-  No attempt-14 queue envelope exists in this plaintext phase, so its honest
-  status is `AWAITING_ENGINE_SIGNATURE`; it is not dispatch authority.
+  Its exclusive-create b804 DSSE queue envelope now exists at
+  `queue/pending/job-2026-nemo-v3-governed-attempt-14.json`, with raw SHA-256
+  `207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82`.
+  The signature verifies under keyId `b8041281c81c4caa` and binds the same
+  canonical payload. Its honest status is `QUEUED_AWAITING_GPU_RECEIPT` with no
+  receipt; runner activation and dispatch remain a separate measured gate.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
