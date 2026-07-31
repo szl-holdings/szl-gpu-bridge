@@ -1,3 +1,4 @@
 # Engine-signed queue envelopes are selected by exact file SHA-256.
 # Preserve their reviewed bytes on Windows owner-runner checkouts.
 queue/pending/*.json text eol=lf
+queue/evidence/*.json text eol=lf

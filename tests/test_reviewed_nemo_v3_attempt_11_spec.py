@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
@@ -34,6 +35,7 @@ ATTEMPT_10_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-10-reviewed.json
 ATTEMPT_11_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-11-reviewed.json"
 ATTEMPT_10_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_10_REVIEWED_JOB_ID}.json"
 ATTEMPT_11_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_11_REVIEWED_JOB_ID}.json"
+ATTEMPT_11_EVIDENCE = ROOT / "queue" / "evidence" / f"{ATTEMPT_11_REVIEWED_JOB_ID}.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -197,7 +199,20 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
                 ROOT / "queue" / "quarantine" / f"{ATTEMPT_11_REVIEWED_JOB_ID}.json"
             ).read_text(encoding="utf-8")
         )
-        evidence = quarantine["executionEvidence"]
+        self.assertNotIn("executionEvidence", quarantine)
+        evidence_record = json.loads(ATTEMPT_11_EVIDENCE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_11_EVIDENCE.read_bytes()).hexdigest(),
+            "ab8876488cb198718b576c53db427242b85f5152628bae2c0d040ce8f82a4908",
+        )
+        self.assertEqual(
+            set(evidence_record),
+            {"kind", "v", "jobId", "executionEvidence"},
+        )
+        self.assertEqual(evidence_record["kind"], "szl-nemo-v3-execution-evidence")
+        self.assertEqual(evidence_record["v"], 1)
+        self.assertEqual(evidence_record["jobId"], ATTEMPT_11_REVIEWED_JOB_ID)
+        evidence = evidence_record["executionEvidence"]
         self.assertEqual(evidence["workflowRunId"], "30620232291")
         self.assertEqual(
             evidence["runtimeClaimSha256"],
@@ -226,6 +241,26 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             "promoted",
         ):
             self.assertFalse(evidence[field])
+
+    def test_standalone_execution_evidence_hash_fails_closed(self) -> None:
+        policy = copy.deepcopy(nemo_v3_status.quarantine_policy(self.attempt_11))
+        assert policy is not None
+        policy["execution_evidence_sha256"] = "0" * 64
+        with mock.patch.object(
+            nemo_v3_status,
+            "quarantine_policy",
+            return_value=policy,
+        ):
+            report = nemo_v3_status.evaluate(
+                root=ROOT,
+                spec_path=ATTEMPT_11_PATH,
+                receipt_loader=lambda _spec, _token: None,
+                now=datetime(2026, 7, 31, 8, 6, tzinfo=timezone.utc),
+            )
+        self.assertEqual(report["status"], "INVALID_QUARANTINE_RECORD")
+        self.assertFalse(report["terminal"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertFalse(report["quarantine"]["valid"])
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -258,6 +293,7 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-11-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-11.json",
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-11.json",
             "tests/test_reviewed_nemo_v3_attempt_11_spec.py",
             "attempt_id: attempt-11-runtime-admission-recovery",
         ):

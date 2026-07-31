@@ -127,10 +127,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
   dataset, deployment, and promotion effects are all false.
   Reviewed plaintext attempt 12 is the distinct successor at
   `jobspecs/nemo-v3-20260731-attempt-12-reviewed.json`. It preserves attempt
-  11's spec, envelope, quarantine, and signed receipt bytes, freezes the same
-  base license and science inputs, and binds corrected Bridge runtime
+  11's signed spec, envelope, and receipt bytes, freezes the same base license
+  and science inputs, and binds corrected Bridge runtime
   `d110abb8ea48c9382a70c3eead22dddf555f292b`, where the exact local tokenizer
-  artifacts are verified before Unsloth receives their snapshot path. It has no
+  artifacts are verified before Unsloth receives their snapshot path. Attempt
+  11's structured terminal evidence is preserved separately at
+  `queue/evidence/job-2026-nemo-v3-governed-attempt-11.json` so its quarantine
+  retains the exact A11oy-admitted dispatch-denial schema. It has no
   runner, dispatch, claim, receipt, or publication authority. Its one
   exclusive-create b804 envelope is at
   `queue/pending/job-2026-nemo-v3-governed-attempt-12.json`, with raw SHA-256

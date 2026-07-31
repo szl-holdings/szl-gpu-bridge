@@ -23,23 +23,5 @@
     "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
     "reviewedJobId": "job-2026-nemo-v3-governed-attempt-12"
   },
-  "reason": "Attempt 11 created exactly one owner-dispatch workflow run 30620232291, runtime claim SHA-256 f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2, and attempt claim SHA-256 3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80. Credentialless networkless execution in immutable image sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123 failed before training because the Bridge call supplied the pinned model revision but did not supply the exact offline tokenizer snapshot to Unsloth. Trusted finalization published the immutable signed BLOCKED receipt at revision 1a74ad3f5fc2682e6bbdd034a68399dee7e79525 with file SHA-256 f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3. Candidate, adapter, model-card, dataset, deployment, promotion, and all other publication effects are false. Attempt 11 remains immutable evidence and is never retry, resend, re-sign, or dispatch authority.",
-  "executionEvidence": {
-    "workflowRunId": "30620232291",
-    "workflowRunAttempt": 1,
-    "runtimeClaimSha256": "f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2",
-    "attemptClaimSha256": "3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80",
-    "receiptRevision": "1a74ad3f5fc2682e6bbdd034a68399dee7e79525",
-    "receiptFileSha256": "f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3",
-    "receiptKeyId": "167c14fbddbe97cc",
-    "receiptVerdict": "BLOCKED",
-    "receiptReason": "RuntimeError: Unsloth: The tokenizer is weirdly not loaded? Please check if there is one.",
-    "trainingStarted": false,
-    "candidateUploaded": false,
-    "adapterUploaded": false,
-    "modelCardUploaded": false,
-    "datasetUploaded": false,
-    "deployed": false,
-    "promoted": false
-  }
+  "reason": "Attempt 11 created exactly one owner-dispatch workflow run 30620232291, runtime claim SHA-256 f73c18a970d5b99ea8f567ff682eb9c8b7e1ba9f1e769b8c3f6ce4ad93765cc2, and attempt claim SHA-256 3b0caf335622a1034d5e5ce31dd81d4b66819f520805c3cfe1f10c634a7d1f80. Credentialless networkless execution in immutable image sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123 failed before training because the Bridge call supplied the pinned model revision but did not supply the exact offline tokenizer snapshot to Unsloth. Trusted finalization published the immutable signed BLOCKED receipt at revision 1a74ad3f5fc2682e6bbdd034a68399dee7e79525 with file SHA-256 f6f1c5af7c8a47c4c4a4ce35ccb9d2859cf3177c06c439bd529c901308aeb9e3. Candidate, adapter, model-card, dataset, deployment, promotion, and all other publication effects are false. Attempt 11 remains immutable evidence and is never retry, resend, re-sign, or dispatch authority."
 }

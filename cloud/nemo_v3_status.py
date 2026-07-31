@@ -253,7 +253,43 @@ def verify_quarantine(
         }
         expected_execution_evidence = policy.get("execution_evidence")
         if expected_execution_evidence is not None:
-            required.add("executionEvidence")
+            evidence_relative = policy.get("execution_evidence_path")
+            evidence_sha256 = policy.get("execution_evidence_sha256")
+            if (
+                not isinstance(evidence_relative, str)
+                or not evidence_relative
+                or not isinstance(evidence_sha256, str)
+                or len(evidence_sha256) != 64
+            ):
+                raise StatusError(
+                    "execution evidence policy is missing an exact path or SHA-256"
+                )
+            relative_path = pathlib.PurePosixPath(evidence_relative)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                raise StatusError("execution evidence path escapes the repository")
+            evidence_path = root.joinpath(*relative_path.parts)
+            if not evidence_path.is_file() or evidence_path.is_symlink():
+                raise StatusError(
+                    "required immutable execution evidence is missing or unsafe"
+                )
+            evidence_path.resolve(strict=True).relative_to(root.resolve(strict=True))
+            evidence_bytes = evidence_path.read_bytes()
+            evidence_record = json.loads(evidence_bytes)
+            if (
+                hashlib.sha256(evidence_bytes).hexdigest() != evidence_sha256
+                or not isinstance(evidence_record, dict)
+                or set(evidence_record)
+                != {"kind", "v", "jobId", "executionEvidence"}
+                or evidence_record.get("kind")
+                != "szl-nemo-v3-execution-evidence"
+                or evidence_record.get("v") != 1
+                or evidence_record.get("jobId") != spec["jobId"]
+                or evidence_record.get("executionEvidence")
+                != expected_execution_evidence
+            ):
+                raise StatusError(
+                    "standalone execution evidence does not bind immutable truth"
+                )
         statuses = tuple(policy["statuses"])
         expected_queue_path = f"queue/pending/{spec['jobId']}.json"
         queue_file = root / expected_queue_path
@@ -281,7 +317,6 @@ def verify_quarantine(
             or record.get("preserveEnvelope") is not True
             or record.get("dispatchAuthorized") is not False
             or replacement != expected_replacement
-            or record.get("executionEvidence") != expected_execution_evidence
             or not isinstance(record.get("reason"), str)
             or not record["reason"].strip()
         ):

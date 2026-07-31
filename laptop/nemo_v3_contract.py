@@ -301,6 +301,12 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "engine_key_id": COORDINATED_ENGINE_KEY_ID,
         "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_12_REPLACEMENT,
+        "execution_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-11.json"
+        ),
+        "execution_evidence_sha256": (
+            "ab8876488cb198718b576c53db427242b85f5152628bae2c0d040ce8f82a4908"
+        ),
         "execution_evidence": {
             "workflowRunId": "30620232291",
             "workflowRunAttempt": 1,
