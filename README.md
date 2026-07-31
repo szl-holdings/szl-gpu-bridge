@@ -110,9 +110,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   signed job/source/workflow/execution identity. Reviewed plaintext attempt 11
   now binds protected A11oy source `434d653eaf100b9b3e5484687db1e6e6ca7116c9`,
   workflow blob `7cf0c877399471a084d3e70638ef50ec28d7f646`, and protected
-  Bridge runtime `f07263bc37ef6e90b313ba5576ef425d845cf287`. It has no
-  queue envelope, runner, dispatch, claim, receipt, or publication authority;
-  only a separate protected b804 signing stage may advance it.
+  Bridge runtime `f07263bc37ef6e90b313ba5576ef425d845cf287`. Its one
+  exclusive-create b804 envelope is at
+  `queue/pending/job-2026-nemo-v3-governed-attempt-11.json`, with raw SHA-256
+  `7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918`
+  and signer-canonical payload SHA-256
+  `85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994`.
+  Runner activation and dispatch remain locked behind a separate measured GPU
+  gate; no claim, receipt, candidate, model card, dataset, or publication exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

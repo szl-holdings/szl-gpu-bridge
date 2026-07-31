@@ -164,8 +164,12 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b",
         )
 
-    def test_plaintext_status_awaits_separate_engine_signature(self) -> None:
-        self.assertFalse(ATTEMPT_11_QUEUE.exists())
+    def test_signed_status_awaits_separate_gpu_receipt(self) -> None:
+        self.assertTrue(ATTEMPT_11_QUEUE.is_file())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_11_QUEUE.read_bytes()).hexdigest(),
+            "7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918",
+        )
         self.assertEqual(
             hashlib.sha256(canonical_json(self.attempt_11).encode("utf-8")).hexdigest(),
             "ffe92c2833d37f3c5d58805c397c2ed11010293da1354102df825d8d94eab98a",
@@ -176,9 +180,15 @@ class ReviewedNemoV3Attempt11SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 8, 6, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(
+            report["queue"]["payload_sha256"],
+            "85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994",
+        )
+        self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
         self.assertFalse(report["receipt"]["present"])
         self.assertFalse(report["reviewed_spec"]["candidate_publication_enabled"])
 
