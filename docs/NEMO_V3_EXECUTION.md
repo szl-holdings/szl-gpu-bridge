@@ -438,7 +438,7 @@ never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
 revision. Candidate, model-card, dataset, deployment, promotion, and all
 non-receipt uploads remain disabled.
 
-## 12. Reviewed attempt 7 plaintext
+## 12. Reviewed attempt 7 and signed envelope
 
 The fresh validator-lineage recovery plaintext is:
 
@@ -459,6 +459,17 @@ exact attempt-6 envelope and payload hashes, envelope-publication revision
 event, workflow-run, runner, claim, image, training, holdout, candidate,
 receipt-intent, and terminal-ledger effects.
 
-This plaintext is not executable. No attempt-7 queue envelope exists in this
-review stage, so status is `AWAITING_ENGINE_SIGNATURE`. Candidate, model-card,
-dataset, deployment, promotion, and all non-receipt uploads remain disabled.
+The separately protected, exclusive-create queue envelope now exists at:
+
+```text
+queue/pending/job-2026-nemo-v3-governed-attempt-7.json
+```
+
+Its raw SHA-256 is
+`8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96`.
+It verifies under active key `b8041281c81c4caa` and binds canonical payload
+SHA-256
+`0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7`.
+Status is `QUEUED_AWAITING_GPU_RECEIPT`; no attempt-7 runner, claim, training,
+candidate, or receipt exists. Candidate, model-card, dataset, deployment,
+promotion, and all non-receipt uploads remain disabled.
