@@ -1,0 +1,26 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-12",
+  "recordedAt": "2026-07-31T11:19:07Z",
+  "status": [
+    "RUNTIME_JOB_BINDING_REJECTED",
+    "PRE_CLAIM",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-12.json",
+  "queueFileSha256": "a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f",
+  "signedPayloadSha256": "a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-13"
+  },
+  "reason": "Attempt 12 consumed its single authorized repository_dispatch in A11oy run 30626533443. Exact source, nested transport, b804 envelope, protected history, and immutable image gates passed. Authenticated prefetch then failed before claim because signed execution runtime d110abb8ea48c9382a70c3eead22dddf555f292b contained the attempt-12 identity but its coordinated reviewed-job binding table ended at attempt 11. No attempt-12 claim, job directory, prefetch receipt, training, receipt intent, receipt upload, candidate, adapter, model-card, dataset, deployment, promotion, or other publication was created. The ephemeral runner deregistered and temporary host preferences were restored. Attempt 12 is immutable one-shot evidence and is never retry, resend, re-sign, or dispatch authority."
+}
