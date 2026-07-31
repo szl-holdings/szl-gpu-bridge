@@ -234,10 +234,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
         )
         record = json.loads(
             (
-                ROOT
-                / "queue"
-                / "quarantine"
-                / f"{ATTEMPT_5_REVIEWED_JOB_ID}.json"
+                ROOT / "queue" / "quarantine" / f"{ATTEMPT_5_REVIEWED_JOB_ID}.json"
             ).read_text(encoding="utf-8")
         )
         self.assertEqual(
