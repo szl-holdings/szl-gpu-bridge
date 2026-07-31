@@ -53,7 +53,6 @@ def load_verified_job(
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         raise ValueError("signed job is not a Nemo v3 payload")
     validate_nemo_v3_spec(spec)
-    require_nemo_v3_dispatchable(spec)
     if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
         raise ValueError("Nemo v3 engine authorization key mismatch")
     return spec, exact_payload
@@ -259,6 +258,16 @@ def validate_attempt_claim(
     return claim
 
 
+def require_claim_bound_dispatchable(
+    spec: dict[str, Any], attempt_claim: dict[str, Any]
+) -> None:
+    """Bind finalization to the execution revision proven by the durable claim."""
+    require_nemo_v3_dispatchable(
+        spec,
+        expected_execution_bridge_revision=attempt_claim["executionBridgeRevision"],
+    )
+
+
 def claim_container_image(claim: dict[str, Any]) -> dict[str, Any]:
     """Return the exact trusted image identity that a receipt must reproduce."""
     result: dict[str, Any] = {
@@ -333,6 +342,7 @@ def main() -> int:
 
     not_before = parse_timestamp(args.not_before)
     attempt_claim = validate_attempt_claim(args.claim, args.spec, spec, not_before)
+    require_claim_bound_dispatchable(spec, attempt_claim)
     receipt, state, requested_name = validate_intent(
         args.intent,
         spec,

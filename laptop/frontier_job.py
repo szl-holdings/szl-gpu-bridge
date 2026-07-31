@@ -229,26 +229,26 @@ def _license_values(value: Any) -> set[str]:
     return set()
 
 
-def _verify_hub_license(
+def _verify_card_license(
     *,
+    readme: str | pathlib.Path,
     repo_id: str,
     revision: str,
     expected: str,
     repo_type: str,
 ) -> dict[str, Any]:
-    """Load card metadata from the exact signed revision and match its license."""
-    from huggingface_hub import DatasetCard, ModelCard, hf_hub_download
+    """Validate exact local card bytes, including custom-license metadata."""
+    from huggingface_hub import DatasetCard, ModelCard
 
-    readme = hf_hub_download(
-        repo_id=repo_id,
-        filename="README.md",
-        repo_type=None if repo_type == "model" else repo_type,
-        revision=revision,
-    )
     card_class = ModelCard if repo_type == "model" else DatasetCard
-    card = card_class.load(readme)
+    card = card_class.load(str(readme))
     metadata = card.data.to_dict()
-    observed = _license_values(metadata.get("license"))
+    declared = _license_values(metadata.get("license"))
+    custom_names = _license_values(metadata.get("license_name"))
+    if declared == {"other"} and custom_names:
+        observed = custom_names
+    else:
+        observed = declared
     expected_normalized = expected.strip().lower()
     if not observed:
         raise RuntimeError(
@@ -266,6 +266,31 @@ def _verify_hub_license(
         "observed": sorted(observed),
         "readmeSha256": sha256_file(readme),
     }
+
+
+def _verify_hub_license(
+    *,
+    repo_id: str,
+    revision: str,
+    expected: str,
+    repo_type: str,
+) -> dict[str, Any]:
+    """Load card metadata from the exact signed revision and match its license."""
+    from huggingface_hub import hf_hub_download
+
+    readme = hf_hub_download(
+        repo_id=repo_id,
+        filename="README.md",
+        repo_type=None if repo_type == "model" else repo_type,
+        revision=revision,
+    )
+    return _verify_card_license(
+        readme=readme,
+        repo_id=repo_id,
+        revision=revision,
+        expected=expected,
+        repo_type=repo_type,
+    )
 
 
 def _validate_dataset_rows(dataset: Any) -> None:

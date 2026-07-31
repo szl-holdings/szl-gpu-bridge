@@ -5,14 +5,17 @@ import json
 import pathlib
 import sys
 import tempfile
+import types
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "laptop"))
 
 import finalize_nemo_v3_receipt  # noqa: E402
+import frontier_job  # noqa: E402
 import prefetch_nemo_v3  # noqa: E402
 
 
@@ -39,6 +42,61 @@ def valid_attempt_claim(
 
 
 class NemoCredentialSeparationTests(unittest.TestCase):
+    def test_custom_model_license_is_bound_to_exact_local_card_bytes(self) -> None:
+        card_bytes = (
+            b"---\n"
+            b"license: other\n"
+            b"license_name: nvidia-nemotron-open-model-license\n"
+            b"license_link: https://example.invalid/license\n"
+            b"---\n\n"
+            b"# Exact pinned model card\n"
+        )
+        hub = types.ModuleType("huggingface_hub")
+
+        class FakeCard:
+            @classmethod
+            def load(cls, _path: str) -> mock.Mock:
+                return mock.Mock(
+                    data=mock.Mock(
+                        to_dict=lambda: {
+                            "license": "other",
+                            "license_name": "nvidia-nemotron-open-model-license",
+                        }
+                    )
+                )
+
+        hub.DatasetCard = FakeCard
+        hub.ModelCard = FakeCard
+        with tempfile.TemporaryDirectory() as temporary:
+            readme = pathlib.Path(temporary) / "README.md"
+            readme.write_bytes(card_bytes)
+            with mock.patch.dict(sys.modules, {"huggingface_hub": hub}):
+                evidence = frontier_job._verify_card_license(
+                    readme=readme,
+                    repo_id="nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+                    revision="a" * 40,
+                    expected="nvidia-nemotron-open-model-license",
+                    repo_type="model",
+                )
+
+            self.assertEqual(
+                evidence["readmeSha256"],
+                hashlib.sha256(card_bytes).hexdigest(),
+            )
+            self.assertEqual(
+                evidence["observed"],
+                ["nvidia-nemotron-open-model-license"],
+            )
+            with self.assertRaisesRegex(RuntimeError, "does not match"):
+                with mock.patch.dict(sys.modules, {"huggingface_hub": hub}):
+                    frontier_job._verify_card_license(
+                        readme=readme,
+                        repo_id="nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+                        revision="a" * 40,
+                        expected="nvidia-open-model-license",
+                        repo_type="model",
+                    )
+
     def test_prefetch_reuses_only_byte_verified_input(self) -> None:
         content = b'{"record_id":"train:1"}\n'
         descriptor = {
@@ -61,6 +119,108 @@ class NemoCredentialSeparationTests(unittest.TestCase):
 
         self.assertEqual(evidence["sha256"], descriptor["sha256"])
         self.assertEqual(evidence["bytes"], descriptor["bytes"])
+
+    def test_prefetch_receipt_records_exact_custom_model_license(self) -> None:
+        revision = "a" * 40
+        card_bytes = (
+            b"---\n"
+            b"license: other\n"
+            b"license_name: nvidia-nemotron-open-model-license\n"
+            b"---\n"
+        )
+        descriptor = {"path": "input.json", "bytes": 1, "sha256": "b" * 64}
+        spec = {
+            "jobId": "job-test",
+            "expiresAt": "2099-01-01T00:00:00Z",
+            "base": {
+                "repoId": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+                "revision": revision,
+                "licenseId": "nvidia-nemotron-open-model-license",
+            },
+            "dataset": {
+                "train": descriptor,
+                "preregistration": descriptor,
+                "holdouts": [],
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            snapshot = root / "snapshot"
+            snapshot.mkdir()
+            (snapshot / "README.md").write_bytes(card_bytes)
+            receipt = root / "prefetch.json"
+            hub = types.ModuleType("huggingface_hub")
+
+            class FakeCard:
+                @classmethod
+                def load(cls, _path: str) -> mock.Mock:
+                    return mock.Mock(
+                        data=mock.Mock(
+                            to_dict=lambda: {
+                                "license": "other",
+                                "license_name": ("nvidia-nemotron-open-model-license"),
+                            }
+                        )
+                    )
+
+            class FakeApi:
+                def __init__(self, *, token: str) -> None:
+                    self.token = token
+
+                def model_info(self, _repo_id: str, *, revision: str) -> mock.Mock:
+                    return mock.Mock(sha=revision)
+
+            hub.DatasetCard = FakeCard
+            hub.ModelCard = FakeCard
+            hub.HfApi = FakeApi
+            hub.snapshot_download = lambda **_kwargs: str(snapshot)
+            with (
+                mock.patch.dict("os.environ", {"HF_TOKEN": "test-only"}, clear=False),
+                mock.patch.dict(sys.modules, {"huggingface_hub": hub}),
+                mock.patch.object(
+                    prefetch_nemo_v3,
+                    "load_verified_job",
+                    return_value=(spec, b"signed-payload"),
+                ),
+                mock.patch.object(
+                    prefetch_nemo_v3,
+                    "fetch_descriptor",
+                    return_value=descriptor,
+                ),
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "prefetch_nemo_v3.py",
+                        "--spec",
+                        str(root / "envelope.json"),
+                        "--engine-key",
+                        str(root / "engine.json"),
+                        "--hf-cache",
+                        str(root / "hub"),
+                        "--input-cache",
+                        str(root / "inputs"),
+                        "--receipt",
+                        str(receipt),
+                    ],
+                ),
+            ):
+                self.assertEqual(prefetch_nemo_v3.main(), 0)
+
+            evidence = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(
+                evidence["model"]["license"]["expected"],
+                "nvidia-nemotron-open-model-license",
+            )
+            self.assertEqual(
+                evidence["model"]["license"]["observed"],
+                ["nvidia-nemotron-open-model-license"],
+            )
+            self.assertEqual(
+                evidence["model"]["license"]["readmeSha256"],
+                hashlib.sha256(card_bytes).hexdigest(),
+            )
+            self.assertNotIn("test-only", receipt.read_text(encoding="utf-8"))
 
     def test_trusted_finalizer_accepts_fresh_blocked_intent(self) -> None:
         now = datetime.now(timezone.utc)
@@ -166,6 +326,22 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                     spec,
                     now,
                 )
+
+    def test_trusted_finalizer_rechecks_dispatchability_against_claim_revision(
+        self,
+    ) -> None:
+        spec = {"jobId": "job-test"}
+        claim = {"executionBridgeRevision": "a" * 40}
+        with mock.patch.object(
+            finalize_nemo_v3_receipt,
+            "require_nemo_v3_dispatchable",
+        ) as require:
+            finalize_nemo_v3_receipt.require_claim_bound_dispatchable(spec, claim)
+
+        require.assert_called_once_with(
+            spec,
+            expected_execution_bridge_revision="a" * 40,
+        )
 
     def test_attempt_claim_rejects_unapproved_registry_digest(self) -> None:
         now = datetime.now(timezone.utc)

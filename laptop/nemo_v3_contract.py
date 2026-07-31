@@ -67,6 +67,7 @@ RECOVERY_A11OY_RELOCK_RUN_URL = (
 )
 ATTEMPT_9_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-9"
 ATTEMPT_9_CORRECTED_BRIDGE_REVISION = "eeabd1b52380d2b24439e53d5e4ad38f8114556c"
+ATTEMPT_10_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-10"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -108,6 +109,13 @@ _ATTEMPT_9_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_9_REVIEWED_JOB_ID,
+}
+_ATTEMPT_10_REPLACEMENT = {
+    "sourceRevision": RECOVERY_A11OY_SOURCE_REVISION,
+    "workflowBlob": RECOVERY_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_10_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -219,6 +227,23 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "engine_key_id": COORDINATED_ENGINE_KEY_ID,
         "source_revision": SUCCESSOR_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_9_REPLACEMENT,
+    },
+    ATTEMPT_9_REVIEWED_JOB_ID: {
+        "statuses": (
+            "ISOLATED_HF_CACHE_ROOT_PERMISSION_BLOCKED",
+            "TRUSTED_FINALIZER_RUNTIME_BINDING_REJECTED",
+            "POST_CLAIM",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49"
+        ),
+        "payload_sha256": (
+            "f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": RECOVERY_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_10_REPLACEMENT,
     },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)

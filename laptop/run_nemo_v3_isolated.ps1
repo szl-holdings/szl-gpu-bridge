@@ -303,10 +303,18 @@ $Prefetch = Get-Content -LiteralPath $PrefetchReceipt -Raw | ConvertFrom-Json
 if (
   $Prefetch.jobId -ne $JobId -or
   $Prefetch.signedJobPayloadSha256 -ne $SignedPayloadSha256 -or
+  $Prefetch.model.repoId -ne $Prefetch.model.license.repoId -or
+  $Prefetch.model.revision -ne $Prefetch.model.license.revision -or
+  $Prefetch.model.license.repoType -ne "model" -or
+  $Prefetch.model.license.expected -notin @($Prefetch.model.license.observed) -or
+  [string]$Prefetch.model.license.readmeSha256 -notmatch '^[0-9a-f]{64}$' -or
   $Prefetch.remoteCodeExecuted -ne $false -or
   $Prefetch.credentialPersisted -ne $false
 ) {
-  throw "prefetch receipt does not preserve the no-code/no-credential boundary"
+  throw (
+    "prefetch receipt does not preserve the exact-license/no-code/" +
+    "no-credential boundary"
+  )
 }
 
 $SandboxSource = Join-Path $BridgeRoot "sandbox-source-$JobId"
@@ -464,7 +472,7 @@ $Arguments = @(
   "--mount", "type=bind,src=$JobRoot,dst=/bridge/jobs/$JobId",
   "--mount", "type=bind,src=$JobSpec,dst=/job/spec.json,readonly",
   "--mount", "type=bind,src=$InputCache,dst=/inputs,readonly",
-  "--mount", "type=bind,src=$HfCache,dst=/root/.cache/huggingface/hub,readonly",
+  "--mount", "type=bind,src=$HfCache,dst=/hf-cache,readonly",
   "--mount", "type=bind,src=$SandboxWork,dst=/workspace",
   "--workdir", "/workspace",
   "--tmpfs", "/tmp:rw,noexec,nosuid,size=4294967296",
@@ -478,10 +486,11 @@ $Arguments = @(
   "--env", "SZL_EXECUTION_BRIDGE_REVISION=$BridgeRevision",
   "--env", "SZL_LAUNCHER_SHA256=$ApprovedLauncherSha256",
   "--env", "HF_HUB_OFFLINE=1",
+  "--env", "HF_HUB_DISABLE_IMPLICIT_TOKEN=1",
   "--env", "TRANSFORMERS_OFFLINE=1",
   "--env", "HF_DATASETS_OFFLINE=1",
-  "--env", "HF_HOME=/root/.cache/huggingface",
-  "--env", "HF_HUB_CACHE=/root/.cache/huggingface/hub",
+  "--env", "HF_HOME=/tmp/huggingface",
+  "--env", "HF_HUB_CACHE=/hf-cache",
   "--env", "XDG_CACHE_HOME=/workspace/cache",
   "--entrypoint", "python",
   $Image,
