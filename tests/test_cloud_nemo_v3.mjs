@@ -677,6 +677,38 @@ test('Nemo v3 generic binding admits attempt 16 only from exact attempt 15 quara
   assert.throws(() => validateNemoV3Spec(pathAnomaly), /exact governed attempt ID/);
 });
 
+test('Nemo v3 reviewed attempt 16 binds the protected generic runtime', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-16-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+  const binding = resolveCoordinatedJobBinding(reviewed);
+  assert.equal(binding.runtimeBound, true);
+  assert.equal(binding.successorGeneration, 16);
+  assert.equal(binding.predecessorJobId, 'job-2026-nemo-v3-governed-attempt-15');
+  assert.equal(
+    reviewed.authorization.correctedBridgeRevision,
+    'b99f37260bcabf7f5c98cddbc5988a3ba87b766e',
+  );
+  assert.equal(
+    createHash('sha256').update(Buffer.from(canonicalize(reviewed), 'utf8')).digest('hex'),
+    '0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8',
+  );
+
+  for (const mutate of [
+    (value) => { value.authorization.correctedBridgeRevision = 'main'; },
+    (value) => { value.lineage.predecessorExecutionBridgeRevision = '0'.repeat(40); },
+    (value) => { value.lineage.claimCreated = true; },
+  ]) {
+    const drifted = structuredClone(reviewed);
+    mutate(drifted);
+    assert.throws(() => validateNemoV3Spec(drifted));
+  }
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');

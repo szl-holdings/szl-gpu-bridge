@@ -197,7 +197,7 @@
             "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
             "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025", "https://github.com/szl-holdings/a11oy/actions/runs/30601635066", "https://github.com/szl-holdings/a11oy/actions/runs/30607399378", "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"]},
             "cryptographicContinuityClaimed": {"const": false},
-            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287", "d110abb8ea48c9382a70c3eead22dddf555f292b", "2783b3518abcec9f38d3f6504c06e305a4723801", "e150711a6ba6a0c29109a00da7fc82af2967f588", "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63"]}
+            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287", "d110abb8ea48c9382a70c3eead22dddf555f292b", "2783b3518abcec9f38d3f6504c06e305a4723801", "e150711a6ba6a0c29109a00da7fc82af2967f588", "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63", "b99f37260bcabf7f5c98cddbc5988a3ba87b766e"]}
           }
         }
       ]
@@ -737,6 +737,57 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {"jobId": {"const": "job-2026-nemo-v3-governed-attempt-16"}},
+        "required": ["jobId"]
+      },
+      "then": {
+        "required": ["ownerDispatch", "authorization", "lineage"],
+        "properties": {
+          "source": {"properties": {"revision": {"const": "434d653eaf100b9b3e5484687db1e6e6ca7116c9"}}},
+          "base": {"properties": {"licenseId": {"const": "nvidia-nemotron-open-model-license"}}},
+          "ownerDispatch": {
+            "properties": {
+              "workflowBlob": {"const": "7cf0c877399471a084d3e70638ef50ec28d7f646"},
+              "workflowVersion": {"const": "nemo-v3-owner-dispatch.v4"}
+            }
+          },
+          "authorization": {
+            "properties": {
+              "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"},
+              "correctedBridgeRevision": {"const": "b99f37260bcabf7f5c98cddbc5988a3ba87b766e"}
+            }
+          },
+          "lineage": {
+            "allOf": [
+              {"$ref": "#/$defs/transportFailureLineage"},
+              {
+                "properties": {
+                  "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-15"},
+                  "predecessorEnvelopeSha256": {"const": "93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7"},
+                  "predecessorPayloadSha256": {"const": "9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873"},
+                  "predecessorEnvelopeRevision": {"const": "7f42bad2cb7c762f8eb771922a0ba6e94c96e908"},
+                  "predecessorExecutionBridgeRevision": {"const": "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63"},
+                  "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30641766033"},
+                  "failurePhase": {"const": "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING"},
+                  "successorGeneration": {"const": 16},
+                  "eventCreated": {"const": true},
+                  "workflowRunCreated": {"const": true},
+                  "claimCreated": {"const": false},
+                  "trainingStarted": {"const": false},
+                  "modelRepositoryCodeImported": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "candidateProduced": {"const": false},
+                  "receiptIntentProduced": {"const": false},
+                  "terminalLedgerWritten": {"const": false}
+                }
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -822,7 +873,7 @@
         "predecessorPayloadSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "predecessorEnvelopeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
         "predecessorExecutionBridgeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "transportEvidenceUrl": {"enum": ["https://github.com/szl-holdings/szl-gpu-bridge/issues/32", "https://github.com/szl-holdings/a11oy/actions/runs/30591897165", "https://github.com/szl-holdings/szl-gpu-bridge/issues/41", "https://github.com/szl-holdings/a11oy/actions/runs/30605081533", "https://github.com/szl-holdings/a11oy/actions/runs/30606664591", "https://github.com/szl-holdings/a11oy/actions/runs/30609977388", "https://github.com/szl-holdings/a11oy/actions/runs/30612658302", "https://github.com/szl-holdings/a11oy/actions/runs/30626533443"]},
+        "transportEvidenceUrl": {"enum": ["https://github.com/szl-holdings/szl-gpu-bridge/issues/32", "https://github.com/szl-holdings/a11oy/actions/runs/30591897165", "https://github.com/szl-holdings/szl-gpu-bridge/issues/41", "https://github.com/szl-holdings/a11oy/actions/runs/30605081533", "https://github.com/szl-holdings/a11oy/actions/runs/30606664591", "https://github.com/szl-holdings/a11oy/actions/runs/30609977388", "https://github.com/szl-holdings/a11oy/actions/runs/30612658302", "https://github.com/szl-holdings/a11oy/actions/runs/30626533443", "https://github.com/szl-holdings/a11oy/actions/runs/30641766033"]},
         "failurePhase": {"enum": ["PRE_EVENT_TRANSPORT_VALIDATION", "PRE_ADMISSION_HOST_EXECUTION_POLICY", "PRE_DISPATCH_VALIDATOR_REJECTION", "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION", "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT", "POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING", "PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION", "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING"]},
         "successorGeneration": {"type": "integer", "minimum": 5},
         "automaticRetry": {"const": false},

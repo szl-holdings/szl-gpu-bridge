@@ -829,7 +829,49 @@ SHA-256 is
 `93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7`;
 its signature verifies under keyId `b8041281c81c4caa` and its decoded payload
 matches the reviewed canonical payload byte-for-byte. The honest status is now
-`QUEUED_AWAITING_GPU_RECEIPT`; no receipt exists, and queue publication alone
-does not authorize runner activation or dispatch without the separate measured
-execution gate. Attempts 13 and 14 remain immutable and were not modified or
-re-signed.
+`RUNTIME_JOB_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`. Its only dispatch
+created A11oy run `30641766033`, which authenticated the envelope and exact
+execution checkout but stopped before claim because runtime `60b9894e` knew the
+attempt-15 identity without its reviewed binding. The preserved evidence shows
+no claim, job directory, prefetch receipt, training, receipt intent, receipt
+upload, candidate, adapter, model-card, dataset, deployment, or promotion.
+Attempt 15 is immutable and is never retry, resend, or re-sign authority.
+
+## Reviewed attempt 16 generic runtime-binding recovery
+
+`jobspecs/nemo-v3-20260731-attempt-16-reviewed.json` is the distinct plaintext
+successor to immutable attempt 15. It preserves the exact protected A11oy
+source `434d653eaf100b9b3e5484687db1e6e6ca7116c9`, workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, immutable training image, b804
+trust root, local model snapshot, license, science inputs, receipt-only
+destination, and all disabled model-publication flags.
+
+Its execution authorization binds protected Bridge runtime
+`b99f37260bcabf7f5c98cddbc5988a3ba87b766e`. That runtime replaces the
+incomplete per-attempt binding table for new runtime recoveries with a generic,
+fail-closed resolver: the immediately preceding attempt must have an exact
+protected `NEVER_DISPATCH` quarantine, its replacement must name only the next
+generation and exact reviewed job, and its source/workflow/version/relock/key/
+SPKI and zero-effect evidence must match. The signed execution revision remains
+mandatory through prefetch, claim creation, isolated runner environment, and
+trusted receipt finalization.
+
+Attempt 16 records attempt 15's exact lineage: envelope SHA-256
+`93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7`,
+canonical payload SHA-256
+`9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873`,
+envelope revision `7f42bad2cb7c762f8eb771922a0ba6e94c96e908`, execution revision
+`60b9894efe9e0e782999aaa4ee5b0d668e7a9b63`, A11oy run `30641766033`, and
+`PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING`. Every effect boundary is
+false except event/run creation, and the science inputs are reused unchanged.
+
+The reviewed attempt-16 JSON has raw SHA-256
+`1daa8ea3a30a1d497f60431f9f4a33a9edd5d286236f3e8bf44240ef8630c5da`;
+its signer-canonical payload SHA-256 is
+`0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8`.
+There is deliberately no
+`queue/pending/job-2026-nemo-v3-governed-attempt-16.json` in this phase.
+Therefore its status is `AWAITING_ENGINE_SIGNATURE`, not queued, executable, or
+dispatch authority. Only a later separate exclusive-create b804 signing and
+protected publication may establish queue authority; it may not modify or
+re-sign attempt 15.

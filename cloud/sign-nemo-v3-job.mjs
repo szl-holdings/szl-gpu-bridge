@@ -1026,8 +1026,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== ATTEMPT_15_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${ATTEMPT_15_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_16_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_16_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');

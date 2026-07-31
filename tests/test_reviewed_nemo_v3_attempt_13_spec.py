@@ -384,7 +384,7 @@ class ReviewedNemoV3Attempt13SpecTests(unittest.TestCase):
         ):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIn(
-            "signer is locked to ${ATTEMPT_15_REVIEWED_JOB_ID}",
+            "signer is locked to ${ATTEMPT_16_REVIEWED_JOB_ID}",
             SIGNER_SOURCE,
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-12',", SIGNER_SOURCE)

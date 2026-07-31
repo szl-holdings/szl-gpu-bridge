@@ -209,8 +209,22 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `queue/pending/job-2026-nemo-v3-governed-attempt-15.json`, with raw SHA-256
   `93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7`.
   The signature verifies under keyId `b8041281c81c4caa` and binds the same
-  canonical payload. Its honest status is `QUEUED_AWAITING_GPU_RECEIPT`; runner
-  admission and dispatch remain a separate measured gate.
+  canonical payload. Its single dispatch created A11oy run `30641766033`,
+  which stopped before claim because runtime `60b9894e` did not contain the
+  reviewed attempt-15 binding. Attempt 15 is now
+  `RUNTIME_JOB_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`; claim, job,
+  prefetch receipt, training, receipt, and every publication effect are absent.
+  Reviewed plaintext attempt 16 is at
+  `jobspecs/nemo-v3-20260731-attempt-16-reviewed.json`. It binds protected
+  generic runtime `b99f37260bcabf7f5c98cddbc5988a3ba87b766e`, derives authority
+  from the exact attempt-15 quarantine/evidence boundary, and preserves the
+  immutable execution revision through prefetch, claim, runner, and finalizer.
+  Its raw JSON SHA-256 is
+  `1daa8ea3a30a1d497f60431f9f4a33a9edd5d286236f3e8bf44240ef8630c5da`
+  and its signer-canonical payload SHA-256 is
+  `0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8`.
+  No attempt-16 queue envelope exists in this plaintext phase; its honest
+  status is `AWAITING_ENGINE_SIGNATURE`, not executable or dispatch authority.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
