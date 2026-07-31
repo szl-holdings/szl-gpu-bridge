@@ -86,6 +86,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_12_spec.py
       - tests/test_reviewed_nemo_v3_attempt_13_spec.py
       - tests/test_reviewed_nemo_v3_attempt_14_spec.py
+      - tests/test_nemo_v3_conversation_labels.py
       - tests/test_nemo_v3_meta_tensor_compat.py
       - tests/test_nemo_v3_sftconfig_compat.py
       - tests/test_nemo_v3_status.py
@@ -256,6 +257,7 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_12_spec.py \
             tests/test_reviewed_nemo_v3_attempt_13_spec.py \
             tests/test_reviewed_nemo_v3_attempt_14_spec.py \
+            tests/test_nemo_v3_conversation_labels.py \
             tests/test_nemo_v3_meta_tensor_compat.py \
             tests/test_nemo_v3_sftconfig_compat.py \
             tests/test_engine_keyring.py \

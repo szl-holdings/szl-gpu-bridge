@@ -601,6 +601,79 @@ def _materialize_nemo_lm_head_for_trainer(
         raise RuntimeError("materialized lm_head metadata changed")
 
 
+def _prepare_nemo_assistant_labels(
+    dataset: Any, tokenizer: Any, *, max_length: int
+) -> Any:
+    if (
+        not isinstance(max_length, int)
+        or isinstance(max_length, bool)
+        or max_length < 1
+    ):
+        raise RuntimeError("assistant-label maximum length is invalid")
+    column_names = getattr(dataset, "column_names", None)
+    if not isinstance(column_names, list) or "messages" not in column_names:
+        raise RuntimeError("assistant-label dataset has no messages column")
+
+    def encode(example: dict[str, Any]) -> dict[str, list[int]]:
+        messages = example.get("messages")
+        if not isinstance(messages, list) or len(messages) != 3:
+            raise RuntimeError("assistant-label row must have exactly three messages")
+        roles = [
+            message.get("role") if isinstance(message, dict) else None
+            for message in messages
+        ]
+        if roles != ["system", "user", "assistant"]:
+            raise RuntimeError("assistant-label row must be system, user, assistant")
+
+        context_ids = tokenizer.apply_chat_template(
+            messages[:-1], tokenize=True, add_generation_prompt=False
+        )
+        full_ids = tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=False
+        )
+        for name, values in (("context", context_ids), ("full", full_ids)):
+            if (
+                not isinstance(values, list)
+                or not values
+                or any(not isinstance(value, int) for value in values)
+            ):
+                raise RuntimeError(
+                    f"assistant-label {name} tokenization is not a flat integer list"
+                )
+        if len(full_ids) > max_length:
+            raise RuntimeError(
+                f"assistant-label row exceeds signed maximum length: {len(full_ids)}"
+            )
+        if len(context_ids) >= len(full_ids):
+            raise RuntimeError("assistant-label row has no supervised assistant tokens")
+        if full_ids[: len(context_ids)] != context_ids:
+            raise RuntimeError(
+                "assistant-label context is not an exact prefix of the full row"
+            )
+
+        labels = [-100] * len(context_ids) + full_ids[len(context_ids) :]
+        if len(labels) != len(full_ids) or not any(value != -100 for value in labels):
+            raise RuntimeError("assistant-label mask has no supervised tokens")
+        return {
+            "attention_mask": [1] * len(full_ids),
+            "input_ids": full_ids,
+            "labels": labels,
+        }
+
+    prepared = dataset.map(
+        encode,
+        batched=False,
+        desc="Apply exact assistant-only labels",
+    )
+    prepared_columns = getattr(prepared, "column_names", None)
+    required_columns = {"attention_mask", "input_ids", "labels", "messages"}
+    if not isinstance(prepared_columns, list) or not required_columns.issubset(
+        prepared_columns
+    ):
+        raise RuntimeError("assistant-label dataset preparation is incomplete")
+    return prepared
+
+
 def _complete_terminal_evaluation_failure(
     spec: dict[str, Any],
     exact_payload: bytes,
@@ -757,7 +830,11 @@ def main(spec_path: str) -> int:
         _require_nemo_model_materialization(
             model, recipe["targetModules"], phase="after adapter construction"
         )
-        full_train = Dataset.from_list(train_rows)
+        full_train = _prepare_nemo_assistant_labels(
+            Dataset.from_list(train_rows),
+            tokenizer,
+            max_length=recipe["maxSeqLength"],
+        )
         split = full_train.train_test_split(
             test_size=min(0.15, max(1 / len(full_train), 0.05)), seed=recipe["seed"]
         )
