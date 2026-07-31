@@ -437,3 +437,28 @@ never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
 `b8041281c81c4caa`, and a separately reviewed protected Bridge runtime
 revision. Candidate, model-card, dataset, deployment, promotion, and all
 non-receipt uploads remain disabled.
+
+## 12. Reviewed attempt 7 plaintext
+
+The fresh validator-lineage recovery plaintext is:
+
+```text
+jobspecs/nemo-v3-20260731-attempt-7-reviewed.json
+```
+
+It binds terminal protected A11oy main
+`2b190b3806a5d2b3faa58f34c2db41c5dc4668fa`, owner-workflow blob
+`d29d937b2d398e9c207777a9a819aadd050ac231`, workflow version
+`nemo-v3-owner-dispatch.v4`, protected Bridge correction
+`2f33607d8fcbec76fe98290258ec3dfa728fb509`, active engine key
+`b8041281c81c4caa`, and the immutable Unsloth image. Its lineage binds the
+exact attempt-6 envelope and payload hashes, envelope-publication revision
+`72f9bf650b081fec0a016825f2cb7f962c52242d`, executable Bridge revision
+`69a097d2eb0619506d673464353f1aea7174cf05`, and terminal issue
+`https://github.com/szl-holdings/szl-gpu-bridge/issues/41`. It records zero
+event, workflow-run, runner, claim, image, training, holdout, candidate,
+receipt-intent, and terminal-ledger effects.
+
+This plaintext is not executable. No attempt-7 queue envelope exists in this
+review stage, so status is `AWAITING_ENGINE_SIGNATURE`. Candidate, model-card,
+dataset, deployment, promotion, and all non-receipt uploads remain disabled.

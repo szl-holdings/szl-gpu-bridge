@@ -48,6 +48,10 @@ const EXECUTION_OWNER_WORKFLOW_BLOB = 'd29d937b2d398e9c207777a9a819aadd050ac231'
 const EXECUTION_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30592401025';
 const EXECUTION_CORRECTED_BRIDGE_REVISION = '69a097d2eb0619506d673464353f1aea7174cf05';
 const ATTEMPT_6_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';
+const SUCCESSOR_A11OY_SOURCE_REVISION = '2b190b3806a5d2b3faa58f34c2db41c5dc4668fa';
+const SUCCESSOR_OWNER_WORKFLOW_BLOB = 'd29d937b2d398e9c207777a9a819aadd050ac231';
+const SUCCESSOR_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30601635066';
+const SUCCESSOR_CORRECTED_BRIDGE_REVISION = '2f33607d8fcbec76fe98290258ec3dfa728fb509';
 const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-7';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
@@ -81,6 +85,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: EXECUTION_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: EXECUTION_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 6,
+  },
+  [FUTURE_REVIEWED_JOB_ID]: {
+    sourceRevision: SUCCESSOR_A11OY_SOURCE_REVISION,
+    workflowBlob: SUCCESSOR_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: SUCCESSOR_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: SUCCESSOR_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 7,
   },
 };
 
@@ -181,6 +193,10 @@ function validateLineage(spec) {
       expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30591897165';
       expectedFailurePhase = 'PRE_ADMISSION_HOST_EXECUTION_POLICY';
       expectedEventCreated = true;
+    } else if (lineage.predecessorJobId === ATTEMPT_6_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/szl-gpu-bridge/issues/41';
+      expectedFailurePhase = 'PRE_DISPATCH_VALIDATOR_REJECTION';
+      expectedEventCreated = false;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
     }
@@ -393,6 +409,32 @@ export function validateNemoV3Spec(spec) {
     };
     if (canonicalize(spec.lineage) !== canonicalize(exactHostPolicyLineage)) {
       throw new Error('attempt-6 host-policy recovery lineage is not exact');
+    }
+  }
+  if (spec.jobId === FUTURE_REVIEWED_JOB_ID) {
+    const exactValidatorRejectionLineage = {
+      predecessorJobId: ATTEMPT_6_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: 'c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70',
+      predecessorPayloadSha256: 'd0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d',
+      predecessorEnvelopeRevision: '72f9bf650b081fec0a016825f2cb7f962c52242d',
+      predecessorExecutionBridgeRevision: EXECUTION_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/szl-gpu-bridge/issues/41',
+      failurePhase: 'PRE_DISPATCH_VALIDATOR_REJECTION',
+      successorGeneration: 7,
+      automaticRetry: false,
+      eventCreated: false,
+      workflowRunCreated: false,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactValidatorRejectionLineage)) {
+      throw new Error('attempt-7 validator-rejection recovery lineage is not exact');
     }
   }
   object(spec.base, 'base');
