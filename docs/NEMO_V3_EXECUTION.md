@@ -387,3 +387,30 @@ never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
 `b8041281c81c4caa`, and a separately reviewed protected Bridge runtime
 revision. The protected envelope revision remains data-only and must be a
 strict descendant of that signed executable Bridge revision.
+
+## 11. Reviewed attempt 6 plaintext
+
+The fresh host-policy recovery plaintext is:
+
+```text
+jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
+```
+
+It binds terminal protected A11oy main
+`78b35d244b89c7663063372ff459894bab2977b6`, owner-workflow blob
+`d29d937b2d398e9c207777a9a819aadd050ac231`, workflow version
+`nemo-v3-owner-dispatch.v4`, protected Bridge correction
+`69a097d2eb0619506d673464353f1aea7174cf05`, active engine key
+`b8041281c81c4caa`, and the immutable Unsloth image. Its lineage binds the
+exact attempt-5 envelope and payload hashes, envelope-publication revision
+`d127d7bcd734235fba83e786de923787ab90c51b`, executable Bridge revision
+`a2015accc0be8060c4084455e829a9373e5c99e2`, and failed A11oy run
+`30591897165`. It records that the event and workflow run existed while
+validator admission, claim, image use, training, holdouts, candidate,
+receipt-intent, and terminal ledger effects did not.
+
+The plaintext status is `AWAITING_ENGINE_SIGNATURE`. It is not executable
+authority. A separate protected PR must create the exclusive b804-signed queue
+envelope before any runner registration, start, claim, or dispatch. Candidate,
+model-card, dataset, deployment, promotion, and all non-receipt uploads remain
+disabled.

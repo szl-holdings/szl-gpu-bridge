@@ -10,12 +10,14 @@ on:
       - jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
       - jobspecs/nemo-v3-20260730-attempt-4-reviewed.json
       - jobspecs/nemo-v3-20260730-attempt-5-reviewed.json
+      - jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
       - queue/pending/job-2026-nemo-v3-governed-successor-3.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-2.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-4.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-5.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-6.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json
       - queue/quarantine/job-2026-nemo-v3-governed-successor-3.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json
@@ -47,6 +49,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_2_spec.py
       - tests/test_reviewed_nemo_v3_attempt_4_spec.py
       - tests/test_reviewed_nemo_v3_attempt_5_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_6_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -112,6 +115,12 @@ jobs:
             report_title: '[nemo-v3-attempt-5] governed transport-v3 recovery'
             report_marker: szl-nemo-v3-governed-attempt-5
             report_heading: SZL-Nemo v3 governed attempt 5 transport-v3 recovery
+          - attempt_id: attempt-6-host-policy-recovery
+            spec_path: jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
+            report_path: reports/nemo-v3-attempt-6-status.json
+            report_title: '[nemo-v3-attempt-6] governed host-policy recovery'
+            report_marker: szl-nemo-v3-governed-attempt-6
+            report_heading: SZL-Nemo v3 governed attempt 6 host-policy recovery
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}
@@ -152,6 +161,7 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_2_spec.py \
             tests/test_reviewed_nemo_v3_attempt_4_spec.py \
             tests/test_reviewed_nemo_v3_attempt_5_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_6_spec.py \
             tests/test_engine_keyring.py \
             tests/test_isolated_nemo_launcher_contract.py \
             tests/test_nemo_v3_dispatcher_engine_key_scope.py \

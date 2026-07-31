@@ -283,7 +283,7 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_workflow_track_attempt_5(self) -> None:
+    def test_signer_and_status_workflow_preserve_attempt_5_as_quarantined(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260730-attempt-5-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-5.json",
@@ -292,7 +292,11 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
         ):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIn(
-            "const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';",
+            "const ATTEMPT_5_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-5';",
+            SIGNER_SOURCE,
+        )
+        self.assertIn(
+            "const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-6';",
             SIGNER_SOURCE,
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-5',", SIGNER_SOURCE)
