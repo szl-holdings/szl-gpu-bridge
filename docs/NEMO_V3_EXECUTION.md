@@ -502,7 +502,11 @@ active key `b8041281c81c4caa`, and protected execution Bridge revision
 Its lineage records the one attempt-7 workflow run and the exact absence of a
 claim, training, candidate, terminal ledger, or receipt. The prefetch,
 dispatcher, and isolated runner must each receive the same signed execution
-revision before any claim. This reviewed plaintext remains
-`AWAITING_ENGINE_SIGNATURE`: it is not queue or dispatch authority until one
-separate b804-signed envelope passes protected review. Candidate, model-card,
-dataset, deployment, promotion, and every non-receipt upload remain disabled.
+revision before any claim. The exclusive-create b804 envelope at
+`queue/pending/job-2026-nemo-v3-governed-attempt-8.json` has raw SHA-256
+`b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719`
+and binds canonical signer payload SHA-256
+`3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d`.
+Attempt 8 is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, training, candidate,
+terminal ledger, or receipt exists. Candidate, model-card, dataset,
+deployment, promotion, and every non-receipt upload remain disabled.

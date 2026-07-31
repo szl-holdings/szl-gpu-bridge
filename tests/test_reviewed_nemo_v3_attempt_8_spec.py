@@ -162,17 +162,30 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
             "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96",
         )
 
-    def test_plaintext_status_waits_for_one_separate_engine_signature(self) -> None:
-        self.assertFalse(ATTEMPT_8_QUEUE.exists())
+    def test_signed_status_waits_for_gpu_receipt(self) -> None:
+        self.assertTrue(ATTEMPT_8_QUEUE.is_file())
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_8_QUEUE.read_bytes()).hexdigest(),
+            "b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719",
+        )
         report = nemo_v3_status.evaluate(
             root=ROOT,
             spec_path=ATTEMPT_8_PATH,
             receipt_loader=lambda _spec, _token: None,
-            now=datetime(2026, 7, 31, 5, 4, tzinfo=timezone.utc),
+            now=datetime(2026, 7, 31, 5, 15, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "AWAITING_ENGINE_SIGNATURE")
+        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertFalse(report["terminal"])
-        self.assertFalse(report["queue"]["present"])
+        self.assertTrue(report["queue"]["present"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertEqual(
+            report["queue"]["payload_sha256"],
+            "3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d",
+        )
+        self.assertEqual(
+            report["queue"]["engine_key_id"],
+            COORDINATED_ENGINE_KEY_ID,
+        )
         self.assertFalse(report["receipt"]["present"])
         self.assertFalse(report["quarantine"]["present"])
 
@@ -200,7 +213,7 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_workflow_track_only_plaintext_attempt_8(self) -> None:
+    def test_signer_and_status_workflow_track_signed_attempt_8(self) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-8-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-8.json",

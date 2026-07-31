@@ -61,8 +61,9 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `RUNTIME_CONTRACT_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`; no
   training, candidate, or receipt exists. Reviewed plaintext attempt 8 binds
   protected runtime `dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf`; that exact
-  signed revision must be supplied again at dispatch. Attempt 8 remains
-  `AWAITING_ENGINE_SIGNATURE` until a separate one-time b804 envelope PR.
+  signed revision must be supplied again at dispatch. Its one-time b804
+  envelope is valid, so attempt 8 is `QUEUED_AWAITING_GPU_RECEIPT`; no claim,
+  training, candidate, or receipt exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
