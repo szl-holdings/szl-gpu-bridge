@@ -1,0 +1,180 @@
+{
+  "jobId": "job-2026-nemo-v3-governed-attempt-15",
+  "kind": "szl-nemo-governed-v3",
+  "createdAt": "2026-07-31T14:43:00Z",
+  "expiresAt": "2026-08-14T14:43:00Z",
+  "source": {
+    "repoId": "szl-holdings/a11oy",
+    "revision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "licenseId": "apache-2.0"
+  },
+  "base": {
+    "repoId": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+    "revision": "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
+    "licenseId": "nvidia-nemotron-open-model-license",
+    "licenseAcknowledgement": "I accept the pinned NVIDIA Nemotron Open Model License, preserve NVIDIA attribution, and keep the upstream base license distinct from the downstream Apache-2.0 adapter source.",
+    "trustRemoteCode": true
+  },
+  "dataset": {
+    "provenance": "All 36 training rows are independently project-authored and rights-admitted in protected A11oy commit 434d653eaf100b9b3e5484687db1e6e6ca7116c9. The original v2, shadow v2, and preregistered v3 challenge suites are immutable, mutually disjoint, and excluded from gradients.",
+    "rightsBasis": "PROJECT_AUTHORED_SCENARIOS",
+    "train": {
+      "path": "model_release/szl-nemo-v3/train.jsonl",
+      "sha256": "a81e5742d8146dfb67a0754e45b578765b5c6212ff6725b8157035b49c0e1c9a",
+      "bytes": 28968
+    },
+    "holdouts": [
+      {
+        "name": "original-v2",
+        "path": "model_release/szl-nemo-v3/holdout-original-v2.jsonl",
+        "sha256": "caeb07c94929c24a47fd12f35cbc9021523308dc9fcc684bd444ffcf4a367b0d",
+        "bytes": 5967,
+        "recordIds": [
+          "eval:eval-identity",
+          "eval:eval-unmeasured-number",
+          "eval:eval-proof",
+          "eval:eval-brain",
+          "eval:eval-execution",
+          "eval:eval-signature",
+          "eval:eval-license",
+          "eval:eval-claim-scope"
+        ],
+        "recordIdsSha256": "46e6e68772eda8b28afdbf199a2dd3262159c0e309e9b43918c1884dbadaa959"
+      },
+      {
+        "name": "shadow-v2",
+        "path": "model_release/szl-nemo-v3/holdout-shadow-v2.jsonl",
+        "sha256": "1b8578051b7b829595493615bdf11e24d01a1837a23d6191c8e88e21cce990ac",
+        "bytes": 8261,
+        "recordIds": [
+          "shadow:shadow-identity-producer",
+          "shadow:shadow-identity-credit",
+          "shadow:shadow-brain-source",
+          "shadow:shadow-brain-conflict",
+          "shadow:shadow-execution-timeout",
+          "shadow:shadow-execution-queue",
+          "shadow:shadow-signature-envelope",
+          "shadow:shadow-signature-fingerprint",
+          "shadow:shadow-scope-loss",
+          "shadow:shadow-scope-generalization"
+        ],
+        "recordIdsSha256": "86b46a9864e5fd7c76eb9c0d9e7a3e41609e4db007bcb8ed5d450e31f85350d5"
+      },
+      {
+        "name": "challenge-v3",
+        "path": "model_release/szl-nemo-v3/holdout-challenge-v3.jsonl",
+        "sha256": "1b23d20406eb96d3c58741ac57c802eb723a19802c7f83b8500b99a71d15c35f",
+        "bytes": 9903,
+        "recordIds": [
+          "challenge:governance-v3:01",
+          "challenge:governance-v3:02",
+          "challenge:governance-v3:03",
+          "challenge:governance-v3:04",
+          "challenge:governance-v3:05",
+          "challenge:governance-v3:06",
+          "challenge:governance-v3:07",
+          "challenge:governance-v3:08",
+          "challenge:governance-v3:09",
+          "challenge:governance-v3:10",
+          "challenge:governance-v3:11",
+          "challenge:governance-v3:12"
+        ],
+        "recordIdsSha256": "1b392792107d55fd83e5e52a63346babb001f21174c45f0ba826599e4daa680e"
+      }
+    ],
+    "preregistration": {
+      "path": "model_release/szl-nemo-v3/preregistration.json",
+      "sha256": "41a27921ff3a377442e2cf7b4ffe569324de73cedb56b2485e50a6e8057cfacd",
+      "bytes": 3076
+    }
+  },
+  "recipe": {
+    "maxSeqLength": 768,
+    "loraR": 16,
+    "loraAlpha": 32,
+    "loraDropout": 0.05,
+    "targetModules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ],
+    "batchSize": 1,
+    "gradAccum": 8,
+    "epochs": 2,
+    "learningRate": 0.0001,
+    "optimizer": "paged_adamw_8bit",
+    "gradientCheckpointing": "unsloth",
+    "seed": 3407,
+    "warmupRatio": 0.05,
+    "weightDecay": 0.01,
+    "lrSchedulerType": "linear"
+  },
+  "gates": {
+    "minFreeVramGb": 6.5,
+    "minFreeDiskGb": 50,
+    "maxWallclockMinutes": 240,
+    "maxDatasetRows": 500,
+    "maxTemperatureC": 78,
+    "maxUtilizationPct": 15
+  },
+  "outputs": {
+    "candidateId": "SZL-Nemo-v3-Nemotron-4B-Adapter-Attempt-15-MetaTensorRecovery",
+    "receiptsRepoId": "SZLHOLDINGS/szl-training-receipts",
+    "private": true,
+    "publishCandidate": false
+  },
+  "evaluation": {
+    "requiredPassRate": 1.0,
+    "maxDegenerateRate": 0.0,
+    "maxNewTokens": 192,
+    "requireExactRecordOrder": true
+  },
+  "ownerDispatch": {
+    "workflowIdentity": "szl-holdings/a11oy/.github/workflows/nemo-v3-isolated-owner-dispatch.yml@refs/heads/main",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "workflowVersion": "nemo-v3-owner-dispatch.v4",
+    "trainingImage": "unsloth/unsloth@sha256:9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123",
+    "candidateUpload": false,
+    "modelCardUpload": false,
+    "datasetUpload": false,
+    "receiptsRepoId": "SZLHOLDINGS/szl-training-receipts"
+  },
+  "authorization": {
+    "engineKeyId": "b8041281c81c4caa",
+    "previousEngineKeyId": "5c6cf59741ade920",
+    "recoveryIssueUrl": "https://github.com/szl-holdings/szl-gpu-bridge/issues/25",
+    "rotationMode": "COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION",
+    "oldKeyStatus": "VERIFY_ONLY",
+    "decisionAt": "2026-07-31T14:43:00Z",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "provisionalEngineKeyId": "815714c8d4ae3e4d",
+    "provisionalKeyStatus": "VERIFY_ONLY",
+    "coordinationMode": "FINAL_ACTIVE_TRUST_ROOT",
+    "settledA11oyRelockRunUrl": "https://github.com/szl-holdings/a11oy/actions/runs/30613619902",
+    "cryptographicContinuityClaimed": false,
+    "correctedBridgeRevision": "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63"
+  },
+  "notes": "Distinct reviewed plaintext meta-tensor materialization recovery successor bound to protected A11oy source 434d653e, owner workflow 7cf0c877, and protected corrected Bridge runtime 60b9894e. The Bridge runtime fail-closed materializes only exact hook-backed frozen CPU modules required by the pinned trainer, rejects trainable or unbacked meta tensors, preserves the 26-placeholder offload map, and prepares assistant-only labels without changing any science, license, tokenizer, or input hash. Attempt 14 remains immutable signed META_TENSOR_MATERIALIZATION_BLOCKED + POST_CLAIM + PRE_TRAINING + SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH evidence after its single run 30634484969; it will never be retried, resent, or re-signed. This plaintext is not executable without a separate b804-signed queue-envelope PR. Candidate, adapter, model-card, dataset, deployment, publication, release-signing, and promotion effects remain disabled.",
+  "lineage": {
+    "predecessorJobId": "job-2026-nemo-v3-governed-attempt-14",
+    "predecessorEnvelopeSha256": "207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82",
+    "predecessorPayloadSha256": "162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da",
+    "predecessorEnvelopeRevision": "fd97065eb2aa9fc3299706c531597538a65eb735",
+    "predecessorExecutionBridgeRevision": "e150711a6ba6a0c29109a00da7fc82af2967f588",
+    "transportEvidenceUrl": "https://github.com/szl-holdings/a11oy/actions/runs/30634484969",
+    "failurePhase": "POST_CLAIM_TRAINER_META_TENSOR",
+    "successorGeneration": 15,
+    "automaticRetry": false,
+    "eventCreated": true,
+    "workflowRunCreated": true,
+    "claimCreated": true,
+    "trainingStarted": false,
+    "modelRepositoryCodeImported": true,
+    "holdoutsAccessed": true,
+    "candidateProduced": false,
+    "receiptIntentProduced": true,
+    "terminalLedgerWritten": true,
+    "scienceInputsReused": true
+  }
+}

@@ -19,6 +19,7 @@ on:
       - jobspecs/nemo-v3-20260731-attempt-12-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-13-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-14-reviewed.json
+      - jobspecs/nemo-v3-20260731-attempt-15-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
       - queue/pending/job-2026-nemo-v3-governed-successor-3.json
@@ -34,6 +35,7 @@ on:
       - queue/pending/job-2026-nemo-v3-governed-attempt-12.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-13.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-14.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-15.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json
       - queue/quarantine/job-2026-nemo-v3-governed-successor-3.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json
@@ -88,6 +90,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_12_spec.py
       - tests/test_reviewed_nemo_v3_attempt_13_spec.py
       - tests/test_reviewed_nemo_v3_attempt_14_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_15_spec.py
       - tests/test_nemo_v3_conversation_labels.py
       - tests/test_nemo_v3_meta_tensor_compat.py
       - tests/test_nemo_v3_sftconfig_compat.py
@@ -210,6 +213,12 @@ jobs:
             report_title: '[nemo-v3-attempt-14] governed SFTConfig recovery'
             report_marker: szl-nemo-v3-governed-attempt-14
             report_heading: SZL-Nemo v3 governed attempt 14 SFTConfig recovery
+          - attempt_id: attempt-15-meta-tensor-recovery
+            spec_path: jobspecs/nemo-v3-20260731-attempt-15-reviewed.json
+            report_path: reports/nemo-v3-attempt-15-status.json
+            report_title: '[nemo-v3-attempt-15] governed meta-tensor recovery'
+            report_marker: szl-nemo-v3-governed-attempt-15
+            report_heading: SZL-Nemo v3 governed attempt 15 meta-tensor recovery
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}
@@ -259,6 +268,7 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_12_spec.py \
             tests/test_reviewed_nemo_v3_attempt_13_spec.py \
             tests/test_reviewed_nemo_v3_attempt_14_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_15_spec.py \
             tests/test_nemo_v3_conversation_labels.py \
             tests/test_nemo_v3_meta_tensor_compat.py \
             tests/test_nemo_v3_sftconfig_compat.py \
