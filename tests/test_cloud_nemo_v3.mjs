@@ -416,6 +416,10 @@ test('Nemo v3 attempt 12 binds exact signed tokenizer-load recovery', () => {
     ),
   );
   assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+  assert.equal(
+    createHash('sha256').update(Buffer.from(canonicalize(reviewed), 'utf8')).digest('hex'),
+    'a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8',
+  );
 
   for (const [field, value] of [
     ['claimCreated', false],

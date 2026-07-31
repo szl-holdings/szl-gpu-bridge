@@ -659,7 +659,7 @@ Attempt 12 preserves attempt 11's base license, dataset, recipe, evaluation,
 immutable image, receipt-only destination, and disabled candidate, adapter,
 model-card, and dataset publication boundaries. Its canonical plaintext payload
 SHA-256 is
-`654c7110dc913bc85c6c57385a94cd436cadab42d096fdc2ea7c8fe891e18776`.
+`a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
 Status is `AWAITING_ENGINE_SIGNATURE`; no queue envelope, runner, dispatch,
 claim, training, receipt, deployment, promotion, or Hugging Face publication
 is authorized until a separate b804 signing/publication PR passes its own
