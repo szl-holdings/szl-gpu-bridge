@@ -301,7 +301,10 @@ class ReviewedNemoV3Attempt5SpecTests(unittest.TestCase):
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-5',", SIGNER_SOURCE)
         self.assertIn("is quarantined and marked NEVER_DISPATCH", SIGNER_SOURCE)
-        self.assertIn("signer is locked to ${FUTURE_REVIEWED_JOB_ID}", SIGNER_SOURCE)
+        self.assertIn(
+            "signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}",
+            SIGNER_SOURCE,
+        )
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)
 

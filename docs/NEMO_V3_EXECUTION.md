@@ -488,3 +488,21 @@ protected runtime-recovery revision, and the prefetch, dispatcher, and
 isolated runner each require that exact signed execution revision before any
 attempt-8 claim. Candidate, model-card, dataset, deployment, promotion, and
 all non-receipt uploads remain disabled.
+
+## Reviewed attempt 8 runtime-binding recovery
+
+`jobspecs/nemo-v3-20260731-attempt-8-reviewed.json` is the fresh plaintext
+successor to quarantined attempt 7. It binds protected A11oy source
+`2b190b3806a5d2b3faa58f34c2db41c5dc4668fa`, owner-workflow blob
+`d29d937b2d398e9c207777a9a819aadd050ac231`, immutable image digest
+`9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123`,
+active key `b8041281c81c4caa`, and protected execution Bridge revision
+`dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf`.
+
+Its lineage records the one attempt-7 workflow run and the exact absence of a
+claim, training, candidate, terminal ledger, or receipt. The prefetch,
+dispatcher, and isolated runner must each receive the same signed execution
+revision before any claim. This reviewed plaintext remains
+`AWAITING_ENGINE_SIGNATURE`: it is not queue or dispatch authority until one
+separate b804-signed envelope passes protected review. Candidate, model-card,
+dataset, deployment, promotion, and every non-receipt upload remain disabled.

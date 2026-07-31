@@ -12,6 +12,7 @@ on:
       - jobspecs/nemo-v3-20260730-attempt-5-reviewed.json
       - jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-7-reviewed.json
+      - jobspecs/nemo-v3-20260731-attempt-8-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
       - queue/pending/job-2026-nemo-v3-governed-successor-3.json
@@ -20,6 +21,7 @@ on:
       - queue/pending/job-2026-nemo-v3-governed-attempt-5.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-6.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-7.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-8.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json
       - queue/quarantine/job-2026-nemo-v3-governed-successor-3.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json
@@ -55,6 +57,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_5_spec.py
       - tests/test_reviewed_nemo_v3_attempt_6_spec.py
       - tests/test_reviewed_nemo_v3_attempt_7_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_8_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -132,6 +135,12 @@ jobs:
             report_title: '[nemo-v3-attempt-7] governed validator-lineage recovery'
             report_marker: szl-nemo-v3-governed-attempt-7
             report_heading: SZL-Nemo v3 governed attempt 7 validator-lineage recovery
+          - attempt_id: attempt-8-runtime-binding-recovery
+            spec_path: jobspecs/nemo-v3-20260731-attempt-8-reviewed.json
+            report_path: reports/nemo-v3-attempt-8-status.json
+            report_title: '[nemo-v3-attempt-8] governed runtime-binding recovery'
+            report_marker: szl-nemo-v3-governed-attempt-8
+            report_heading: SZL-Nemo v3 governed attempt 8 runtime-binding recovery
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}

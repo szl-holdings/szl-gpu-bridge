@@ -59,6 +59,7 @@ SUCCESSOR_A11OY_RELOCK_RUN_URL = (
 SUCCESSOR_CORRECTED_BRIDGE_REVISION = "2f33607d8fcbec76fe98290258ec3dfa728fb509"
 FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-7"
 NEXT_RUNTIME_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-8"
+NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION = "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -241,7 +242,7 @@ _COORDINATED_JOB_BINDINGS = {
         "workflowBlob": SUCCESSOR_OWNER_WORKFLOW_BLOB,
         "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
         "relockRunUrl": SUCCESSOR_A11OY_RELOCK_RUN_URL,
-        "runtimeBound": True,
+        "correctedBridgeRevision": NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 8,
     },
 }
@@ -540,8 +541,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 exact40=True,
             )
             if (
-                not coordinated_binding.get("runtimeBound")
-                and authorization["correctedBridgeRevision"]
+                authorization["correctedBridgeRevision"]
                 != coordinated_binding["correctedBridgeRevision"]
             ):
                 raise ContractError(

@@ -53,12 +53,15 @@ const SUCCESSOR_OWNER_WORKFLOW_BLOB = 'd29d937b2d398e9c207777a9a819aadd050ac231'
 const SUCCESSOR_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30601635066';
 const SUCCESSOR_CORRECTED_BRIDGE_REVISION = '2f33607d8fcbec76fe98290258ec3dfa728fb509';
 const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-7';
+const NEXT_RUNTIME_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-8';
+const NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION = 'dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
   'job-2026-nemo-v3-governed-attempt-4',
   'job-2026-nemo-v3-governed-attempt-5',
   'job-2026-nemo-v3-governed-attempt-6',
+  'job-2026-nemo-v3-governed-attempt-7',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -93,6 +96,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: SUCCESSOR_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: SUCCESSOR_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 7,
+  },
+  [NEXT_RUNTIME_REVIEWED_JOB_ID]: {
+    sourceRevision: SUCCESSOR_A11OY_SOURCE_REVISION,
+    workflowBlob: SUCCESSOR_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: SUCCESSOR_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 8,
   },
 };
 
@@ -197,6 +208,10 @@ function validateLineage(spec) {
       expectedEvidence = 'https://github.com/szl-holdings/szl-gpu-bridge/issues/41';
       expectedFailurePhase = 'PRE_DISPATCH_VALIDATOR_REJECTION';
       expectedEventCreated = false;
+    } else if (lineage.predecessorJobId === FUTURE_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30605081533';
+      expectedFailurePhase = 'PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION';
+      expectedEventCreated = true;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
     }
@@ -437,6 +452,32 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-7 validator-rejection recovery lineage is not exact');
     }
   }
+  if (spec.jobId === NEXT_RUNTIME_REVIEWED_JOB_ID) {
+    const exactRuntimeBindingLineage = {
+      predecessorJobId: FUTURE_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: '8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96',
+      predecessorPayloadSha256: '0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7',
+      predecessorEnvelopeRevision: '21553a898db76dddba3227e91518835185b55a6f',
+      predecessorExecutionBridgeRevision: SUCCESSOR_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30605081533',
+      failurePhase: 'PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION',
+      successorGeneration: 8,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactRuntimeBindingLineage)) {
+      throw new Error('attempt-8 runtime-binding recovery lineage is not exact');
+    }
+  }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
@@ -507,8 +548,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== FUTURE_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${FUTURE_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== NEXT_RUNTIME_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');
