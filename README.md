@@ -150,6 +150,18 @@ cloud/verify-receipt.mjs ◄─────────────────�
   runtime-bound identity must use attempt 13 and must still match the explicit
   execution revision supplied by the protected A11oy workflow; unknown job IDs
   and mismatched runtime revisions remain fail-closed.
+  Reviewed plaintext attempt 13 is at
+  `jobspecs/nemo-v3-20260731-attempt-13-reviewed.json`. It binds the settled
+  A11oy source/workflow, the same immutable science and offline tokenizer
+  inputs, and protected Bridge runtime
+  `2783b3518abcec9f38d3f6504c06e305a4723801`. Its lineage records attempt
+  12's single run `30626533443` as exact pre-claim
+  `RUNTIME_JOB_BINDING_REJECTED + NEVER_DISPATCH` evidence. This phase is
+  plaintext only: its canonical payload SHA-256 is
+  `82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`,
+  the attempt-13 queue envelope is absent, status is
+  `AWAITING_ENGINE_SIGNATURE`, and all candidate, adapter, model-card,
+  dataset, deployment, promotion, and publication effects remain false.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

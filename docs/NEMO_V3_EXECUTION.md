@@ -688,3 +688,28 @@ prefetch, dispatcher, runner, and finalizer path must receive the explicit
 revision already verified by the protected A11oy workflow and match the signed
 authorization exactly. This removes the impossible commit-self-reference
 without accepting unknown job IDs or weakening runtime revision enforcement.
+
+## Reviewed attempt 13 runtime-binding recovery
+
+`jobspecs/nemo-v3-20260731-attempt-13-reviewed.json` is the distinct plaintext
+successor to immutable attempt 12. It binds protected A11oy source
+`434d653eaf100b9b3e5484687db1e6e6ca7116c9`, owner workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, canonical relock run
+`30613619902`, and protected Bridge runtime
+`2783b3518abcec9f38d3f6504c06e305a4723801`.
+
+The runtime admits attempt 13 statically by exact source, workflow, relock, and
+successor generation, then requires every execution boundary to match the
+signed `correctedBridgeRevision` to the explicit protected revision already
+verified by the owner workflow. Attempt 12 remains quarantined and its signed
+spec, envelope, zero-effect evidence, and pre-claim run are preserved
+byte-for-byte. The frozen base license, science inputs, immutable image,
+receipt-only destination, and disabled candidate/model-card/dataset uploads
+are unchanged.
+
+This stage publishes no queue envelope. Attempt 13 remains
+`AWAITING_ENGINE_SIGNATURE` until a separate exclusive-create b804 signing and
+protected publication gate completes. Its reviewed raw JSON SHA-256 is
+`bd394cbb68f60ac181333156cb53d9c0074b234352843aa976533021f5f396e5`;
+its signer-canonical payload SHA-256 is
+`82f619eb1fff6a7617b5761358d2f5c1d8ca62a306eb7cb1bf2570e096b2b9fc`.
