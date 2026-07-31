@@ -1,0 +1,26 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-8",
+  "recordedAt": "2026-07-31T05:50:00Z",
+  "status": [
+    "TRUSTED_PREFETCH_DIRTIED_EXECUTION_CHECKOUT",
+    "PRE_CLAIM",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-8.json",
+  "queueFileSha256": "b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719",
+  "signedPayloadSha256": "3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "2b190b3806a5d2b3faa58f34c2db41c5dc4668fa",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "c6aa4f08f752a22bbae35cf5a618a81811494a43",
+    "workflowBlob": "f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-9"
+  },
+  "reason": "Attempt 8 created exactly one owner-dispatch workflow run 30606664591 and completed authenticated prefetch, including immutable local prefetch receipt SHA-256 a80aebde90f0909baa55142ed18f56e57b1ed07ee0ddf41327768af9870b9676. Python bytecode emitted by that trusted prefetch dirtied protected execution Bridge revision dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf, so the strict dirty-checkout gate rejected the attempt before its O_EXCL claim. No claim, job directory, training, model-code import, holdout access, finalization, terminal ledger entry, candidate, or receipt exists. The reviewed spec, b804 DSSE envelope, and prefetch receipt remain immutable evidence and are never dispatch authority."
+}

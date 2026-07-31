@@ -216,7 +216,7 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
             require_nemo_v3_dispatchable(self.attempt_7)
 
-    def test_runtime_bound_attempt_8_requires_the_exact_execution_revision(
+    def test_runtime_bound_attempt_8_is_never_dispatch_after_its_failure(
         self,
     ) -> None:
         attempt_8 = copy.deepcopy(self.attempt_7)
@@ -254,17 +254,8 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_8), attempt_8)
-        with self.assertRaisesRegex(ContractError, "execution Bridge revision"):
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
             require_nemo_v3_dispatchable(attempt_8)
-        with self.assertRaisesRegex(ContractError, "does not match"):
-            require_nemo_v3_dispatchable(
-                attempt_8,
-                expected_execution_bridge_revision="e" * 40,
-            )
-        require_nemo_v3_dispatchable(
-            attempt_8,
-            expected_execution_bridge_revision=NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
-        )
         self.assertIn('"EXECUTION_BRIDGE_REVISION"', PREFETCH_SOURCE)
         self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', DISPATCHER_SOURCE)
         self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', RUNNER_SOURCE)
