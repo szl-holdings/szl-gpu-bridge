@@ -16,6 +16,7 @@ on:
       - jobspecs/nemo-v3-20260731-attempt-9-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-10-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-11-reviewed.json
+      - jobspecs/nemo-v3-20260731-attempt-12-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
       - queue/pending/job-2026-nemo-v3-governed-successor-3.json
@@ -28,6 +29,7 @@ on:
       - queue/pending/job-2026-nemo-v3-governed-attempt-9.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-10.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-11.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-12.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json
       - queue/quarantine/job-2026-nemo-v3-governed-successor-3.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json
@@ -37,6 +39,7 @@ on:
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-8.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-9.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-10.json
+      - queue/quarantine/job-2026-nemo-v3-governed-attempt-11.json
       - keys/engine_keyring.json
       - keys/engine_pubkey.json
       - keys/engine_pubkey_815714c8d4ae3e4d.json
@@ -70,6 +73,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_9_spec.py
       - tests/test_reviewed_nemo_v3_attempt_10_spec.py
       - tests/test_reviewed_nemo_v3_attempt_11_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_12_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -171,6 +175,12 @@ jobs:
             report_title: '[nemo-v3-attempt-11] governed runtime-admission recovery'
             report_marker: szl-nemo-v3-governed-attempt-11
             report_heading: SZL-Nemo v3 governed attempt 11 runtime-admission recovery
+          - attempt_id: attempt-12-tokenizer-load-recovery
+            spec_path: jobspecs/nemo-v3-20260731-attempt-12-reviewed.json
+            report_path: reports/nemo-v3-attempt-12-status.json
+            report_title: '[nemo-v3-attempt-12] governed tokenizer-load recovery'
+            report_marker: szl-nemo-v3-governed-attempt-12
+            report_heading: SZL-Nemo v3 governed attempt 12 tokenizer-load recovery
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}
@@ -217,6 +227,7 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_9_spec.py \
             tests/test_reviewed_nemo_v3_attempt_10_spec.py \
             tests/test_reviewed_nemo_v3_attempt_11_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_12_spec.py \
             tests/test_engine_keyring.py \
             tests/test_isolated_nemo_launcher_contract.py \
             tests/test_nemo_v3_dispatcher_engine_key_scope.py \

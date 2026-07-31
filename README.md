@@ -125,6 +125,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   Attempt 11 is `TOKENIZER_LOAD_BLOCKED + POST_CLAIM +
   SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`; candidate, adapter, model-card,
   dataset, deployment, and promotion effects are all false.
+  Reviewed plaintext attempt 12 is the distinct successor at
+  `jobspecs/nemo-v3-20260731-attempt-12-reviewed.json`. It preserves attempt
+  11's spec, envelope, quarantine, and signed receipt bytes, freezes the same
+  base license and science inputs, and binds corrected Bridge runtime
+  `d110abb8ea48c9382a70c3eead22dddf555f292b`, where the exact local tokenizer
+  artifacts are verified before Unsloth receives their snapshot path. It has no
+  queue envelope, runner, dispatch, claim, receipt, or publication authority;
+  only a separate protected b804 signing stage may advance it.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

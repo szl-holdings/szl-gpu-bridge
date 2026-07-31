@@ -197,7 +197,7 @@
             "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
             "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025", "https://github.com/szl-holdings/a11oy/actions/runs/30601635066", "https://github.com/szl-holdings/a11oy/actions/runs/30607399378", "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"]},
             "cryptographicContinuityClaimed": {"const": false},
-            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287"]}
+            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287", "d110abb8ea48c9382a70c3eead22dddf555f292b"]}
           }
         }
       ]
@@ -206,7 +206,8 @@
     "lineage": {
       "oneOf": [
         {"$ref": "#/$defs/executionFailureLineage"},
-        {"$ref": "#/$defs/transportFailureLineage"}
+        {"$ref": "#/$defs/transportFailureLineage"},
+        {"$ref": "#/$defs/terminalReceiptFailureLineage"}
       ]
     }
   },
@@ -563,6 +564,48 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {"jobId": {"const": "job-2026-nemo-v3-governed-attempt-12"}},
+        "required": ["jobId"]
+      },
+      "then": {
+        "required": ["ownerDispatch", "authorization", "lineage"],
+        "properties": {
+          "source": {"properties": {"revision": {"const": "434d653eaf100b9b3e5484687db1e6e6ca7116c9"}}},
+          "base": {"properties": {"licenseId": {"const": "nvidia-nemotron-open-model-license"}}},
+          "ownerDispatch": {
+            "properties": {
+              "workflowBlob": {"const": "7cf0c877399471a084d3e70638ef50ec28d7f646"},
+              "workflowVersion": {"const": "nemo-v3-owner-dispatch.v4"}
+            }
+          },
+          "authorization": {
+            "properties": {
+              "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"},
+              "correctedBridgeRevision": {"const": "d110abb8ea48c9382a70c3eead22dddf555f292b"}
+            }
+          },
+          "lineage": {
+            "allOf": [
+              {"$ref": "#/$defs/terminalReceiptFailureLineage"},
+              {
+                "properties": {
+                  "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-11"},
+                  "predecessorEnvelopeSha256": {"const": "7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918"},
+                  "predecessorPayloadSha256": {"const": "85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994"},
+                  "predecessorEnvelopeRevision": {"const": "61bb29bdad1e6b76bf3d818428c1d81149a6e72f"},
+                  "predecessorExecutionBridgeRevision": {"const": "f07263bc37ef6e90b313ba5576ef425d845cf287"},
+                  "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30620232291"},
+                  "failurePhase": {"const": "POST_CLAIM_TOKENIZER_LOAD"},
+                  "successorGeneration": {"const": 12}
+                }
+              }
+            ]
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -661,6 +704,52 @@
         "candidateProduced": {"const": false},
         "receiptIntentProduced": {"type": "boolean"},
         "terminalLedgerWritten": {"const": false},
+        "scienceInputsReused": {"const": true}
+      }
+    },
+    "terminalReceiptFailureLineage": {
+      "type": "object",
+      "required": [
+        "predecessorJobId",
+        "predecessorEnvelopeSha256",
+        "predecessorPayloadSha256",
+        "predecessorEnvelopeRevision",
+        "predecessorExecutionBridgeRevision",
+        "transportEvidenceUrl",
+        "failurePhase",
+        "successorGeneration",
+        "automaticRetry",
+        "eventCreated",
+        "workflowRunCreated",
+        "claimCreated",
+        "trainingStarted",
+        "modelRepositoryCodeImported",
+        "holdoutsAccessed",
+        "candidateProduced",
+        "receiptIntentProduced",
+        "terminalLedgerWritten",
+        "scienceInputsReused"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-11"},
+        "predecessorEnvelopeSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "predecessorPayloadSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "predecessorEnvelopeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "predecessorExecutionBridgeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30620232291"},
+        "failurePhase": {"const": "POST_CLAIM_TOKENIZER_LOAD"},
+        "successorGeneration": {"const": 12},
+        "automaticRetry": {"const": false},
+        "eventCreated": {"const": true},
+        "workflowRunCreated": {"const": true},
+        "claimCreated": {"const": true},
+        "trainingStarted": {"const": false},
+        "modelRepositoryCodeImported": {"const": true},
+        "holdoutsAccessed": {"const": true},
+        "candidateProduced": {"const": false},
+        "receiptIntentProduced": {"const": true},
+        "terminalLedgerWritten": {"const": true},
         "scienceInputsReused": {"const": true}
       }
     }
