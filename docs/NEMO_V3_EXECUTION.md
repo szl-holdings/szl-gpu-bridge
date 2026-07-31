@@ -638,3 +638,29 @@ Attempt 11 is now immutable `TOKENIZER_LOAD_BLOCKED + POST_CLAIM +
 SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH` evidence and will not be retried,
 resent, or re-signed. Candidate, adapter, model-card, dataset, deployment, and
 promotion effects are all false.
+
+## Reviewed attempt 12 tokenizer-load recovery
+
+`jobspecs/nemo-v3-20260731-attempt-12-reviewed.json` is the fresh plaintext
+successor to immutable attempt 11. It binds protected A11oy source
+`434d653eaf100b9b3e5484687db1e6e6ca7116c9`, owner workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, canonical relock run
+`30613619902`, and corrected Bridge runtime
+`d110abb8ea48c9382a70c3eead22dddf555f292b`.
+
+The corrected runtime admits only the exact Nemotron repository/revision pair,
+requires the four pinned tokenizer artifacts at their exact byte lengths and
+SHA-256 hashes, passes that verified local snapshot explicitly to Unsloth, and
+requires the returned tokenizer to be a non-null `PreTrainedTokenizerBase`
+bound to the same snapshot with a non-empty chat template. Missing, altered,
+unrecognized, or path-escaping tokenizer state fails closed before training.
+
+Attempt 12 preserves attempt 11's base license, dataset, recipe, evaluation,
+immutable image, receipt-only destination, and disabled candidate, adapter,
+model-card, and dataset publication boundaries. Its canonical plaintext payload
+SHA-256 is
+`654c7110dc913bc85c6c57385a94cd436cadab42d096fdc2ea7c8fe891e18776`.
+Status is `AWAITING_ENGINE_SIGNATURE`; no queue envelope, runner, dispatch,
+claim, training, receipt, deployment, promotion, or Hugging Face publication
+is authorized until a separate b804 signing/publication PR passes its own
+protected gates.

@@ -77,6 +77,7 @@ EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = (
 ATTEMPT_11_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-11"
 ATTEMPT_11_CORRECTED_BRIDGE_REVISION = "f07263bc37ef6e90b313ba5576ef425d845cf287"
 ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
+ATTEMPT_12_CORRECTED_BRIDGE_REVISION = "d110abb8ea48c9382a70c3eead22dddf555f292b"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -407,6 +408,14 @@ _COORDINATED_JOB_BINDINGS = {
         "correctedBridgeRevision": ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 11,
     },
+    ATTEMPT_12_REVIEWED_JOB_ID: {
+        "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": ATTEMPT_12_CORRECTED_BRIDGE_REVISION,
+        "successorGeneration": 12,
+    },
 }
 _ALLOWED_TOP = {
     "jobId",
@@ -556,6 +565,7 @@ def require_nemo_v3_dispatchable(
         NEXT_RUNTIME_REVIEWED_JOB_ID,
         ATTEMPT_9_REVIEWED_JOB_ID,
         ATTEMPT_11_REVIEWED_JOB_ID,
+        ATTEMPT_12_REVIEWED_JOB_ID,
     }:
         expected = _revision(
             expected_execution_bridge_revision,
@@ -819,6 +829,8 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         expected_claim_created = False
         expected_holdouts_accessed = False
         expected_receipt_intent_produced = False
+        expected_model_repository_code_imported = False
+        expected_terminal_ledger_written = False
         if transport_lineage:
             _sha256(
                 lineage["predecessorPayloadSha256"],
@@ -878,6 +890,17 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                     "PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION"
                 )
                 expected_event_created = True
+            elif predecessor == ATTEMPT_11_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30620232291"
+                )
+                expected_failure_phase = "POST_CLAIM_TOKENIZER_LOAD"
+                expected_event_created = True
+                expected_claim_created = True
+                expected_holdouts_accessed = True
+                expected_receipt_intent_produced = True
+                expected_model_repository_code_imported = True
+                expected_terminal_ledger_written = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -925,11 +948,11 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         expected_boundaries = {
             "automaticRetry": False,
             "trainingStarted": False,
-            "modelRepositoryCodeImported": False,
+            "modelRepositoryCodeImported": (expected_model_repository_code_imported),
             "holdoutsAccessed": expected_holdouts_accessed,
             "candidateProduced": False,
             "receiptIntentProduced": expected_receipt_intent_produced,
-            "terminalLedgerWritten": False,
+            "terminalLedgerWritten": expected_terminal_ledger_written,
             "scienceInputsReused": True,
         }
         if transport_lineage:
@@ -1224,6 +1247,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-11 runtime-admission recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_12_REVIEWED_JOB_ID:
+            exact_tokenizer_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_11_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918"
+                ),
+                "predecessorPayloadSha256": (
+                    "85f08bc171370b25606915008d1b96ff50f670d09e20eb631b4c1ebeb108d994"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "61bb29bdad1e6b76bf3d818428c1d81149a6e72f"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    ATTEMPT_11_CORRECTED_BRIDGE_REVISION
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30620232291"
+                ),
+                "failurePhase": "POST_CLAIM_TOKENIZER_LOAD",
+                "successorGeneration": 12,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": True,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": True,
+                "holdoutsAccessed": True,
+                "candidateProduced": False,
+                "receiptIntentProduced": True,
+                "terminalLedgerWritten": True,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_tokenizer_recovery_lineage:
+                raise ContractError(
+                    "attempt-12 tokenizer recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1252,6 +1311,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         in {
             ATTEMPT_10_REVIEWED_JOB_ID,
             ATTEMPT_11_REVIEWED_JOB_ID,
+            ATTEMPT_12_REVIEWED_JOB_ID,
         }
         and base["licenseId"] != "nvidia-nemotron-open-model-license"
     ):
