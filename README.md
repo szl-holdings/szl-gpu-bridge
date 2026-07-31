@@ -94,8 +94,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `nvidia-nemotron-open-model-license`. Reviewed plaintext attempt 10 now binds
   that protected runtime at
   `37479c23af3228a57ad6018b3f9134186e6d7fa7`, preserves the exact attempt-9
-  post-claim evidence, and remains `AWAITING_ENGINE_SIGNATURE`. No attempt-10
-  queue envelope, runner, dispatch, claim, receipt, or publication exists.
+  post-claim evidence, and has one exclusive-create b804 envelope at
+  `queue/pending/job-2026-nemo-v3-governed-attempt-10.json`. Its raw SHA-256 is
+  `b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b`
+  and its canonical payload SHA-256 is
+  `2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9`.
+  Status is `QUEUED_AWAITING_GPU_RECEIPT`; no runner, dispatch, attempt-10
+  claim, receipt, or publication exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
