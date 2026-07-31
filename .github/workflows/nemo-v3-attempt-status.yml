@@ -13,6 +13,7 @@ on:
       - jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-7-reviewed.json
       - jobspecs/nemo-v3-20260731-attempt-8-reviewed.json
+      - jobspecs/nemo-v3-20260731-attempt-9-reviewed.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-1.json
       - queue/pending/job-2026-nemo-v3-governed-successor-2.json
       - queue/pending/job-2026-nemo-v3-governed-successor-3.json
@@ -22,12 +23,14 @@ on:
       - queue/pending/job-2026-nemo-v3-governed-attempt-6.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-7.json
       - queue/pending/job-2026-nemo-v3-governed-attempt-8.json
+      - queue/pending/job-2026-nemo-v3-governed-attempt-9.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-2.json
       - queue/quarantine/job-2026-nemo-v3-governed-successor-3.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-4.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-5.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-6.json
       - queue/quarantine/job-2026-nemo-v3-governed-attempt-7.json
+      - queue/quarantine/job-2026-nemo-v3-governed-attempt-8.json
       - keys/engine_keyring.json
       - keys/engine_pubkey.json
       - keys/engine_pubkey_815714c8d4ae3e4d.json
@@ -58,6 +61,7 @@ on:
       - tests/test_reviewed_nemo_v3_attempt_6_spec.py
       - tests/test_reviewed_nemo_v3_attempt_7_spec.py
       - tests/test_reviewed_nemo_v3_attempt_8_spec.py
+      - tests/test_reviewed_nemo_v3_attempt_9_spec.py
       - tests/test_nemo_v3_status.py
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
@@ -141,6 +145,12 @@ jobs:
             report_title: '[nemo-v3-attempt-8] governed runtime-binding recovery'
             report_marker: szl-nemo-v3-governed-attempt-8
             report_heading: SZL-Nemo v3 governed attempt 8 runtime-binding recovery
+          - attempt_id: attempt-9-prefetch-checkout-recovery
+            spec_path: jobspecs/nemo-v3-20260731-attempt-9-reviewed.json
+            report_path: reports/nemo-v3-attempt-9-status.json
+            report_title: '[nemo-v3-attempt-9] governed prefetch-checkout recovery'
+            report_marker: szl-nemo-v3-governed-attempt-9
+            report_heading: SZL-Nemo v3 governed attempt 9 prefetch-checkout recovery
     env:
       SPEC_PATH: ${{ matrix.spec_path }}
       REPORT_PATH: ${{ matrix.report_path }}
@@ -183,6 +193,8 @@ jobs:
             tests/test_reviewed_nemo_v3_attempt_5_spec.py \
             tests/test_reviewed_nemo_v3_attempt_6_spec.py \
             tests/test_reviewed_nemo_v3_attempt_7_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_8_spec.py \
+            tests/test_reviewed_nemo_v3_attempt_9_spec.py \
             tests/test_engine_keyring.py \
             tests/test_isolated_nemo_launcher_contract.py \
             tests/test_nemo_v3_dispatcher_engine_key_scope.py \

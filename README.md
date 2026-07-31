@@ -70,8 +70,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
   NEVER_DISPATCH`; no training, candidate, or receipt exists. A fresh attempt
   9 must bind protected A11oy main
   `c6aa4f08f752a22bbae35cf5a618a81811494a43`, owner-workflow blob
-  `f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, and a separately reviewed
-  protected Bridge runtime.
+  `f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, canonical relock run
+  `30607399378`, and protected Bridge runtime
+  `eeabd1b52380d2b24439e53d5e4ad38f8114556c`. Its reviewed plaintext
+  contract preserves the frozen science inputs and disables candidate,
+  model-card, dataset, deployment, and promotion effects. It is not
+  executable until a separate b804-signed queue-envelope PR is protected,
+  merged, and read back.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
