@@ -60,6 +60,12 @@ SUCCESSOR_CORRECTED_BRIDGE_REVISION = "2f33607d8fcbec76fe98290258ec3dfa728fb509"
 FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-7"
 NEXT_RUNTIME_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-8"
 NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION = "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf"
+RECOVERY_A11OY_SOURCE_REVISION = "c6aa4f08f752a22bbae35cf5a618a81811494a43"
+RECOVERY_OWNER_WORKFLOW_BLOB = "f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d"
+RECOVERY_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30607399378"
+)
+ATTEMPT_9_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-9"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -94,6 +100,13 @@ _ATTEMPT_8_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": NEXT_RUNTIME_REVIEWED_JOB_ID,
+}
+_ATTEMPT_9_REPLACEMENT = {
+    "sourceRevision": RECOVERY_A11OY_SOURCE_REVISION,
+    "workflowBlob": RECOVERY_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_9_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -190,6 +203,22 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         "source_revision": SUCCESSOR_A11OY_SOURCE_REVISION,
         "replacement": _ATTEMPT_8_REPLACEMENT,
     },
+    NEXT_RUNTIME_REVIEWED_JOB_ID: {
+        "statuses": (
+            "TRUSTED_PREFETCH_DIRTIED_EXECUTION_CHECKOUT",
+            "PRE_CLAIM",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719"
+        ),
+        "payload_sha256": (
+            "3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": SUCCESSOR_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_9_REPLACEMENT,
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -244,6 +273,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": SUCCESSOR_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 8,
+    },
+    ATTEMPT_9_REVIEWED_JOB_ID: {
+        "sourceRevision": RECOVERY_A11OY_SOURCE_REVISION,
+        "workflowBlob": RECOVERY_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": RECOVERY_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 9,
     },
 }
 _ALLOWED_TOP = {
@@ -390,7 +427,10 @@ def require_nemo_v3_dispatchable(
         raise ContractError(
             "Nemo v3 job is quarantined: " + " + ".join(policy["statuses"])
         )
-    if spec.get("jobId") == NEXT_RUNTIME_REVIEWED_JOB_ID:
+    if spec.get("jobId") in {
+        NEXT_RUNTIME_REVIEWED_JOB_ID,
+        ATTEMPT_9_REVIEWED_JOB_ID,
+    }:
         expected = _revision(
             expected_execution_bridge_revision,
             "expected execution Bridge revision",
@@ -541,7 +581,8 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 exact40=True,
             )
             if (
-                authorization["correctedBridgeRevision"]
+                not coordinated_binding.get("runtimeBound")
+                and authorization["correctedBridgeRevision"]
                 != coordinated_binding["correctedBridgeRevision"]
             ):
                 raise ContractError(
@@ -682,6 +723,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                     "https://github.com/szl-holdings/a11oy/actions/runs/30605081533"
                 )
                 expected_failure_phase = "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION"
+                expected_event_created = True
+            elif predecessor == NEXT_RUNTIME_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30606664591"
+                )
+                expected_failure_phase = "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT"
                 expected_event_created = True
             else:
                 raise ContractError(
@@ -920,6 +967,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             if lineage != exact_runtime_binding_lineage:
                 raise ContractError(
                     "attempt-8 runtime-binding recovery lineage is not exact"
+                )
+        if spec["jobId"] == ATTEMPT_9_REVIEWED_JOB_ID:
+            exact_prefetch_recovery_lineage = {
+                "predecessorJobId": NEXT_RUNTIME_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719"
+                ),
+                "predecessorPayloadSha256": (
+                    "3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "08b1bd8bc0659b939d3d6d08c2ee7c670f82cd09"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30606664591"
+                ),
+                "failurePhase": "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT",
+                "successorGeneration": 9,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_prefetch_recovery_lineage:
+                raise ContractError(
+                    "attempt-9 prefetch-checkout recovery lineage is not exact"
                 )
 
     base = _object(

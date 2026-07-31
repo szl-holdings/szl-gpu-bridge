@@ -62,8 +62,16 @@ cloud/verify-receipt.mjs ◄─────────────────�
   training, candidate, or receipt exists. Reviewed plaintext attempt 8 binds
   protected runtime `dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf`; that exact
   signed revision must be supplied again at dispatch. Its one-time b804
-  envelope is valid, so attempt 8 is `QUEUED_AWAITING_GPU_RECEIPT`; no claim,
-  training, candidate, or receipt exists.
+  envelope created one exact workflow run and authenticated prefetch, but
+  Python bytecode from that trusted prefetch dirtied the protected execution
+  checkout. The strict gate rejected attempt 8 before its claim. Attempt 8 is
+  immutable evidence under
+  `TRUSTED_PREFETCH_DIRTIED_EXECUTION_CHECKOUT + PRE_CLAIM +
+  NEVER_DISPATCH`; no training, candidate, or receipt exists. A fresh attempt
+  9 must bind protected A11oy main
+  `c6aa4f08f752a22bbae35cf5a618a81811494a43`, owner-workflow blob
+  `f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, and a separately reviewed
+  protected Bridge runtime.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

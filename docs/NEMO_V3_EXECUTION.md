@@ -507,6 +507,26 @@ revision before any claim. The exclusive-create b804 envelope at
 `b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719`
 and binds canonical signer payload SHA-256
 `3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d`.
-Attempt 8 is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, training, candidate,
-terminal ledger, or receipt exists. Candidate, model-card, dataset,
-deployment, promotion, and every non-receipt upload remain disabled.
+Run `30606664591` passed nested transport, b804 envelope verification,
+protected Bridge history, the immutable GPU image, and authenticated prefetch.
+The trusted prefetch wrote Python bytecode into protected execution Bridge
+revision `dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf`, so the strict dirty-checkout
+gate rejected the attempt before its O_EXCL claim. The immutable local
+prefetch receipt has raw SHA-256
+`a80aebde90f0909baa55142ed18f56e57b1ed07ee0ddf41327768af9870b9676`;
+it proves authenticated input acquisition only and is not a training receipt.
+No claim, job directory, training, model-code import, holdout access,
+candidate, finalization, terminal ledger, or training receipt exists.
+
+The immutable quarantine record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-8.json` therefore marks
+attempt 8
+`TRUSTED_PREFETCH_DIRTIED_EXECUTION_CHECKOUT + PRE_CLAIM + NEVER_DISPATCH`.
+Its reviewed spec, b804 envelope, and prefetch receipt remain byte-for-byte
+evidence and must never be retried, consumed, deleted, rewritten, or
+re-signed. Fresh attempt 9 must bind protected A11oy source
+`c6aa4f08f752a22bbae35cf5a618a81811494a43`, owner-workflow blob
+`f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, canonical relock run
+`30607399378`, and a separately reviewed protected Bridge runtime. Candidate,
+model-card, dataset, deployment, promotion, and every non-receipt upload
+remain disabled.
