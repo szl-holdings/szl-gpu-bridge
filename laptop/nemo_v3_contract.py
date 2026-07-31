@@ -56,6 +56,7 @@ SUCCESSOR_OWNER_WORKFLOW_BLOB = "d29d937b2d398e9c207777a9a819aadd050ac231"
 SUCCESSOR_A11OY_RELOCK_RUN_URL = (
     "https://github.com/szl-holdings/a11oy/actions/runs/30601635066"
 )
+SUCCESSOR_CORRECTED_BRIDGE_REVISION = "2f33607d8fcbec76fe98290258ec3dfa728fb509"
 FUTURE_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-7"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
@@ -202,6 +203,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": EXECUTION_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": "69a097d2eb0619506d673464353f1aea7174cf05",
         "successorGeneration": 6,
+    },
+    FUTURE_REVIEWED_JOB_ID: {
+        "sourceRevision": SUCCESSOR_A11OY_SOURCE_REVISION,
+        "workflowBlob": SUCCESSOR_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": SUCCESSOR_A11OY_RELOCK_RUN_URL,
+        "correctedBridgeRevision": SUCCESSOR_CORRECTED_BRIDGE_REVISION,
+        "successorGeneration": 7,
     },
 }
 _ALLOWED_TOP = {
@@ -610,6 +619,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 )
                 expected_failure_phase = "PRE_ADMISSION_HOST_EXECUTION_POLICY"
                 expected_event_created = True
+            elif predecessor == ATTEMPT_6_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/szl-gpu-bridge/issues/41"
+                )
+                expected_failure_phase = "PRE_DISPATCH_VALIDATOR_REJECTION"
+                expected_event_created = False
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -775,6 +790,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             if lineage != exact_host_policy_lineage:
                 raise ContractError(
                     "attempt-6 host-policy recovery lineage is not exact"
+                )
+        if spec["jobId"] == FUTURE_REVIEWED_JOB_ID:
+            exact_validator_rejection_lineage = {
+                "predecessorJobId": ATTEMPT_6_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70"
+                ),
+                "predecessorPayloadSha256": (
+                    "d0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "72f9bf650b081fec0a016825f2cb7f962c52242d"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    "69a097d2eb0619506d673464353f1aea7174cf05"
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/szl-gpu-bridge/issues/41"
+                ),
+                "failurePhase": "PRE_DISPATCH_VALIDATOR_REJECTION",
+                "successorGeneration": 7,
+                "automaticRetry": False,
+                "eventCreated": False,
+                "workflowRunCreated": False,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_validator_rejection_lineage:
+                raise ContractError(
+                    "attempt-7 validator-rejection recovery lineage is not exact"
                 )
 
     base = _object(

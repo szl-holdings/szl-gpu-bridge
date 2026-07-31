@@ -240,6 +240,37 @@ test('Nemo v3 attempt 6 binds the one-run pre-admission host-policy failure', ()
   );
 });
 
+test('Nemo v3 attempt 7 binds the zero-event validator rejection', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-7-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+
+  const eventCreated = structuredClone(reviewed);
+  eventCreated.lineage.eventCreated = true;
+  assert.throws(
+    () => validateNemoV3Spec(eventCreated),
+    /eventCreated/,
+  );
+
+  const skippedPredecessor = structuredClone(reviewed);
+  skippedPredecessor.lineage.predecessorJobId = 'job-2026-nemo-v3-governed-attempt-5';
+  assert.throws(
+    () => validateNemoV3Spec(skippedPredecessor),
+    /transport evidence/,
+  );
+
+  const staleRuntime = structuredClone(reviewed);
+  staleRuntime.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleRuntime),
+    /coordinated authorization/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
