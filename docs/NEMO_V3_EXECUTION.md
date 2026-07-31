@@ -796,3 +796,36 @@ dataset, deployment, promotion, and all other publication effects are false.
 The distinct next reviewed identity is attempt 15, bound only to a separately
 protected corrected runtime. Attempts 13 and 14 are never retry, resend,
 re-sign, or dispatch authority.
+
+## Reviewed attempt 15 meta-tensor recovery
+
+`jobspecs/nemo-v3-20260731-attempt-15-reviewed.json` is the distinct plaintext
+successor to immutable attempt 14. It preserves the frozen A11oy source,
+workflow, immutable image, local snapshot, license, science inputs,
+receipt-only destination, and disabled candidate/model-card/dataset uploads.
+Its execution authorization binds verified Bridge runtime
+`60b9894efe9e0e782999aaa4ee5b0d668e7a9b63`.
+
+Attempt 15 records attempt 14's exact single-run lineage: A11oy run
+`30634484969`, envelope SHA-256
+`207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82`,
+payload SHA-256
+`162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da`,
+and `POST_CLAIM_TRAINER_META_TENSOR`. The predecessor reached an exclusive
+claim and trusted BLOCKED receipt, but training did not start and no candidate
+or other release artifact was published.
+
+The corrected runtime materializes only exact frozen CPU modules that retain
+valid Accelerate hook backing and are required before the pinned trainer. It
+fails closed on trainable, unbacked, wrong-device, or still-meta state, while
+preserving the legitimate offload map and assistant-only labels. The reviewed
+attempt-15 JSON has raw SHA-256
+`6fd61348cb0cba5fdf338935574deaec827da9ee1f827d8a43e6382993519198`;
+its signer-canonical payload SHA-256 is
+`9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873`.
+There is deliberately no
+`queue/pending/job-2026-nemo-v3-governed-attempt-15.json` in this phase.
+Therefore the status is `AWAITING_ENGINE_SIGNATURE`, not queued or executable.
+Only a later, separate exclusive-create b804 signing and protected publication
+may establish queue authority; that publication cannot modify or re-sign
+attempts 13 or 14.

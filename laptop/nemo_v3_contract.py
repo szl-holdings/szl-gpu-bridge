@@ -648,6 +648,14 @@ _COORDINATED_JOB_BINDINGS = {
         "runtimeBound": True,
         "successorGeneration": 14,
     },
+    ATTEMPT_15_REVIEWED_JOB_ID: {
+        "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 15,
+    },
 }
 _ALLOWED_TOP = {
     "jobId",
@@ -800,6 +808,7 @@ def require_nemo_v3_dispatchable(
         ATTEMPT_12_REVIEWED_JOB_ID,
         ATTEMPT_13_REVIEWED_JOB_ID,
         ATTEMPT_14_REVIEWED_JOB_ID,
+        ATTEMPT_15_REVIEWED_JOB_ID,
     }:
         expected = _revision(
             expected_execution_bridge_revision,
@@ -1148,6 +1157,17 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                     "https://github.com/szl-holdings/a11oy/actions/runs/30629929196"
                 )
                 expected_failure_phase = "POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY"
+                expected_event_created = True
+                expected_claim_created = True
+                expected_holdouts_accessed = True
+                expected_receipt_intent_produced = True
+                expected_model_repository_code_imported = True
+                expected_terminal_ledger_written = True
+            elif predecessor == ATTEMPT_14_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30634484969"
+                )
+                expected_failure_phase = "POST_CLAIM_TRAINER_META_TENSOR"
                 expected_event_created = True
                 expected_claim_created = True
                 expected_holdouts_accessed = True
@@ -1608,6 +1628,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-14 SFTConfig recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_15_REVIEWED_JOB_ID:
+            exact_meta_tensor_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_14_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82"
+                ),
+                "predecessorPayloadSha256": (
+                    "162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "fd97065eb2aa9fc3299706c531597538a65eb735"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    "e150711a6ba6a0c29109a00da7fc82af2967f588"
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30634484969"
+                ),
+                "failurePhase": "POST_CLAIM_TRAINER_META_TENSOR",
+                "successorGeneration": 15,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": True,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": True,
+                "holdoutsAccessed": True,
+                "candidateProduced": False,
+                "receiptIntentProduced": True,
+                "terminalLedgerWritten": True,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_meta_tensor_recovery_lineage:
+                raise ContractError(
+                    "attempt-15 meta-tensor recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1639,6 +1695,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             ATTEMPT_12_REVIEWED_JOB_ID,
             ATTEMPT_13_REVIEWED_JOB_ID,
             ATTEMPT_14_REVIEWED_JOB_ID,
+            ATTEMPT_15_REVIEWED_JOB_ID,
         }
         and base["licenseId"] != "nvidia-nemotron-open-model-license"
     ):

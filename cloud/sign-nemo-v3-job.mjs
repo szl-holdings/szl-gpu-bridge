@@ -71,6 +71,7 @@ const ATTEMPT_12_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-12';
 const ATTEMPT_12_CORRECTED_BRIDGE_REVISION = 'd110abb8ea48c9382a70c3eead22dddf555f292b';
 const ATTEMPT_13_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-13';
 const ATTEMPT_14_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-14';
+const ATTEMPT_15_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-15';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -175,6 +176,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
     runtimeBound: true,
     successorGeneration: 14,
+  },
+  [ATTEMPT_15_REVIEWED_JOB_ID]: {
+    sourceRevision: EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    workflowBlob: EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+    runtimeBound: true,
+    successorGeneration: 15,
   },
 };
 
@@ -319,6 +328,15 @@ function validateLineage(spec) {
     } else if (lineage.predecessorJobId === ATTEMPT_13_REVIEWED_JOB_ID) {
       expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30629929196';
       expectedFailurePhase = 'POST_CLAIM_SFTCONFIG_STRATEGY_COMPATIBILITY';
+      expectedEventCreated = true;
+      expectedClaimCreated = true;
+      expectedHoldoutsAccessed = true;
+      expectedReceiptIntentProduced = true;
+      expectedModelRepositoryCodeImported = true;
+      expectedTerminalLedgerWritten = true;
+    } else if (lineage.predecessorJobId === ATTEMPT_14_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30634484969';
+      expectedFailurePhase = 'POST_CLAIM_TRAINER_META_TENSOR';
       expectedEventCreated = true;
       expectedClaimCreated = true;
       expectedHoldoutsAccessed = true;
@@ -749,6 +767,32 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-14 SFTConfig recovery lineage is not exact');
     }
   }
+  if (spec.jobId === ATTEMPT_15_REVIEWED_JOB_ID) {
+    const exactMetaTensorRecoveryLineage = {
+      predecessorJobId: ATTEMPT_14_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: '207f0c58525f042d31a748404d0acb678f5fd83722d2a3eacf8399e4e34c9f82',
+      predecessorPayloadSha256: '162354602784e8a1cbcecbbfc8a5d7cc9af6be2dd58c66fae442d4f5a292f1da',
+      predecessorEnvelopeRevision: 'fd97065eb2aa9fc3299706c531597538a65eb735',
+      predecessorExecutionBridgeRevision: 'e150711a6ba6a0c29109a00da7fc82af2967f588',
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30634484969',
+      failurePhase: 'POST_CLAIM_TRAINER_META_TENSOR',
+      successorGeneration: 15,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: true,
+      trainingStarted: false,
+      modelRepositoryCodeImported: true,
+      holdoutsAccessed: true,
+      candidateProduced: false,
+      receiptIntentProduced: true,
+      terminalLedgerWritten: true,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactMetaTensorRecoveryLineage)) {
+      throw new Error('attempt-15 meta-tensor recovery lineage is not exact');
+    }
+  }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
@@ -758,6 +802,7 @@ export function validateNemoV3Spec(spec) {
     ATTEMPT_12_REVIEWED_JOB_ID,
     ATTEMPT_13_REVIEWED_JOB_ID,
     ATTEMPT_14_REVIEWED_JOB_ID,
+    ATTEMPT_15_REVIEWED_JOB_ID,
   ].includes(spec.jobId)
       && spec.base.licenseId !== 'nvidia-nemotron-open-model-license') {
     throw new Error('runtime recovery must bind the exact immutable custom license ID');
@@ -829,8 +874,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== ATTEMPT_14_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${ATTEMPT_14_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_15_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_15_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');

@@ -296,7 +296,7 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
             validate_nemo_v3_spec(skipped)
 
         unknown = copy.deepcopy(attempt_13)
-        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-15"
+        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-16"
         with self.assertRaisesRegex(ContractError, "exact reviewed job binding"):
             validate_nemo_v3_spec(unknown)
 
@@ -339,7 +339,7 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
         ):
             self.assertIn(expected, STATUS_WORKFLOW)
         self.assertIn(
-            "signer is locked to ${ATTEMPT_14_REVIEWED_JOB_ID}",
+            "signer is locked to ${ATTEMPT_15_REVIEWED_JOB_ID}",
             SIGNER_SOURCE,
         )
         self.assertIn("'job-2026-nemo-v3-governed-attempt-11',", SIGNER_SOURCE)

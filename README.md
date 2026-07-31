@@ -197,6 +197,16 @@ cloud/verify-receipt.mjs ◄─────────────────�
   SIGNED_BLOCKED_RECEIPT + NEVER_DISPATCH`; its spec and envelope remain
   immutable. All publication flags are false. The next reviewed identity is
   attempt 15, bound to a separately protected corrected runtime.
+  Reviewed plaintext attempt 15 is at
+  `jobspecs/nemo-v3-20260731-attempt-15-reviewed.json`. It binds verified
+  Bridge runtime `60b9894efe9e0e782999aaa4ee5b0d668e7a9b63`, including the
+  fail-closed hook-backed CPU materialization check and assistant-only label
+  preparation. Its raw reviewed JSON SHA-256 is
+  `6fd61348cb0cba5fdf338935574deaec827da9ee1f827d8a43e6382993519198`
+  and its signer-canonical payload SHA-256 is
+  `9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873`.
+  No attempt-15 queue envelope exists in this plaintext phase, so its honest
+  status is `AWAITING_ENGINE_SIGNATURE`; it is not dispatch authority.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
