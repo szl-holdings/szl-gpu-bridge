@@ -370,6 +370,44 @@ test('Nemo v3 attempt 10 binds the exact post-claim cache/license/finalizer reco
   );
 });
 
+test('Nemo v3 attempt 11 binds exact pre-claim runtime-admission recovery', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-11-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+
+  for (const [field, value] of [
+    ['eventCreated', false],
+    ['claimCreated', true],
+    ['holdoutsAccessed', true],
+    ['receiptIntentProduced', true],
+  ]) {
+    const mutated = structuredClone(reviewed);
+    mutated.lineage[field] = value;
+    assert.throws(
+      () => validateNemoV3Spec(mutated),
+      new RegExp(field),
+    );
+  }
+
+  const staleRuntime = structuredClone(reviewed);
+  staleRuntime.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleRuntime),
+    /coordinated authorization/,
+  );
+
+  const staleWorkflow = structuredClone(reviewed);
+  staleWorkflow.ownerDispatch.workflowBlob = 'b'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleWorkflow),
+    /coordinated recovery binding/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');

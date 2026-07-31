@@ -62,6 +62,11 @@ const ATTEMPT_9_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-9';
 const ATTEMPT_9_CORRECTED_BRIDGE_REVISION = 'eeabd1b52380d2b24439e53d5e4ad38f8114556c';
 const ATTEMPT_10_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-10';
 const ATTEMPT_10_CORRECTED_BRIDGE_REVISION = '37479c23af3228a57ad6018b3f9134186e6d7fa7';
+const EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION = '434d653eaf100b9b3e5484687db1e6e6ca7116c9';
+const EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB = '7cf0c877399471a084d3e70638ef50ec28d7f646';
+const EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30613619902';
+const ATTEMPT_11_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-11';
+const ATTEMPT_11_CORRECTED_BRIDGE_REVISION = 'f07263bc37ef6e90b313ba5576ef425d845cf287';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -71,6 +76,7 @@ const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-7',
   'job-2026-nemo-v3-governed-attempt-8',
   'job-2026-nemo-v3-governed-attempt-9',
+  'job-2026-nemo-v3-governed-attempt-10',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -129,6 +135,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: RECOVERY_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 10,
+  },
+  [ATTEMPT_11_REVIEWED_JOB_ID]: {
+    sourceRevision: EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    workflowBlob: EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: ATTEMPT_11_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 11,
   },
 };
 
@@ -251,6 +265,10 @@ function validateLineage(spec) {
       expectedClaimCreated = true;
       expectedHoldoutsAccessed = true;
       expectedReceiptIntentProduced = true;
+    } else if (lineage.predecessorJobId === ATTEMPT_10_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30612658302';
+      expectedFailurePhase = 'PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION';
+      expectedEventCreated = true;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
     }
@@ -569,12 +587,38 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-10 cache/license/finalizer recovery lineage is not exact');
     }
   }
+  if (spec.jobId === ATTEMPT_11_REVIEWED_JOB_ID) {
+    const exactRuntimeAdmissionRecoveryLineage = {
+      predecessorJobId: ATTEMPT_10_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: 'b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b',
+      predecessorPayloadSha256: '2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9',
+      predecessorEnvelopeRevision: '5c0aa8e9949b1cf2593acc269eb3fefffeaa36e1',
+      predecessorExecutionBridgeRevision: ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30612658302',
+      failurePhase: 'PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION',
+      successorGeneration: 11,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactRuntimeAdmissionRecoveryLineage)) {
+      throw new Error('attempt-11 runtime-admission recovery lineage is not exact');
+    }
+  }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
-  if (spec.jobId === ATTEMPT_10_REVIEWED_JOB_ID
+  if ([ATTEMPT_10_REVIEWED_JOB_ID, ATTEMPT_11_REVIEWED_JOB_ID].includes(spec.jobId)
       && spec.base.licenseId !== 'nvidia-nemotron-open-model-license') {
-    throw new Error('attempt-10 must bind the exact immutable custom license ID');
+    throw new Error('runtime recovery must bind the exact immutable custom license ID');
   }
   if (typeof spec.base.licenseAcknowledgement !== 'string' || spec.base.licenseAcknowledgement.trim().length < 20) {
     throw new Error('explicit base license acknowledgement required');
@@ -643,8 +687,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== ATTEMPT_10_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${ATTEMPT_10_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_11_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_11_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');

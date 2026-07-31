@@ -107,7 +107,12 @@ cloud/verify-receipt.mjs ◄─────────────────�
   be retried. A future attempt 11 must use the separately reviewed A11oy helper
   invocation contract at `434d653eaf100b9b3e5484687db1e6e6ca7116c9`
   and a protected runtime-bound Bridge revision that accepts only its exact
-  signed job/source/workflow/execution identity.
+  signed job/source/workflow/execution identity. Reviewed plaintext attempt 11
+  now binds protected A11oy source `434d653eaf100b9b3e5484687db1e6e6ca7116c9`,
+  workflow blob `7cf0c877399471a084d3e70638ef50ec28d7f646`, and protected
+  Bridge runtime `f07263bc37ef6e90b313ba5576ef425d845cf287`. It has no
+  queue envelope, runner, dispatch, claim, receipt, or publication authority;
+  only a separate protected b804 signing stage may advance it.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
