@@ -18,6 +18,7 @@ const SHA = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const REPO = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const JOB = /^job-[0-9]{4}-nemo-v3-[a-z0-9][a-z0-9-]{2,64}$/;
+const ATTEMPT_JOB = /^job-[0-9]{4}-nemo-v3-governed-attempt-([1-9][0-9]*)$/;
 const ENGINE_KEY_ID = /^[0-9a-f]{16}$/;
 const SAFE_PATH = /^[A-Za-z0-9][A-Za-z0-9_./-]*$/;
 const HOLDOUT_NAMES = ['original-v2', 'shadow-v2', 'challenge-v3'];
@@ -72,6 +73,7 @@ const ATTEMPT_12_CORRECTED_BRIDGE_REVISION = 'd110abb8ea48c9382a70c3eead22dddf55
 const ATTEMPT_13_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-13';
 const ATTEMPT_14_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-14';
 const ATTEMPT_15_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-15';
+const ATTEMPT_16_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-16';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -86,6 +88,7 @@ const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-12',
   'job-2026-nemo-v3-governed-attempt-13',
   'job-2026-nemo-v3-governed-attempt-14',
+  'job-2026-nemo-v3-governed-attempt-15',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -161,31 +164,136 @@ const COORDINATED_JOB_BINDINGS = {
     correctedBridgeRevision: ATTEMPT_12_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 12,
   },
-  [ATTEMPT_13_REVIEWED_JOB_ID]: {
-    sourceRevision: EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
-    workflowBlob: EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
-    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
-    relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
-    runtimeBound: true,
-    successorGeneration: 13,
-  },
-  [ATTEMPT_14_REVIEWED_JOB_ID]: {
-    sourceRevision: EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
-    workflowBlob: EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
-    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
-    relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
-    runtimeBound: true,
-    successorGeneration: 14,
-  },
-  [ATTEMPT_15_REVIEWED_JOB_ID]: {
-    sourceRevision: EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
-    workflowBlob: EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
-    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
-    relockRunUrl: EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
-    runtimeBound: true,
-    successorGeneration: 15,
-  },
 };
+
+const LEGACY_REPLACEMENT_FIELDS = [
+  'sourceRevision', 'workflowBlob', 'engineKeyId',
+  'enginePublicKeySpkiSha256', 'reviewedJobId',
+];
+const RUNTIME_REPLACEMENT_FIELDS = [
+  ...LEGACY_REPLACEMENT_FIELDS,
+  'workflowVersion', 'settledA11oyRelockRunUrl', 'successorGeneration',
+];
+
+function exactFields(value, fields) {
+  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...fields].sort());
+}
+
+function attemptGeneration(jobId, field) {
+  const match = ATTEMPT_JOB.exec(jobId ?? '');
+  if (!match) throw new Error(`${field} is not an exact governed attempt ID`);
+  return Number(match[1]);
+}
+
+function readProtectedJson(relativePath, field) {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, relativePath), 'utf8'));
+  } catch (error) {
+    throw new Error(`${field} is unavailable or invalid: ${error.message}`);
+  }
+}
+
+export function resolveCoordinatedJobBinding(spec) {
+  const staticBinding = COORDINATED_JOB_BINDINGS[spec.jobId];
+  if (staticBinding) return staticBinding;
+
+  const generation = attemptGeneration(spec.jobId, 'jobId');
+  const lineage = object(spec.lineage, 'lineage');
+  const predecessorJobId = lineage.predecessorJobId;
+  const predecessorGeneration = attemptGeneration(
+    predecessorJobId,
+    'lineage.predecessorJobId',
+  );
+  if (predecessorGeneration + 1 !== generation) {
+    throw new Error('runtime-bound lineage cannot skip a generation');
+  }
+  if (lineage.successorGeneration !== generation) {
+    throw new Error('runtime-bound coordinated authorization has mismatched generation');
+  }
+
+  const quarantine = readProtectedJson(
+    `queue/quarantine/${predecessorJobId}.json`,
+    'protected predecessor quarantine',
+  );
+  if (quarantine.kind !== 'szl-nemo-v3-queue-quarantine'
+      || quarantine.v !== 1
+      || quarantine.jobId !== predecessorJobId
+      || !Array.isArray(quarantine.status)
+      || !quarantine.status.includes('NEVER_DISPATCH')
+      || quarantine.preserveEnvelope !== true
+      || quarantine.dispatchAuthorized !== false
+      || quarantine.queuePath !== `queue/pending/${predecessorJobId}.json`
+      || !SHA256.test(quarantine.queueFileSha256 ?? '')
+      || !SHA256.test(quarantine.signedPayloadSha256 ?? '')
+      || !/^[0-9a-f]{40}$/.test(quarantine.sourceRevision ?? '')
+      || quarantine.engineKeyId !== COORDINATED_ENGINE_KEY_ID) {
+    throw new Error('protected predecessor quarantine boundary is invalid');
+  }
+  const replacement = object(quarantine.replacement, 'protected predecessor replacement');
+  const legacyShape = exactFields(replacement, LEGACY_REPLACEMENT_FIELDS);
+  const runtimeShape = exactFields(replacement, RUNTIME_REPLACEMENT_FIELDS);
+  if (!legacyShape && !runtimeShape) {
+    throw new Error('protected predecessor replacement fields must be exact');
+  }
+  if (replacement.reviewedJobId !== spec.jobId) {
+    throw new Error('protected predecessor replacement does not authorize this reviewed job');
+  }
+  if (replacement.engineKeyId !== COORDINATED_ENGINE_KEY_ID
+      || replacement.enginePublicKeySpkiSha256 !== COORDINATED_ENGINE_SPKI_SHA256
+      || !/^[0-9a-f]{40}$/.test(replacement.sourceRevision ?? '')
+      || !/^[0-9a-f]{40}$/.test(replacement.workflowBlob ?? '')) {
+    throw new Error('protected predecessor replacement trust context is invalid');
+  }
+
+  const contexts = Object.values(COORDINATED_JOB_BINDINGS).filter(
+    (binding) => binding.sourceRevision === replacement.sourceRevision
+      && binding.workflowBlob === replacement.workflowBlob,
+  );
+  const contextKeys = new Set(
+    contexts.map((binding) => `${binding.workflowVersion}\n${binding.relockRunUrl}`),
+  );
+  if (contextKeys.size !== 1) {
+    throw new Error('protected predecessor replacement does not bind one admitted A11oy context');
+  }
+  const context = contexts[0];
+  if (runtimeShape
+      && (replacement.workflowVersion !== context.workflowVersion
+          || replacement.settledA11oyRelockRunUrl !== context.relockRunUrl
+          || replacement.successorGeneration !== generation)) {
+    throw new Error('protected predecessor replacement runtime context is invalid');
+  }
+  if (generation >= 16 && !runtimeShape) {
+    throw new Error('new runtime successor replacement lacks exact context and generation');
+  }
+
+  const evidenceRecord = readProtectedJson(
+    `queue/evidence/${predecessorJobId}.json`,
+    'protected predecessor execution evidence',
+  );
+  const evidence = object(evidenceRecord.executionEvidence, 'executionEvidence');
+  if (evidenceRecord.kind !== 'szl-nemo-v3-execution-evidence'
+      || evidenceRecord.v !== 1
+      || evidenceRecord.jobId !== predecessorJobId
+      || !/^[0-9]+$/.test(evidence.workflowRunId ?? '')
+      || !/^[0-9a-f]{40}$/.test(evidence.envelopeRevision ?? '')
+      || !/^[0-9a-f]{40}$/.test(evidence.executionBridgeRevision ?? '')
+      || evidence.sourceRevision !== quarantine.sourceRevision
+      || typeof evidence.failurePhase !== 'string'
+      || !evidence.failurePhase) {
+    throw new Error('protected predecessor execution evidence boundary is invalid');
+  }
+  return {
+    sourceRevision: replacement.sourceRevision,
+    workflowBlob: replacement.workflowBlob,
+    workflowVersion: context.workflowVersion,
+    relockRunUrl: context.relockRunUrl,
+    runtimeBound: true,
+    successorGeneration: generation,
+    predecessorJobId,
+    predecessorQuarantine: quarantine,
+    predecessorEvidence: evidence,
+  };
+}
 
 export function canonicalize(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
@@ -235,7 +343,7 @@ function validatePinnedFile(value, name, records = false) {
   }
 }
 
-function validateLineage(spec) {
+function validateLineage(spec, coordinatedBinding) {
   if (spec.lineage === undefined) return;
   const lineage = object(spec.lineage, 'lineage');
   const legacyFields = [
@@ -343,12 +451,61 @@ function validateLineage(spec) {
       expectedReceiptIntentProduced = true;
       expectedModelRepositoryCodeImported = true;
       expectedTerminalLedgerWritten = true;
+    } else if (coordinatedBinding?.runtimeBound
+        && coordinatedBinding.predecessorEvidence) {
+      const evidence = coordinatedBinding.predecessorEvidence;
+      expectedEvidence = `https://github.com/szl-holdings/a11oy/actions/runs/${evidence.workflowRunId}`;
+      expectedFailurePhase = evidence.failurePhase;
+      expectedEventCreated = true;
+      expectedClaimCreated = evidence.claimCreated ?? false;
+      expectedHoldoutsAccessed = evidence.holdoutsAccessed ?? false;
+      expectedReceiptIntentProduced = evidence.receiptIntentProduced ?? false;
+      expectedModelRepositoryCodeImported = evidence.modelRepositoryCodeImported ?? false;
+      expectedTerminalLedgerWritten = evidence.receiptUploaded ?? false;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
     }
     if (lineage.transportEvidenceUrl !== expectedEvidence
         || lineage.failurePhase !== expectedFailurePhase) {
       throw new Error('lineage predecessor transport evidence invalid');
+    }
+    if (coordinatedBinding?.runtimeBound
+        && coordinatedBinding.predecessorEvidence) {
+      const quarantine = coordinatedBinding.predecessorQuarantine;
+      const evidence = coordinatedBinding.predecessorEvidence;
+      const exactEvidence = {
+        predecessorJobId: coordinatedBinding.predecessorJobId,
+        predecessorEnvelopeSha256: quarantine.queueFileSha256,
+        predecessorPayloadSha256: quarantine.signedPayloadSha256,
+        predecessorEnvelopeRevision: evidence.envelopeRevision,
+        predecessorExecutionBridgeRevision: evidence.executionBridgeRevision,
+        transportEvidenceUrl: `https://github.com/szl-holdings/a11oy/actions/runs/${evidence.workflowRunId}`,
+        failurePhase: evidence.failurePhase,
+        successorGeneration: coordinatedBinding.successorGeneration,
+        automaticRetry: false,
+        eventCreated: true,
+        workflowRunCreated: true,
+        candidateProduced: false,
+        scienceInputsReused: true,
+      };
+      const evidenceBoundaries = {
+        claimCreated: 'claimCreated',
+        trainingStarted: 'trainingStarted',
+        modelRepositoryCodeImported: 'modelRepositoryCodeImported',
+        holdoutsAccessed: 'holdoutsAccessed',
+        receiptIntentProduced: 'receiptIntentProduced',
+        terminalLedgerWritten: 'receiptUploaded',
+      };
+      for (const [lineageField, evidenceField] of Object.entries(evidenceBoundaries)) {
+        if (Object.hasOwn(evidence, evidenceField)) {
+          exactEvidence[lineageField] = evidence[evidenceField];
+        }
+      }
+      for (const [field, value] of Object.entries(exactEvidence)) {
+        if (lineage[field] !== value) {
+          throw new Error(`runtime-bound successor lineage ${field} differs from protected predecessor evidence`);
+        }
+      }
     }
   } else {
     if (!SHA256.test(lineage.predecessorClaimSha256 ?? '')
@@ -492,8 +649,10 @@ export function validateNemoV3Spec(spec) {
   const created = new Date(spec.createdAt).getTime();
   const expires = new Date(spec.expiresAt).getTime();
   if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) throw new Error('invalid expiry');
-  const coordinatedBinding = COORDINATED_JOB_BINDINGS[spec.jobId];
-  validateLineage(spec);
+  const coordinated = spec.authorization?.rotationMode
+    === 'COORDINATED_FINAL_TRUST_ROOT_NEW_GENERATION';
+  const coordinatedBinding = coordinated ? resolveCoordinatedJobBinding(spec) : undefined;
+  validateLineage(spec, coordinatedBinding);
   validateOwnerDispatch(spec, coordinatedBinding);
   const coordinatedAuthorization = validateAuthorization(spec, coordinatedBinding);
 
@@ -796,14 +955,7 @@ export function validateNemoV3Spec(spec) {
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
-  if ([
-    ATTEMPT_10_REVIEWED_JOB_ID,
-    ATTEMPT_11_REVIEWED_JOB_ID,
-    ATTEMPT_12_REVIEWED_JOB_ID,
-    ATTEMPT_13_REVIEWED_JOB_ID,
-    ATTEMPT_14_REVIEWED_JOB_ID,
-    ATTEMPT_15_REVIEWED_JOB_ID,
-  ].includes(spec.jobId)
+  if (coordinatedBinding?.successorGeneration >= 10
       && spec.base.licenseId !== 'nvidia-nemotron-open-model-license') {
     throw new Error('runtime recovery must bind the exact immutable custom license ID');
   }
