@@ -24,6 +24,7 @@ class NemoV3RunnerTests(unittest.TestCase):
             "SZL_EXECUTION_ISOLATION": "credentialless-networkless-container",
             "SZL_RECEIPT_TRANSPORT": "local-unsigned-outbox",
             "HF_HUB_OFFLINE": "1",
+            "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
             "TRANSFORMERS_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
         }
@@ -39,6 +40,7 @@ class NemoV3RunnerTests(unittest.TestCase):
             "SZL_EXECUTION_ISOLATION": "credentialless-networkless-container",
             "SZL_RECEIPT_TRANSPORT": "local-unsigned-outbox",
             "HF_HUB_OFFLINE": "1",
+            "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
             "TRANSFORMERS_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
             "HF_TOKEN": "must-not-enter",

@@ -336,7 +336,12 @@ def _require_remote_code_isolation(spec: dict[str, Any]) -> None:
             raise RuntimeError(
                 f"isolated remote code received sensitive environment: {name}"
             )
-    for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE"):
+    for name in (
+        "HF_HUB_OFFLINE",
+        "HF_HUB_DISABLE_IMPLICIT_TOKEN",
+        "TRANSFORMERS_OFFLINE",
+        "HF_DATASETS_OFFLINE",
+    ):
         if os.environ.get(name) != "1":
             raise RuntimeError(f"isolated remote code requires {name}=1")
     if (ROOT / "keys" / "laptop_key.pem").exists():

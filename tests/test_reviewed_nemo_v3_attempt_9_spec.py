@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "laptop"))
 import nemo_v3_status  # noqa: E402
 from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
+    ATTEMPT_10_REVIEWED_JOB_ID,
     ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_9_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
@@ -75,10 +76,6 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
         self.assertEqual(
             authorization["correctedBridgeRevision"],
             ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
-        )
-        require_nemo_v3_dispatchable(
-            self.attempt_9,
-            expected_execution_bridge_revision=ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
         )
 
     def test_lineage_binds_exact_attempt_8_preclaim_failure(self) -> None:
@@ -158,9 +155,9 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
             "b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719",
         )
 
-    def test_signed_status_is_valid_and_awaits_gpu_receipt(self) -> None:
+    def test_signed_status_is_valid_quarantined_and_never_dispatchable(self) -> None:
         self.assertTrue(ATTEMPT_9_QUEUE.is_file())
-        self.assertFalse(ATTEMPT_9_QUARANTINE.exists())
+        self.assertTrue(ATTEMPT_9_QUARANTINE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_9_QUEUE.read_bytes()).hexdigest(),
             "a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49",
@@ -171,8 +168,8 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 6, 7, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(
@@ -184,7 +181,47 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
             COORDINATED_ENGINE_KEY_ID,
         )
         self.assertFalse(report["receipt"]["present"])
-        self.assertFalse(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["valid"])
+        self.assertEqual(
+            report["quarantine"]["statuses"],
+            (
+                "ISOLATED_HF_CACHE_ROOT_PERMISSION_BLOCKED",
+                "TRUSTED_FINALIZER_RUNTIME_BINDING_REJECTED",
+                "POST_CLAIM",
+                "NEVER_DISPATCH",
+            ),
+        )
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(
+                self.attempt_9,
+                expected_execution_bridge_revision=(
+                    ATTEMPT_9_CORRECTED_BRIDGE_REVISION
+                ),
+            )
+
+    def test_quarantine_preserves_attempt_9_bytes_and_selects_fresh_attempt_10(
+        self,
+    ) -> None:
+        self.assertEqual(
+            hashlib.sha256(ATTEMPT_9_PATH.read_bytes()).hexdigest(),
+            "cd3883261d48a838dbde44233fb357ff3b84eeda0ea0e58f49d7ca90981abbba",
+        )
+        record = json.loads(ATTEMPT_9_QUARANTINE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            record["replacement"]["reviewedJobId"], ATTEMPT_10_REVIEWED_JOB_ID
+        )
+        self.assertFalse(record["dispatchAuthorized"])
+        self.assertTrue(record["preserveEnvelope"])
+        self.assertIn("30609977388", record["reason"])
+        self.assertIn(
+            "44dfc9af356dfbff978b195de8a5c022784b7ed5fe64736408825d5ccb39075a",
+            record["reason"],
+        )
+        self.assertIn(
+            "e6b0a63d550359227d342f7e71659a21c4b221433fd2fbdb840892be402e026f",
+            record["reason"],
+        )
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (

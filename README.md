@@ -80,8 +80,18 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49`
   and binds canonical payload SHA-256
   `f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b`.
-  It is queued awaiting a governed GPU receipt; no runner, dispatch, claim,
-  training, or receipt effect is implied by publication.
+  Its one exact workflow run `30609977388` created a durable attempt claim, but
+  isolated base-license verification could not traverse the cache mounted below
+  root-only `/root`, and trusted finalization then rejected the runtime-bound
+  spec without the claim's execution-revision argument. Attempt 9 is immutable
+  evidence under `ISOLATED_HF_CACHE_ROOT_PERMISSION_BLOCKED +
+  TRUSTED_FINALIZER_RUNTIME_BINDING_REJECTED + POST_CLAIM + NEVER_DISPATCH`.
+  No signed receipt, terminal ledger entry, candidate, model card, dataset,
+  deployment, promotion, or Hugging Face artifact publication exists. A future
+  attempt 10 must use a separately reviewed protected runtime that mounts the
+  credentialless cache at `/hf-cache`, binds finalization to the exact durable
+  claim, and declares the immutable card's exact custom license ID
+  `nvidia-nemotron-open-model-license`.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

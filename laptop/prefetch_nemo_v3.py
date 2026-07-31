@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from frontier_contract import load_pin, verify_envelope
+from frontier_job import _verify_card_license
 from nemo_v3_contract import (
     NEMO_V3_PAYLOAD_TYPE,
     expected_engine_key_id,
@@ -145,8 +146,16 @@ def main() -> int:
             token=token,
         )
     )
-    if not (snapshot / "README.md").is_file():
+    readme = snapshot / "README.md"
+    if not readme.is_file():
         raise RuntimeError("pinned model snapshot has no README.md")
+    base_license = _verify_card_license(
+        readme=readme,
+        repo_id=spec["base"]["repoId"],
+        revision=model.sha,
+        expected=spec["base"]["licenseId"],
+        repo_type="model",
+    )
 
     receipt = {
         "kind": "szl-nemo-v3-prefetch",
@@ -157,6 +166,7 @@ def main() -> int:
         "model": {
             "repoId": spec["base"]["repoId"],
             "revision": model.sha,
+            "license": base_license,
         },
         "inputs": inputs,
         "remoteCodeExecuted": False,

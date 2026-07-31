@@ -274,15 +274,11 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_9), attempt_9)
-        with self.assertRaisesRegex(ContractError, "does not match"):
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
             require_nemo_v3_dispatchable(
                 attempt_9,
                 expected_execution_bridge_revision="e" * 40,
             )
-        require_nemo_v3_dispatchable(
-            attempt_9,
-            expected_execution_bridge_revision=ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
-        )
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (

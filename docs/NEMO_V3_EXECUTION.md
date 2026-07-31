@@ -117,16 +117,21 @@ queue entry. The scheduled task keeps its default all-pending polling behavior.
 Nemo v3 uses three separate trust zones:
 
 1. **Authenticated prefetch** verifies the engine-signed envelope, downloads the
-   exact model revision and the five hash-pinned project inputs, and records a
-   prefetch receipt. It does not import or execute model repository code.
+   exact model revision and the five hash-pinned project inputs, validates the
+   exact pinned model-card bytes and custom license name, and records that
+   evidence in the payload-bound prefetch receipt. It does not import or execute
+   model repository code.
 2. **GPU execution** runs the exact bridge revision in a digest-pinned container
    with `--network none`, a read-only root filesystem, all Linux capabilities
    dropped, and no Hugging Face token, GitHub token, or laptop signing key. The
-   container can emit only an unsigned receipt intent.
+   read-only Hub cache is mounted at non-profile path `/hf-cache`; `HF_HOME`
+   points at temporary container storage so credential discovery cannot depend
+   on or traverse a root profile. The container can emit only an unsigned
+   receipt intent.
 3. **Trusted finalization** validates the fresh intent against the exact signed
-   job and candidate artifact manifest, signs it outside the sandbox, uploads it,
-   reads it back from the immutable Hub commit, and only then writes the local
-   one-attempt ledger.
+   job, the durable claim's execution Bridge revision, and candidate artifact
+   manifest, signs it outside the sandbox, uploads it, reads it back from the
+   immutable Hub commit, and only then writes the local one-attempt ledger.
 
 The isolated launcher is:
 

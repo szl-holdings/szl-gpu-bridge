@@ -38,6 +38,23 @@ class IsolatedNemoLauncherContractTests(unittest.TestCase):
         )
         self.assertNotIn('"type=bind,src=$Jobs,dst=/bridge/jobs"', self.source)
 
+    def test_offline_hub_cache_is_readable_without_a_root_profile_or_token(
+        self,
+    ) -> None:
+        for fragment in (
+            '"type=bind,src=$HfCache,dst=/hf-cache,readonly"',
+            '"HF_HOME=/tmp/huggingface"',
+            '"HF_HUB_CACHE=/hf-cache"',
+            '"HF_HUB_DISABLE_IMPLICIT_TOKEN=1"',
+            "$Prefetch.model.license.expected",
+            "$Prefetch.model.license.readmeSha256",
+        ):
+            self.assertIn(fragment, self.source)
+        self.assertNotIn(
+            "dst=/root/.cache/huggingface/hub",
+            self.source,
+        )
+
     def test_image_and_source_are_immutable_identifiers(self) -> None:
         self.assertIn(
             "[ValidatePattern('^unsloth/unsloth@sha256:[0-9a-f]{64}$')]",
