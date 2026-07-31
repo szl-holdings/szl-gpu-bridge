@@ -20,6 +20,7 @@ from nemo_v3_contract import (  # noqa: E402
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
     FUTURE_REVIEWED_JOB_ID,
+    NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
     NEXT_RUNTIME_REVIEWED_JOB_ID,
     SUCCESSOR_A11OY_RELOCK_RUN_URL,
     SUCCESSOR_A11OY_SOURCE_REVISION,
@@ -220,7 +221,9 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
     ) -> None:
         attempt_8 = copy.deepcopy(self.attempt_7)
         attempt_8["jobId"] = NEXT_RUNTIME_REVIEWED_JOB_ID
-        attempt_8["authorization"]["correctedBridgeRevision"] = "f" * 40
+        attempt_8["authorization"]["correctedBridgeRevision"] = (
+            NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION
+        )
         attempt_8["lineage"] = {
             "predecessorJobId": FUTURE_REVIEWED_JOB_ID,
             "predecessorEnvelopeSha256": (
@@ -260,7 +263,7 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             )
         require_nemo_v3_dispatchable(
             attempt_8,
-            expected_execution_bridge_revision="f" * 40,
+            expected_execution_bridge_revision=NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
         )
         self.assertIn('"EXECUTION_BRIDGE_REVISION"', PREFETCH_SOURCE)
         self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', DISPATCHER_SOURCE)
@@ -315,8 +318,11 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             SIGNER_SOURCE,
         )
         self.assertIn(
-            "signer is locked to ${FUTURE_REVIEWED_JOB_ID}",
+            "const NEXT_RUNTIME_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-8';",
             SIGNER_SOURCE,
+        )
+        self.assertIn(
+            "signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}", SIGNER_SOURCE
         )
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)
