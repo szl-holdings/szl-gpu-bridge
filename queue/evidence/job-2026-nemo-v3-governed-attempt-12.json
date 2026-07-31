@@ -1,0 +1,28 @@
+{
+  "kind": "szl-nemo-v3-execution-evidence",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-12",
+  "executionEvidence": {
+    "workflowRunId": "30626533443",
+    "workflowRunAttempt": 1,
+    "workflowJobId": "91142994672",
+    "failurePhase": "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING",
+    "errorType": "frontier_contract.ContractError",
+    "error": "coordinated authorization requires an exact reviewed job binding",
+    "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "envelopeRevision": "6b21684b64bf01971f3c3aac71493bba8078e532",
+    "executionBridgeRevision": "d110abb8ea48c9382a70c3eead22dddf555f292b",
+    "claimCreated": false,
+    "jobDirectoryCreated": false,
+    "prefetchReceiptCreated": false,
+    "trainingStarted": false,
+    "receiptIntentProduced": false,
+    "receiptUploaded": false,
+    "candidateUploaded": false,
+    "adapterUploaded": false,
+    "modelCardUploaded": false,
+    "datasetUploaded": false,
+    "deployed": false,
+    "promoted": false
+  }
+}

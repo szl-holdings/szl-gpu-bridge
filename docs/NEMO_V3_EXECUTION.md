@@ -670,6 +670,21 @@ Its exclusive-create b804 DSSE envelope now exists at
 `a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f`
 and signer-canonical payload SHA-256
 `a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
-Status is `QUEUED_AWAITING_GPU_RECEIPT`. No runner, dispatch, claim, training,
-receipt, deployment, promotion, or Hugging Face publication is authorized
-until the separate measured GPU execution gate passes.
+Its single dispatch created A11oy run `30626533443`. Exact source, nested
+transport, b804 envelope, protected Bridge history, and immutable image gates
+passed. Authenticated prefetch then failed closed before claim because execution
+runtime `d110abb8ea48c9382a70c3eead22dddf555f292b` had no exact coordinated
+attempt-12 reviewed-job binding. Attempt 12 is now immutable
+`RUNTIME_JOB_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH` evidence and is
+never retried, resent, or re-signed. Exact run/job/error and zero claim,
+prefetch-receipt, training, receipt-upload, candidate, adapter, model-card,
+dataset, deployment, and promotion facts are hash-pinned in
+`queue/evidence/job-2026-nemo-v3-governed-attempt-12.json`.
+
+The distinct next reviewed identity is attempt 13. Its coordinated static
+source/workflow/relock/science binding is admitted in advance, while its
+protected execution Bridge revision is deliberately runtime-bound: every
+prefetch, dispatcher, runner, and finalizer path must receive the explicit
+revision already verified by the protected A11oy workflow and match the signed
+authorization exactly. This removes the impossible commit-self-reference
+without accepting unknown job IDs or weakening runtime revision enforcement.

@@ -78,6 +78,7 @@ ATTEMPT_11_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-11"
 ATTEMPT_11_CORRECTED_BRIDGE_REVISION = "f07263bc37ef6e90b313ba5576ef425d845cf287"
 ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
 ATTEMPT_12_CORRECTED_BRIDGE_REVISION = "d110abb8ea48c9382a70c3eead22dddf555f292b"
+ATTEMPT_13_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-13"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -140,6 +141,13 @@ _ATTEMPT_12_REPLACEMENT = {
     "engineKeyId": COORDINATED_ENGINE_KEY_ID,
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_12_REVIEWED_JOB_ID,
+}
+_ATTEMPT_13_REPLACEMENT = {
+    "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_13_REVIEWED_JOB_ID,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -335,6 +343,53 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
             "promoted": False,
         },
     },
+    ATTEMPT_12_REVIEWED_JOB_ID: {
+        "statuses": (
+            "RUNTIME_JOB_BINDING_REJECTED",
+            "PRE_CLAIM",
+            "NEVER_DISPATCH",
+        ),
+        "queue_file_sha256": (
+            "a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f"
+        ),
+        "payload_sha256": (
+            "a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "replacement": _ATTEMPT_13_REPLACEMENT,
+        "execution_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-12.json"
+        ),
+        "execution_evidence_sha256": (
+            "0d5caab31736bf00fd8e6457aa437edc8d2a86466c5f6c8bb31fe67d63274215"
+        ),
+        "execution_evidence": {
+            "workflowRunId": "30626533443",
+            "workflowRunAttempt": 1,
+            "workflowJobId": "91142994672",
+            "failurePhase": "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING",
+            "errorType": "frontier_contract.ContractError",
+            "error": (
+                "coordinated authorization requires an exact reviewed job binding"
+            ),
+            "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+            "envelopeRevision": ("6b21684b64bf01971f3c3aac71493bba8078e532"),
+            "executionBridgeRevision": ATTEMPT_12_CORRECTED_BRIDGE_REVISION,
+            "claimCreated": False,
+            "jobDirectoryCreated": False,
+            "prefetchReceiptCreated": False,
+            "trainingStarted": False,
+            "receiptIntentProduced": False,
+            "receiptUploaded": False,
+            "candidateUploaded": False,
+            "adapterUploaded": False,
+            "modelCardUploaded": False,
+            "datasetUploaded": False,
+            "deployed": False,
+            "promoted": False,
+        },
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
@@ -421,6 +476,14 @@ _COORDINATED_JOB_BINDINGS = {
         "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
         "correctedBridgeRevision": ATTEMPT_12_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 12,
+    },
+    ATTEMPT_13_REVIEWED_JOB_ID: {
+        "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+        "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
+        "relockRunUrl": EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+        "runtimeBound": True,
+        "successorGeneration": 13,
     },
 }
 _ALLOWED_TOP = {
@@ -572,6 +635,7 @@ def require_nemo_v3_dispatchable(
         ATTEMPT_9_REVIEWED_JOB_ID,
         ATTEMPT_11_REVIEWED_JOB_ID,
         ATTEMPT_12_REVIEWED_JOB_ID,
+        ATTEMPT_13_REVIEWED_JOB_ID,
     }:
         expected = _revision(
             expected_execution_bridge_revision,
@@ -907,6 +971,14 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 expected_receipt_intent_produced = True
                 expected_model_repository_code_imported = True
                 expected_terminal_ledger_written = True
+            elif predecessor == ATTEMPT_12_REVIEWED_JOB_ID:
+                expected_transport_evidence = (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30626533443"
+                )
+                expected_failure_phase = (
+                    "PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING"
+                )
+                expected_event_created = True
             else:
                 raise ContractError(
                     "lineage predecessor is not an admitted transport recovery"
@@ -1289,6 +1361,42 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 raise ContractError(
                     "attempt-12 tokenizer recovery lineage is not exact"
                 )
+        if spec["jobId"] == ATTEMPT_13_REVIEWED_JOB_ID:
+            exact_runtime_binding_recovery_lineage = {
+                "predecessorJobId": ATTEMPT_12_REVIEWED_JOB_ID,
+                "predecessorEnvelopeSha256": (
+                    "a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f"
+                ),
+                "predecessorPayloadSha256": (
+                    "a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8"
+                ),
+                "predecessorEnvelopeRevision": (
+                    "6b21684b64bf01971f3c3aac71493bba8078e532"
+                ),
+                "predecessorExecutionBridgeRevision": (
+                    ATTEMPT_12_CORRECTED_BRIDGE_REVISION
+                ),
+                "transportEvidenceUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30626533443"
+                ),
+                "failurePhase": ("PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING"),
+                "successorGeneration": 13,
+                "automaticRetry": False,
+                "eventCreated": True,
+                "workflowRunCreated": True,
+                "claimCreated": False,
+                "trainingStarted": False,
+                "modelRepositoryCodeImported": False,
+                "holdoutsAccessed": False,
+                "candidateProduced": False,
+                "receiptIntentProduced": False,
+                "terminalLedgerWritten": False,
+                "scienceInputsReused": True,
+            }
+            if lineage != exact_runtime_binding_recovery_lineage:
+                raise ContractError(
+                    "attempt-13 runtime-binding recovery lineage is not exact"
+                )
 
     base = _object(
         spec,
@@ -1318,6 +1426,7 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             ATTEMPT_10_REVIEWED_JOB_ID,
             ATTEMPT_11_REVIEWED_JOB_ID,
             ATTEMPT_12_REVIEWED_JOB_ID,
+            ATTEMPT_13_REVIEWED_JOB_ID,
         }
         and base["licenseId"] != "nvidia-nemotron-open-model-license"
     ):

@@ -133,15 +133,23 @@ cloud/verify-receipt.mjs ◄─────────────────�
   artifacts are verified before Unsloth receives their snapshot path. Attempt
   11's structured terminal evidence is preserved separately at
   `queue/evidence/job-2026-nemo-v3-governed-attempt-11.json` so its quarantine
-  retains the exact A11oy-admitted dispatch-denial schema. It has no
-  runner, dispatch, claim, receipt, or publication authority. Its one
+  retains the exact A11oy-admitted dispatch-denial schema. Its one
   exclusive-create b804 envelope is at
   `queue/pending/job-2026-nemo-v3-governed-attempt-12.json`, with raw SHA-256
   `a1c9f3d909b120d3675efe2cee0ba06b1c92c950f3a9ed4cc4e5b242971ed70f`
   and signer-canonical payload SHA-256
   `a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8`.
-  Runner activation and dispatch remain locked behind a separate measured GPU
-  gate; no claim, receipt, candidate, model card, dataset, or publication exists.
+  Its one dispatch created A11oy run `30626533443`; source, envelope, history,
+  and image gates passed, then authenticated prefetch rejected the execution
+  runtime's missing attempt-12 reviewed-job binding before claim. Attempt 12 is
+  preserved as `RUNTIME_JOB_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`.
+  Its exact zero-effect run evidence is hash-pinned at
+  `queue/evidence/job-2026-nemo-v3-governed-attempt-12.json`. No claim,
+  prefetch receipt, training, terminal receipt, candidate, adapter, model card,
+  dataset, deployment, promotion, or publication exists. The next reviewed
+  runtime-bound identity must use attempt 13 and must still match the explicit
+  execution revision supplied by the protected A11oy workflow; unknown job IDs
+  and mismatched runtime revisions remain fail-closed.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
