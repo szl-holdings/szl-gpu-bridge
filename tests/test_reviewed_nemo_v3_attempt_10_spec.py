@@ -18,13 +18,18 @@ from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
     ATTEMPT_10_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_10_REVIEWED_JOB_ID,
+    ATTEMPT_11_REVIEWED_JOB_ID,
     ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_9_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
+    EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
+    EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+    EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
     RECOVERY_A11OY_RELOCK_RUN_URL,
     RECOVERY_A11OY_SOURCE_REVISION,
     RECOVERY_OWNER_WORKFLOW_BLOB,
+    require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
 )
 
@@ -32,6 +37,9 @@ ATTEMPT_9_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-9-reviewed.json"
 ATTEMPT_10_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-10-reviewed.json"
 ATTEMPT_9_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_9_REVIEWED_JOB_ID}.json"
 ATTEMPT_10_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_10_REVIEWED_JOB_ID}.json"
+ATTEMPT_10_QUARANTINE = (
+    ROOT / "queue" / "quarantine" / f"{ATTEMPT_10_REVIEWED_JOB_ID}.json"
+)
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
 ).read_text(encoding="utf-8")
@@ -154,7 +162,35 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
             "a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49",
         )
 
-    def test_signed_status_awaits_gpu_receipt_without_publication(self) -> None:
+    def test_attempt_10_spec_and_envelope_bytes_are_preserved(self) -> None:
+        spec_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:jobspecs/nemo-v3-20260731-attempt-10-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
+        envelope_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:queue/pending/job-2026-nemo-v3-governed-attempt-10.json",
+            ],
+            cwd=ROOT,
+        )
+        self.assertEqual(
+            hashlib.sha256(spec_bytes).hexdigest(),
+            "6cd898fd1094eb63e7c993a3efe1346e870f698ec9b7cc5706f90002902fe84a",
+        )
+        self.assertEqual(
+            hashlib.sha256(envelope_bytes).hexdigest(),
+            "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b",
+        )
+
+    def test_signed_status_is_terminal_quarantine_without_publication(self) -> None:
         self.assertTrue(ATTEMPT_10_QUEUE.is_file())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_10_QUEUE.read_bytes()).hexdigest(),
@@ -166,8 +202,8 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 7, 1, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(
@@ -175,7 +211,101 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
             "2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9",
         )
         self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
         self.assertFalse(report["receipt"]["present"])
+
+    def test_attempt_10_quarantine_binds_zero_effect_pre_claim_failure(self) -> None:
+        record = json.loads(ATTEMPT_10_QUARANTINE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            record["status"],
+            [
+                "IMMUTABLE_RUNTIME_JOB_BINDING_REJECTED",
+                "PRE_CLAIM",
+                "NEVER_DISPATCH",
+            ],
+        )
+        self.assertEqual(
+            record["queueFileSha256"],
+            "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b",
+        )
+        self.assertEqual(
+            record["signedPayloadSha256"],
+            "2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9",
+        )
+        self.assertTrue(record["preserveEnvelope"])
+        self.assertFalse(record["dispatchAuthorized"])
+        self.assertEqual(
+            record["replacement"],
+            {
+                "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+                "workflowBlob": EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
+                "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+                "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+                "reviewedJobId": ATTEMPT_11_REVIEWED_JOB_ID,
+            },
+        )
+        for prohibited in (
+            "No claim",
+            "prefetch receipt",
+            "signed receipt",
+            "candidate",
+            "Hugging Face artifact publication",
+        ):
+            self.assertIn(prohibited, record["reason"])
+
+    def test_runtime_bound_attempt_11_requires_explicit_execution_revision(
+        self,
+    ) -> None:
+        attempt_11 = copy.deepcopy(self.attempt_10)
+        attempt_11["jobId"] = ATTEMPT_11_REVIEWED_JOB_ID
+        attempt_11["source"]["revision"] = EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION
+        attempt_11["ownerDispatch"]["workflowBlob"] = (
+            EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB
+        )
+        attempt_11["authorization"]["settledA11oyRelockRunUrl"] = (
+            EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL
+        )
+        attempt_11["authorization"]["correctedBridgeRevision"] = "d" * 40
+        attempt_11["lineage"] = {
+            "predecessorJobId": ATTEMPT_10_REVIEWED_JOB_ID,
+            "predecessorEnvelopeSha256": (
+                "b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b"
+            ),
+            "predecessorPayloadSha256": (
+                "2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9"
+            ),
+            "predecessorEnvelopeRevision": ("5c0aa8e9949b1cf2593acc269eb3fefffeaa36e1"),
+            "predecessorExecutionBridgeRevision": (
+                ATTEMPT_10_CORRECTED_BRIDGE_REVISION
+            ),
+            "transportEvidenceUrl": (
+                "https://github.com/szl-holdings/a11oy/actions/runs/30612658302"
+            ),
+            "failurePhase": ("PRE_CLAIM_IMMUTABLE_RUNTIME_JOB_BINDING_VALIDATION"),
+            "successorGeneration": 11,
+            "automaticRetry": False,
+            "eventCreated": True,
+            "workflowRunCreated": True,
+            "claimCreated": False,
+            "trainingStarted": False,
+            "modelRepositoryCodeImported": False,
+            "holdoutsAccessed": False,
+            "candidateProduced": False,
+            "receiptIntentProduced": False,
+            "terminalLedgerWritten": False,
+            "scienceInputsReused": True,
+        }
+        self.assertIs(validate_nemo_v3_spec(attempt_11), attempt_11)
+        require_nemo_v3_dispatchable(
+            attempt_11,
+            expected_execution_bridge_revision="d" * 40,
+        )
+        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+            require_nemo_v3_dispatchable(
+                attempt_11,
+                expected_execution_bridge_revision="e" * 40,
+            )
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -202,6 +332,7 @@ class ReviewedNemoV3Attempt10SpecTests(unittest.TestCase):
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-10-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-10.json",
+            "queue/quarantine/job-2026-nemo-v3-governed-attempt-10.json",
             "tests/test_reviewed_nemo_v3_attempt_10_spec.py",
             "attempt_id: attempt-10-cache-license-finalizer-recovery",
         ):

@@ -99,8 +99,15 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b`
   and its canonical payload SHA-256 is
   `2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9`.
-  Status is `QUEUED_AWAITING_GPU_RECEIPT`; no runner, dispatch, attempt-10
-  claim, receipt, or publication exists.
+  Its single dispatch created run `30612658302`, but the older immutable
+  execution runtime rejected the later attempt-10 job binding during trusted
+  prefetch. The failure was before claim, training, receipt intent, or upload.
+  Attempt 10 is preserved under `IMMUTABLE_RUNTIME_JOB_BINDING_REJECTED +
+  PRE_CLAIM + NEVER_DISPATCH`; its spec and envelope are immutable and will not
+  be retried. A future attempt 11 must use the separately reviewed A11oy helper
+  invocation contract at `434d653eaf100b9b3e5484687db1e6e6ca7116c9`
+  and a protected runtime-bound Bridge revision that accepts only its exact
+  signed job/source/workflow/execution identity.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

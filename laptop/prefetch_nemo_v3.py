@@ -82,7 +82,13 @@ def fetch_descriptor(
 
 
 def load_verified_job(
-    spec_path: pathlib.Path, engine_key_path: pathlib.Path
+    spec_path: pathlib.Path,
+    engine_key_path: pathlib.Path,
+    *,
+    expected_job_id: str,
+    expected_source_revision: str,
+    expected_workflow_blob: str,
+    expected_execution_bridge_revision: str,
 ) -> tuple[dict[str, Any], bytes]:
     envelope = json.loads(spec_path.read_text(encoding="utf-8-sig"))
     pin = load_pin(engine_key_path)
@@ -92,9 +98,15 @@ def load_verified_job(
     if payload_type != NEMO_V3_PAYLOAD_TYPE:
         raise ValueError("signed job is not a Nemo v3 payload")
     validate_nemo_v3_spec(spec)
+    if spec.get("jobId") != expected_job_id:
+        raise ValueError("signed job differs from the selected job identity")
+    if spec.get("source", {}).get("revision") != expected_source_revision:
+        raise ValueError("signed job differs from the selected A11oy source")
+    if spec.get("ownerDispatch", {}).get("workflowBlob") != expected_workflow_blob:
+        raise ValueError("signed job differs from the selected owner workflow")
     require_nemo_v3_dispatchable(
         spec,
-        expected_execution_bridge_revision=os.environ.get("EXECUTION_BRIDGE_REVISION"),
+        expected_execution_bridge_revision=expected_execution_bridge_revision,
     )
     if "authorization" in spec and pin.get("keyId") != expected_engine_key_id(spec):
         raise ValueError("Nemo v3 engine authorization key mismatch")
@@ -105,6 +117,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", type=pathlib.Path, required=True)
     parser.add_argument("--engine-key", type=pathlib.Path, required=True)
+    parser.add_argument("--job-id", required=True)
+    parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--workflow-blob", required=True)
+    parser.add_argument("--execution-bridge-revision", required=True)
     parser.add_argument("--hf-cache", type=pathlib.Path, required=True)
     parser.add_argument("--input-cache", type=pathlib.Path, required=True)
     parser.add_argument("--receipt", type=pathlib.Path, required=True)
@@ -114,7 +130,14 @@ def main() -> int:
     if not token:
         raise RuntimeError("HF_TOKEN is required for authenticated prefetch")
 
-    spec, exact_payload = load_verified_job(args.spec, args.engine_key)
+    spec, exact_payload = load_verified_job(
+        args.spec,
+        args.engine_key,
+        expected_job_id=args.job_id,
+        expected_source_revision=args.source_revision,
+        expected_workflow_blob=args.workflow_blob,
+        expected_execution_bridge_revision=args.execution_bridge_revision,
+    )
     if datetime.fromisoformat(spec["expiresAt"].replace("Z", "+00:00")) < datetime.now(
         timezone.utc
     ):

@@ -42,6 +42,99 @@ def valid_attempt_claim(
 
 
 class NemoCredentialSeparationTests(unittest.TestCase):
+    def test_prefetch_binds_verified_job_to_explicit_workflow_identity(self) -> None:
+        spec = {
+            "jobId": "job-test",
+            "source": {"revision": "a" * 40},
+            "ownerDispatch": {"workflowBlob": "b" * 40},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            envelope = root / "envelope.json"
+            envelope.write_text("{}\n", encoding="utf-8")
+            with (
+                mock.patch.object(
+                    prefetch_nemo_v3,
+                    "load_pin",
+                    return_value={"keyId": "5c6cf59741ade920"},
+                ),
+                mock.patch.object(
+                    prefetch_nemo_v3,
+                    "verify_envelope",
+                    return_value=(
+                        spec,
+                        b"signed-payload",
+                        prefetch_nemo_v3.NEMO_V3_PAYLOAD_TYPE,
+                    ),
+                ),
+                mock.patch.object(prefetch_nemo_v3, "validate_nemo_v3_spec"),
+                mock.patch.object(
+                    prefetch_nemo_v3,
+                    "require_nemo_v3_dispatchable",
+                ) as require,
+            ):
+                observed, payload = prefetch_nemo_v3.load_verified_job(
+                    envelope,
+                    root / "engine.json",
+                    expected_job_id="job-test",
+                    expected_source_revision="a" * 40,
+                    expected_workflow_blob="b" * 40,
+                    expected_execution_bridge_revision="c" * 40,
+                )
+
+        self.assertIs(observed, spec)
+        self.assertEqual(payload, b"signed-payload")
+        require.assert_called_once_with(
+            spec,
+            expected_execution_bridge_revision="c" * 40,
+        )
+
+    def test_prefetch_rejects_explicit_workflow_identity_drift(self) -> None:
+        base = {
+            "jobId": "job-test",
+            "source": {"revision": "a" * 40},
+            "ownerDispatch": {"workflowBlob": "b" * 40},
+        }
+        cases = (
+            ("jobId", "other-job", "selected job identity"),
+            ("source", {"revision": "c" * 40}, "selected A11oy source"),
+            ("ownerDispatch", {"workflowBlob": "d" * 40}, "selected owner workflow"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            envelope = root / "envelope.json"
+            envelope.write_text("{}\n", encoding="utf-8")
+            for field, value, message in cases:
+                spec = json.loads(json.dumps(base))
+                spec[field] = value
+                with (
+                    self.subTest(field=field),
+                    mock.patch.object(
+                        prefetch_nemo_v3,
+                        "load_pin",
+                        return_value={"keyId": "5c6cf59741ade920"},
+                    ),
+                    mock.patch.object(
+                        prefetch_nemo_v3,
+                        "verify_envelope",
+                        return_value=(
+                            spec,
+                            b"signed-payload",
+                            prefetch_nemo_v3.NEMO_V3_PAYLOAD_TYPE,
+                        ),
+                    ),
+                    mock.patch.object(prefetch_nemo_v3, "validate_nemo_v3_spec"),
+                ):
+                    with self.assertRaisesRegex(ValueError, message):
+                        prefetch_nemo_v3.load_verified_job(
+                            envelope,
+                            root / "engine.json",
+                            expected_job_id="job-test",
+                            expected_source_revision="a" * 40,
+                            expected_workflow_blob="b" * 40,
+                            expected_execution_bridge_revision="c" * 40,
+                        )
+
     def test_custom_model_license_is_bound_to_exact_local_card_bytes(self) -> None:
         card_bytes = (
             b"---\n"
@@ -196,6 +289,14 @@ class NemoCredentialSeparationTests(unittest.TestCase):
                         str(root / "envelope.json"),
                         "--engine-key",
                         str(root / "engine.json"),
+                        "--job-id",
+                        "job-test",
+                        "--source-revision",
+                        "a" * 40,
+                        "--workflow-blob",
+                        "b" * 40,
+                        "--execution-bridge-revision",
+                        "c" * 40,
                         "--hf-cache",
                         str(root / "hub"),
                         "--input-cache",
@@ -336,12 +437,26 @@ class NemoCredentialSeparationTests(unittest.TestCase):
             finalize_nemo_v3_receipt,
             "require_nemo_v3_dispatchable",
         ) as require:
-            finalize_nemo_v3_receipt.require_claim_bound_dispatchable(spec, claim)
+            finalize_nemo_v3_receipt.require_claim_bound_dispatchable(
+                spec,
+                claim,
+                "a" * 40,
+            )
 
         require.assert_called_once_with(
             spec,
             expected_execution_bridge_revision="a" * 40,
         )
+
+    def test_trusted_finalizer_rejects_workflow_revision_argument_drift(self) -> None:
+        spec = {"jobId": "job-test"}
+        claim = {"executionBridgeRevision": "a" * 40}
+        with self.assertRaisesRegex(ValueError, "explicit execution Bridge revision"):
+            finalize_nemo_v3_receipt.require_claim_bound_dispatchable(
+                spec,
+                claim,
+                "b" * 40,
+            )
 
     def test_attempt_claim_rejects_unapproved_registry_digest(self) -> None:
         now = datetime.now(timezone.utc)

@@ -256,7 +256,11 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
         self.assertIs(validate_nemo_v3_spec(attempt_8), attempt_8)
         with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
             require_nemo_v3_dispatchable(attempt_8)
-        self.assertIn('"EXECUTION_BRIDGE_REVISION"', PREFETCH_SOURCE)
+        self.assertIn('"--execution-bridge-revision"', PREFETCH_SOURCE)
+        self.assertIn(
+            "expected_execution_bridge_revision=args.execution_bridge_revision",
+            PREFETCH_SOURCE,
+        )
         self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', DISPATCHER_SOURCE)
         self.assertIn('"SZL_EXECUTION_BRIDGE_REVISION"', RUNNER_SOURCE)
 

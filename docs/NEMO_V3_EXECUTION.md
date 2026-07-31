@@ -586,6 +586,22 @@ the exclusive-create b804 DSSE envelope at
 `b354d34dcc6487e311b2d40413de4920ef8646d3f40e9d7442d366152aac901b`
 and canonical payload SHA-256 is
 `2287b1be69239ec0f577ee6e712e0093345e46640485dc6fefa88e8104d727c9`.
-Verified publication moves the attempt to `QUEUED_AWAITING_GPU_RECEIPT`; it
-does not register a runner, dispatch, claim, train, upload a receipt, or publish
-any artifact.
+Verified publication moved the attempt to `QUEUED_AWAITING_GPU_RECEIPT`.
+Exactly one dispatch then created A11oy run `30612658302`. The signed envelope
+and protected executable history verified, but the immutable execution runtime
+rejected attempt 10 during trusted prefetch because the exact coordinated job
+binding existed only in the later envelope-data revision. The failure occurred
+before atomic claim, training, holdout access, receipt intent, terminal ledger
+write, or upload. The immutable quarantine record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-10.json` binds the exact
+envelope and payload under `IMMUTABLE_RUNTIME_JOB_BINDING_REJECTED + PRE_CLAIM
++ NEVER_DISPATCH`.
+
+A future attempt 11 must bind protected A11oy source
+`434d653eaf100b9b3e5484687db1e6e6ca7116c9`, workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, and a separately reviewed
+runtime-bound Bridge revision. Trusted prefetch must receive the exact job,
+A11oy source, workflow blob, and executable Bridge revision explicitly.
+Trusted finalization must independently receive and match the same executable
+revision against the durable claim. Attempt 10 is never dispatch authority and
+will not be retried.
