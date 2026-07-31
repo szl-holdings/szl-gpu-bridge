@@ -25,7 +25,6 @@ from nemo_v3_contract import (  # noqa: E402
     EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL,
     EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
     EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
-    canonical_json,
     require_nemo_v3_dispatchable,
     validate_nemo_v3_spec,
 )
@@ -150,11 +149,11 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
     def test_plaintext_status_awaits_separate_engine_signature(self) -> None:
         self.assertFalse(ATTEMPT_12_QUEUE.exists())
         payload_sha256 = hashlib.sha256(
-            canonical_json(self.attempt_12).encode("utf-8")
+            nemo_v3_status.signer_canonicalize(self.attempt_12).encode("utf-8")
         ).hexdigest()
         self.assertEqual(
             payload_sha256,
-            "654c7110dc913bc85c6c57385a94cd436cadab42d096fdc2ea7c8fe891e18776",
+            "a5e04951412bb0c4d085e567e4e869d52bdf6987546b16ffcd6d2bcb72768ce8",
         )
         report = nemo_v3_status.evaluate(
             root=ROOT,
