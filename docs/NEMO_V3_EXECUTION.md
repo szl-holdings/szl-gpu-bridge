@@ -559,3 +559,27 @@ and binds canonical payload SHA-256
 Its verified publication moves attempt 9 to
 `QUEUED_AWAITING_GPU_RECEIPT`; it does not create a runner, dispatch, claim,
 training, receipt, or publication effect.
+
+Attempt 9's one governed run then created its exact claim, validated the pinned
+science inputs, and emitted an unsigned blocked receipt intent, but it did not
+start training or produce a signed receipt. Credentialless isolated license
+verification could not traverse the cache below `/root`, and trusted
+finalization did not yet bind validation to the claim's exact execution Bridge
+revision. Its immutable spec, envelope, claim, and blocked intent are preserved
+under `ISOLATED_HF_CACHE_ROOT_PERMISSION_BLOCKED +
+TRUSTED_FINALIZER_RUNTIME_BINDING_REJECTED + POST_CLAIM + NEVER_DISPATCH`.
+
+## Reviewed attempt 10 cache/license/finalizer recovery
+
+`jobspecs/nemo-v3-20260731-attempt-10-reviewed.json` is the fresh plaintext
+successor. It preserves the frozen attempt-9 science inputs except for
+correcting the immutable model card's exact custom license identifier to
+`nvidia-nemotron-open-model-license`. It binds protected A11oy source
+`c6aa4f08f752a22bbae35cf5a618a81811494a43`, workflow blob
+`f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, and protected Bridge runtime
+`37479c23af3228a57ad6018b3f9134186e6d7fa7`, which uses `/hf-cache` for the
+read-only credentialless model cache and validates the exact execution revision
+from the durable claim before finalization. Candidate, model-card, dataset, and
+every non-receipt upload remain disabled. This plaintext is
+`AWAITING_ENGINE_SIGNATURE`; it is not executable until a separate protected
+b804 envelope publication.

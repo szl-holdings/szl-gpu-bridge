@@ -197,7 +197,7 @@
             "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
             "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025", "https://github.com/szl-holdings/a11oy/actions/runs/30601635066", "https://github.com/szl-holdings/a11oy/actions/runs/30607399378"]},
             "cryptographicContinuityClaimed": {"const": false},
-            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c"]}
+            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7"]}
           }
         }
       ]
@@ -275,6 +275,9 @@
                   "failurePhase": {"const": "PRE_EVENT_TRANSPORT_VALIDATION"},
                   "eventCreated": {"const": false},
                   "workflowRunCreated": {"const": false},
+                  "claimCreated": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "receiptIntentProduced": {"const": false},
                   "successorGeneration": {"const": 5}
                 }
               }
@@ -319,7 +322,9 @@
                   "successorGeneration": {"const": 6},
                   "eventCreated": {"const": true},
                   "workflowRunCreated": {"const": true},
-                  "claimCreated": {"const": false}
+                  "claimCreated": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "receiptIntentProduced": {"const": false}
                 }
               }
             ]
@@ -363,7 +368,9 @@
                   "successorGeneration": {"const": 7},
                   "eventCreated": {"const": false},
                   "workflowRunCreated": {"const": false},
-                  "claimCreated": {"const": false}
+                  "claimCreated": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "receiptIntentProduced": {"const": false}
                 }
               }
             ]
@@ -407,7 +414,9 @@
                   "successorGeneration": {"const": 8},
                   "eventCreated": {"const": true},
                   "workflowRunCreated": {"const": true},
-                  "claimCreated": {"const": false}
+                  "claimCreated": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "receiptIntentProduced": {"const": false}
                 }
               }
             ]
@@ -451,7 +460,56 @@
                   "successorGeneration": {"const": 9},
                   "eventCreated": {"const": true},
                   "workflowRunCreated": {"const": true},
-                  "claimCreated": {"const": false}
+                  "claimCreated": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "receiptIntentProduced": {"const": false}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"jobId": {"const": "job-2026-nemo-v3-governed-attempt-10"}},
+        "required": ["jobId"]
+      },
+      "then": {
+        "required": ["ownerDispatch", "authorization", "lineage"],
+        "properties": {
+          "source": {"properties": {"revision": {"const": "c6aa4f08f752a22bbae35cf5a618a81811494a43"}}},
+          "base": {"properties": {"licenseId": {"const": "nvidia-nemotron-open-model-license"}}},
+          "ownerDispatch": {
+            "properties": {
+              "workflowBlob": {"const": "f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d"},
+              "workflowVersion": {"const": "nemo-v3-owner-dispatch.v4"}
+            }
+          },
+          "authorization": {
+            "properties": {
+              "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30607399378"},
+              "correctedBridgeRevision": {"const": "37479c23af3228a57ad6018b3f9134186e6d7fa7"}
+            }
+          },
+          "lineage": {
+            "allOf": [
+              {"$ref": "#/$defs/transportFailureLineage"},
+              {
+                "properties": {
+                  "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-9"},
+                  "predecessorEnvelopeSha256": {"const": "a7b67f1245137b3422d6e2ce5cf379aa9adb193e1f1d9db0dec8abf92bf5fa49"},
+                  "predecessorPayloadSha256": {"const": "f8ec93b0a2967e548ba2222cbf8a69abbe89987c98e695688c39c0e0d3827c5b"},
+                  "predecessorEnvelopeRevision": {"const": "4fa21a298e9b8f8dd6827f6dd0406ba6de02421e"},
+                  "predecessorExecutionBridgeRevision": {"const": "eeabd1b52380d2b24439e53d5e4ad38f8114556c"},
+                  "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30609977388"},
+                  "failurePhase": {"const": "POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING"},
+                  "successorGeneration": {"const": 10},
+                  "eventCreated": {"const": true},
+                  "workflowRunCreated": {"const": true},
+                  "claimCreated": {"const": true},
+                  "holdoutsAccessed": {"const": true},
+                  "receiptIntentProduced": {"const": true}
                 }
               }
             ]
@@ -543,18 +601,18 @@
         "predecessorPayloadSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "predecessorEnvelopeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
         "predecessorExecutionBridgeRevision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "transportEvidenceUrl": {"enum": ["https://github.com/szl-holdings/szl-gpu-bridge/issues/32", "https://github.com/szl-holdings/a11oy/actions/runs/30591897165", "https://github.com/szl-holdings/szl-gpu-bridge/issues/41", "https://github.com/szl-holdings/a11oy/actions/runs/30605081533", "https://github.com/szl-holdings/a11oy/actions/runs/30606664591"]},
-        "failurePhase": {"enum": ["PRE_EVENT_TRANSPORT_VALIDATION", "PRE_ADMISSION_HOST_EXECUTION_POLICY", "PRE_DISPATCH_VALIDATOR_REJECTION", "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION", "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT"]},
+        "transportEvidenceUrl": {"enum": ["https://github.com/szl-holdings/szl-gpu-bridge/issues/32", "https://github.com/szl-holdings/a11oy/actions/runs/30591897165", "https://github.com/szl-holdings/szl-gpu-bridge/issues/41", "https://github.com/szl-holdings/a11oy/actions/runs/30605081533", "https://github.com/szl-holdings/a11oy/actions/runs/30606664591", "https://github.com/szl-holdings/a11oy/actions/runs/30609977388"]},
+        "failurePhase": {"enum": ["PRE_EVENT_TRANSPORT_VALIDATION", "PRE_ADMISSION_HOST_EXECUTION_POLICY", "PRE_DISPATCH_VALIDATOR_REJECTION", "PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION", "PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT", "POST_CLAIM_CACHE_LICENSE_AND_FINALIZER_BINDING"]},
         "successorGeneration": {"type": "integer", "minimum": 5},
         "automaticRetry": {"const": false},
         "eventCreated": {"type": "boolean"},
         "workflowRunCreated": {"type": "boolean"},
-        "claimCreated": {"const": false},
+        "claimCreated": {"type": "boolean"},
         "trainingStarted": {"const": false},
         "modelRepositoryCodeImported": {"const": false},
-        "holdoutsAccessed": {"const": false},
+        "holdoutsAccessed": {"type": "boolean"},
         "candidateProduced": {"const": false},
-        "receiptIntentProduced": {"const": false},
+        "receiptIntentProduced": {"type": "boolean"},
         "terminalLedgerWritten": {"const": false},
         "scienceInputsReused": {"const": true}
       }

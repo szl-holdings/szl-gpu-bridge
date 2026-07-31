@@ -91,7 +91,11 @@ cloud/verify-receipt.mjs ◄─────────────────�
   attempt 10 must use a separately reviewed protected runtime that mounts the
   credentialless cache at `/hf-cache`, binds finalization to the exact durable
   claim, and declares the immutable card's exact custom license ID
-  `nvidia-nemotron-open-model-license`.
+  `nvidia-nemotron-open-model-license`. Reviewed plaintext attempt 10 now binds
+  that protected runtime at
+  `37479c23af3228a57ad6018b3f9134186e6d7fa7`, preserves the exact attempt-9
+  post-claim evidence, and remains `AWAITING_ENGINE_SIGNATURE`. No attempt-10
+  queue envelope, runner, dispatch, claim, receipt, or publication exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
