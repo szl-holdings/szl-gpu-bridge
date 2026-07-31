@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
@@ -32,6 +33,10 @@ ATTEMPT_15_CORRECTED_BRIDGE_REVISION = "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63
 ATTEMPT_14_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-14-reviewed.json"
 ATTEMPT_15_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-15-reviewed.json"
 ATTEMPT_15_QUEUE = ROOT / "queue" / "pending" / f"{ATTEMPT_15_REVIEWED_JOB_ID}.json"
+ATTEMPT_15_QUARANTINE = (
+    ROOT / "queue" / "quarantine" / f"{ATTEMPT_15_REVIEWED_JOB_ID}.json"
+)
+ATTEMPT_15_EVIDENCE = ROOT / "queue" / "evidence" / f"{ATTEMPT_15_REVIEWED_JOB_ID}.json"
 SCHEMA_PATH = ROOT / "schema" / "nemo-v3-jobspec.v1.json"
 STATUS_WORKFLOW = (
     ROOT / ".github" / "workflows" / "nemo-v3-attempt-status.yml"
@@ -76,10 +81,13 @@ class ReviewedNemoV3Attempt15SpecTests(unittest.TestCase):
             self.attempt_15["base"]["licenseId"],
             "nvidia-nemotron-open-model-license",
         )
-        require_nemo_v3_dispatchable(
-            self.attempt_15,
-            expected_execution_bridge_revision=ATTEMPT_15_CORRECTED_BRIDGE_REVISION,
-        )
+        with mock.patch("nemo_v3_contract.quarantine_policy", return_value=None):
+            require_nemo_v3_dispatchable(
+                self.attempt_15,
+                expected_execution_bridge_revision=(
+                    ATTEMPT_15_CORRECTED_BRIDGE_REVISION
+                ),
+            )
 
     def test_json_schema_admits_only_the_exact_attempt_15_binding(self) -> None:
         schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -194,7 +202,7 @@ class ReviewedNemoV3Attempt15SpecTests(unittest.TestCase):
                 )
                 self.assertEqual(hashlib.sha256(content).hexdigest(), digest)
 
-    def test_signed_attempt_15_queue_waits_for_gpu_receipt(self) -> None:
+    def test_signed_attempt_15_is_quarantined_with_zero_effect_evidence(self) -> None:
         self.assertTrue(ATTEMPT_15_QUEUE.exists())
         self.assertEqual(
             hashlib.sha256(ATTEMPT_15_QUEUE.read_bytes()).hexdigest(),
@@ -213,14 +221,49 @@ class ReviewedNemoV3Attempt15SpecTests(unittest.TestCase):
             receipt_loader=lambda _spec, _token: None,
             now=datetime(2026, 7, 31, 14, 50, tzinfo=timezone.utc),
         )
-        self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
-        self.assertFalse(report["terminal"])
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
         self.assertTrue(report["queue"]["present"])
         self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
         self.assertEqual(report["queue"]["engine_key_id"], COORDINATED_ENGINE_KEY_ID)
         self.assertEqual(report["queue"]["payload_sha256"], payload_sha256)
         self.assertFalse(report["receipt"]["present"])
         self.assertFalse(report["reviewed_spec"]["candidate_publication_enabled"])
+        self.assertTrue(report["quarantine"]["present"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
+
+        quarantine = json.loads(ATTEMPT_15_QUARANTINE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            quarantine["status"],
+            ["RUNTIME_JOB_BINDING_REJECTED", "PRE_CLAIM", "NEVER_DISPATCH"],
+        )
+        self.assertFalse(quarantine["dispatchAuthorized"])
+        self.assertEqual(
+            quarantine["replacement"]["reviewedJobId"],
+            "job-2026-nemo-v3-governed-attempt-16",
+        )
+        self.assertEqual(quarantine["replacement"]["successorGeneration"], 16)
+
+        evidence = json.loads(ATTEMPT_15_EVIDENCE.read_text(encoding="utf-8"))[
+            "executionEvidence"
+        ]
+        self.assertEqual(evidence["workflowRunId"], "30641766033")
+        self.assertEqual(evidence["workflowJobId"], "91193214499")
+        for field in (
+            "claimCreated",
+            "jobDirectoryCreated",
+            "prefetchReceiptCreated",
+            "trainingStarted",
+            "receiptIntentProduced",
+            "receiptUploaded",
+            "candidateUploaded",
+            "adapterUploaded",
+            "modelCardUploaded",
+            "datasetUploaded",
+            "deployed",
+            "promoted",
+        ):
+            self.assertFalse(evidence[field])
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
         mutations = (
@@ -240,10 +283,18 @@ class ReviewedNemoV3Attempt15SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+        with mock.patch("nemo_v3_contract.quarantine_policy", return_value=None):
+            with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+                require_nemo_v3_dispatchable(
+                    self.attempt_15,
+                    expected_execution_bridge_revision="4" * 40,
+                )
+        with self.assertRaisesRegex(ContractError, "quarantined"):
             require_nemo_v3_dispatchable(
                 self.attempt_15,
-                expected_execution_bridge_revision="4" * 40,
+                expected_execution_bridge_revision=(
+                    ATTEMPT_15_CORRECTED_BRIDGE_REVISION
+                ),
             )
         with self.assertRaisesRegex(ContractError, "quarantined"):
             require_nemo_v3_dispatchable(

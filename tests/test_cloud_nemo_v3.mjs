@@ -6,6 +6,7 @@ import {
   NEMO_V3_PAYLOAD_TYPE,
   canonicalize,
   pae,
+  resolveCoordinatedJobBinding,
   validateNemoV3Spec,
 } from '../cloud/sign-nemo-v3-job.mjs';
 
@@ -557,6 +558,10 @@ test('Nemo v3 attempt 15 binds exact post-claim meta-tensor recovery', () => {
     ),
   );
   assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+  const binding = resolveCoordinatedJobBinding(reviewed);
+  assert.equal(binding.runtimeBound, true);
+  assert.equal(binding.successorGeneration, 15);
+  assert.equal(binding.predecessorJobId, 'job-2026-nemo-v3-governed-attempt-14');
   assert.equal(
     createHash('sha256').update(Buffer.from(canonicalize(reviewed), 'utf8')).digest('hex'),
     '9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873',
@@ -597,6 +602,79 @@ test('Nemo v3 attempt 15 binds exact post-claim meta-tensor recovery', () => {
     () => validateNemoV3Spec(replayedPredecessor),
     /lineage/,
   );
+});
+
+test('Nemo v3 generic binding admits attempt 16 only from exact attempt 15 quarantine', () => {
+  const attempt15 = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-15-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const attempt16 = structuredClone(attempt15);
+  attempt16.jobId = 'job-2026-nemo-v3-governed-attempt-16';
+  attempt16.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  attempt16.lineage = {
+    predecessorJobId: 'job-2026-nemo-v3-governed-attempt-15',
+    predecessorEnvelopeSha256: '93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7',
+    predecessorPayloadSha256: '9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873',
+    predecessorEnvelopeRevision: '7f42bad2cb7c762f8eb771922a0ba6e94c96e908',
+    predecessorExecutionBridgeRevision: '60b9894efe9e0e782999aaa4ee5b0d668e7a9b63',
+    transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30641766033',
+    failurePhase: 'PRE_CLAIM_AUTHENTICATED_PREFETCH_RUNTIME_BINDING',
+    successorGeneration: 16,
+    automaticRetry: false,
+    eventCreated: true,
+    workflowRunCreated: true,
+    claimCreated: false,
+    trainingStarted: false,
+    modelRepositoryCodeImported: false,
+    holdoutsAccessed: false,
+    candidateProduced: false,
+    receiptIntentProduced: false,
+    terminalLedgerWritten: false,
+    scienceInputsReused: true,
+  };
+
+  assert.equal(validateNemoV3Spec(attempt16), NEMO_V3_PAYLOAD_TYPE);
+  const binding = resolveCoordinatedJobBinding(attempt16);
+  assert.equal(binding.runtimeBound, true);
+  assert.equal(binding.successorGeneration, 16);
+  assert.equal(binding.workflowVersion, 'nemo-v3-owner-dispatch.v4');
+  assert.equal(
+    binding.relockRunUrl,
+    'https://github.com/szl-holdings/a11oy/actions/runs/30613619902',
+  );
+
+  for (const [name, mutate, expected] of [
+    ['source', (value) => { value.source.revision = '1'.repeat(40); }, /binding/],
+    ['workflow', (value) => { value.ownerDispatch.workflowBlob = '2'.repeat(40); }, /binding/],
+    ['relock', (value) => { value.authorization.settledA11oyRelockRunUrl = 'https://github.com/szl-holdings/a11oy/actions/runs/1'; }, /authorization/],
+    ['key', (value) => { value.authorization.engineKeyId = '0'.repeat(16); }, /authorization/],
+    ['SPKI', (value) => { value.authorization.enginePublicKeySpkiSha256 = '0'.repeat(64); }, /authorization/],
+    ['generation', (value) => { value.lineage.successorGeneration = 17; }, /generation/],
+    ['payload hash', (value) => { value.lineage.predecessorPayloadSha256 = '0'.repeat(64); }, /predecessor evidence/],
+    ['runtime revision', (value) => { value.authorization.correctedBridgeRevision = 'main'; }, /authorization/],
+  ]) {
+    const mutated = structuredClone(attempt16);
+    mutate(mutated);
+    assert.throws(() => validateNemoV3Spec(mutated), expected, name);
+  }
+
+  const skipped = structuredClone(attempt16);
+  skipped.jobId = 'job-2026-nemo-v3-governed-attempt-17';
+  skipped.lineage.successorGeneration = 17;
+  assert.throws(() => validateNemoV3Spec(skipped), /skip a generation/);
+
+  const unknown = structuredClone(attempt16);
+  unknown.jobId = 'job-2026-nemo-v3-governed-attempt-17';
+  unknown.lineage.predecessorJobId = 'job-2026-nemo-v3-governed-attempt-16';
+  unknown.lineage.successorGeneration = 17;
+  assert.throws(() => validateNemoV3Spec(unknown), /quarantine.*unavailable|unavailable.*quarantine/);
+
+  const pathAnomaly = structuredClone(attempt16);
+  pathAnomaly.lineage.predecessorJobId = '../queue/quarantine/escape';
+  assert.throws(() => validateNemoV3Spec(pathAnomaly), /exact governed attempt ID/);
 });
 
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {

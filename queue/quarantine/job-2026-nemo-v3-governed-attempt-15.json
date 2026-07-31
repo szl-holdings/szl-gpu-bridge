@@ -1,0 +1,29 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-15",
+  "recordedAt": "2026-07-31T15:12:01Z",
+  "status": [
+    "RUNTIME_JOB_BINDING_REJECTED",
+    "PRE_CLAIM",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-15.json",
+  "queueFileSha256": "93d5effe94740af9135c3ffa379c85df1aa88e6ad5717bc6421266d21bb9dbe7",
+  "signedPayloadSha256": "9c55b95627b93e522eaebec5cb9e837b46d8e368065470aa45f55f488aeff873",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "workflowVersion": "nemo-v3-owner-dispatch.v4",
+    "settledA11oyRelockRunUrl": "https://github.com/szl-holdings/a11oy/actions/runs/30613619902",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-16",
+    "successorGeneration": 16
+  },
+  "reason": "Attempt 15 consumed its single authorized repository_dispatch in A11oy run 30641766033. Exact source, nested transport, b804 envelope, protected Bridge history, immutable image, cache, receipt identity, and measured host gates passed. Authenticated prefetch then failed before claim because signed execution runtime 60b9894efe9e0e782999aaa4ee5b0d668e7a9b63 contained the attempt-15 identity but not its coordinated reviewed-job binding. No attempt-15 claim, job directory, prefetch receipt, training, receipt intent, receipt upload, candidate, adapter, model-card, dataset, deployment, promotion, or other publication was created. Ephemeral runner 33 deregistered automatically; LM Studio remained open with its server off and no model loaded. Attempt 15 is immutable one-shot evidence and is never retry, resend, re-sign, or dispatch authority."
+}
