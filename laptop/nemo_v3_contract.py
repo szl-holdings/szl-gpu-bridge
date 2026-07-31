@@ -66,6 +66,7 @@ RECOVERY_A11OY_RELOCK_RUN_URL = (
     "https://github.com/szl-holdings/a11oy/actions/runs/30607399378"
 )
 ATTEMPT_9_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-9"
+ATTEMPT_9_CORRECTED_BRIDGE_REVISION = "eeabd1b52380d2b24439e53d5e4ad38f8114556c"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -279,7 +280,7 @@ _COORDINATED_JOB_BINDINGS = {
         "workflowBlob": RECOVERY_OWNER_WORKFLOW_BLOB,
         "workflowVersion": _FINAL_OWNER_WORKFLOW_VERSION,
         "relockRunUrl": RECOVERY_A11OY_RELOCK_RUN_URL,
-        "runtimeBound": True,
+        "correctedBridgeRevision": ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
         "successorGeneration": 9,
     },
 }

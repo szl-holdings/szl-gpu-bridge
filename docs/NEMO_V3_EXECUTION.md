@@ -530,3 +530,23 @@ re-signed. Fresh attempt 9 must bind protected A11oy source
 `30607399378`, and a separately reviewed protected Bridge runtime. Candidate,
 model-card, dataset, deployment, promotion, and every non-receipt upload
 remain disabled.
+
+## Reviewed attempt 9 prefetch-checkout recovery
+
+`jobspecs/nemo-v3-20260731-attempt-9-reviewed.json` is the fresh plaintext
+successor to quarantined attempt 8. It binds protected A11oy source
+`c6aa4f08f752a22bbae35cf5a618a81811494a43`, owner-workflow blob
+`f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d`, canonical relock run
+`30607399378`, immutable image digest
+`9cc97606fc386b4b13455285eb7bd2668f51530988a9c2578707fe6cdfc46123`,
+active key `b8041281c81c4caa`, and protected execution Bridge revision
+`eeabd1b52380d2b24439e53d5e4ad38f8114556c`.
+
+Its lineage records the one attempt-8 workflow run, authenticated prefetch,
+and exact absence of a claim, training, candidate, terminal ledger, or
+training receipt. The frozen science inputs are unchanged. Candidate,
+model-card, dataset, deployment, promotion, and every non-receipt upload
+remain disabled. This reviewed plaintext is not dispatch authority: a
+separate protected PR must invoke the b804 signer exactly once and publish
+an exclusive-create DSSE queue envelope before any runner or dispatch gate
+can open.

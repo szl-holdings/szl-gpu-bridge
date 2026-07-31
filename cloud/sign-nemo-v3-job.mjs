@@ -55,6 +55,11 @@ const SUCCESSOR_CORRECTED_BRIDGE_REVISION = '2f33607d8fcbec76fe98290258ec3dfa728
 const FUTURE_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-7';
 const NEXT_RUNTIME_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-8';
 const NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION = 'dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf';
+const RECOVERY_A11OY_SOURCE_REVISION = 'c6aa4f08f752a22bbae35cf5a618a81811494a43';
+const RECOVERY_OWNER_WORKFLOW_BLOB = 'f0ab364e1db9c48a0d8f49c7f0c17b5e44cad99d';
+const RECOVERY_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30607399378';
+const ATTEMPT_9_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-9';
+const ATTEMPT_9_CORRECTED_BRIDGE_REVISION = 'eeabd1b52380d2b24439e53d5e4ad38f8114556c';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -62,6 +67,7 @@ const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-5',
   'job-2026-nemo-v3-governed-attempt-6',
   'job-2026-nemo-v3-governed-attempt-7',
+  'job-2026-nemo-v3-governed-attempt-8',
 ]);
 const FINAL_OWNER_WORKFLOW_VERSION = 'nemo-v3-owner-dispatch.v4';
 const COORDINATED_JOB_BINDINGS = {
@@ -104,6 +110,14 @@ const COORDINATED_JOB_BINDINGS = {
     relockRunUrl: SUCCESSOR_A11OY_RELOCK_RUN_URL,
     correctedBridgeRevision: NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
     successorGeneration: 8,
+  },
+  [ATTEMPT_9_REVIEWED_JOB_ID]: {
+    sourceRevision: RECOVERY_A11OY_SOURCE_REVISION,
+    workflowBlob: RECOVERY_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: RECOVERY_A11OY_RELOCK_RUN_URL,
+    correctedBridgeRevision: ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
+    successorGeneration: 9,
   },
 };
 
@@ -211,6 +225,10 @@ function validateLineage(spec) {
     } else if (lineage.predecessorJobId === FUTURE_REVIEWED_JOB_ID) {
       expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30605081533';
       expectedFailurePhase = 'PRE_CLAIM_RUNTIME_CONTRACT_VALIDATION';
+      expectedEventCreated = true;
+    } else if (lineage.predecessorJobId === NEXT_RUNTIME_REVIEWED_JOB_ID) {
+      expectedEvidence = 'https://github.com/szl-holdings/a11oy/actions/runs/30606664591';
+      expectedFailurePhase = 'PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT';
       expectedEventCreated = true;
     } else {
       throw new Error('lineage predecessor transport recovery is not admitted');
@@ -478,6 +496,32 @@ export function validateNemoV3Spec(spec) {
       throw new Error('attempt-8 runtime-binding recovery lineage is not exact');
     }
   }
+  if (spec.jobId === ATTEMPT_9_REVIEWED_JOB_ID) {
+    const exactPrefetchRecoveryLineage = {
+      predecessorJobId: NEXT_RUNTIME_REVIEWED_JOB_ID,
+      predecessorEnvelopeSha256: 'b2db463661ab9e16bf24267c82ee104cf25344e7b4addbd2e9867e7e33be3719',
+      predecessorPayloadSha256: '3372fff9c21a73ee140598c152b728b4d7694fb0a066c80e8b55e09832a0769d',
+      predecessorEnvelopeRevision: '08b1bd8bc0659b939d3d6d08c2ee7c670f82cd09',
+      predecessorExecutionBridgeRevision: NEXT_RUNTIME_CORRECTED_BRIDGE_REVISION,
+      transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/actions/runs/30606664591',
+      failurePhase: 'PRE_CLAIM_DIRTY_EXECUTION_CHECKOUT',
+      successorGeneration: 9,
+      automaticRetry: false,
+      eventCreated: true,
+      workflowRunCreated: true,
+      claimCreated: false,
+      trainingStarted: false,
+      modelRepositoryCodeImported: false,
+      holdoutsAccessed: false,
+      candidateProduced: false,
+      receiptIntentProduced: false,
+      terminalLedgerWritten: false,
+      scienceInputsReused: true,
+    };
+    if (canonicalize(spec.lineage) !== canonicalize(exactPrefetchRecoveryLineage)) {
+      throw new Error('attempt-9 prefetch-checkout recovery lineage is not exact');
+    }
+  }
   object(spec.base, 'base');
   if (!REPO.test(spec.base.repoId ?? '') || !SHA.test(spec.base.revision ?? '')) throw new Error('base identity invalid');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base license required');
@@ -548,8 +592,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== NEXT_RUNTIME_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_9_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_9_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');

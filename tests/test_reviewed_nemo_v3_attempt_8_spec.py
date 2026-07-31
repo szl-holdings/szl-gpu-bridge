@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "laptop"))
 import nemo_v3_status  # noqa: E402
 from frontier_contract import ContractError  # noqa: E402
 from nemo_v3_contract import (  # noqa: E402
+    ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
     ATTEMPT_9_REVIEWED_JOB_ID,
     COORDINATED_ENGINE_KEY_ID,
     COORDINATED_ENGINE_SPKI_SHA256,
@@ -230,7 +231,7 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
             require_nemo_v3_dispatchable(self.attempt_8)
 
-    def test_runtime_bound_attempt_9_requires_the_exact_execution_revision(
+    def test_attempt_9_requires_the_exact_reviewed_execution_revision(
         self,
     ) -> None:
         attempt_9 = copy.deepcopy(self.attempt_8)
@@ -240,7 +241,9 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
         attempt_9["authorization"]["settledA11oyRelockRunUrl"] = (
             RECOVERY_A11OY_RELOCK_RUN_URL
         )
-        attempt_9["authorization"]["correctedBridgeRevision"] = "f" * 40
+        attempt_9["authorization"]["correctedBridgeRevision"] = (
+            ATTEMPT_9_CORRECTED_BRIDGE_REVISION
+        )
         attempt_9["lineage"] = {
             "predecessorJobId": NEXT_RUNTIME_REVIEWED_JOB_ID,
             "predecessorEnvelopeSha256": (
@@ -271,8 +274,6 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
             "scienceInputsReused": True,
         }
         self.assertIs(validate_nemo_v3_spec(attempt_9), attempt_9)
-        with self.assertRaisesRegex(ContractError, "execution Bridge revision"):
-            require_nemo_v3_dispatchable(attempt_9)
         with self.assertRaisesRegex(ContractError, "does not match"):
             require_nemo_v3_dispatchable(
                 attempt_9,
@@ -280,7 +281,7 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
             )
         require_nemo_v3_dispatchable(
             attempt_9,
-            expected_execution_bridge_revision="f" * 40,
+            expected_execution_bridge_revision=ATTEMPT_9_CORRECTED_BRIDGE_REVISION,
         )
 
     def test_exact_bindings_fail_closed_on_drift(self) -> None:
@@ -307,7 +308,9 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
                 with self.assertRaises(ContractError):
                     validate_nemo_v3_spec(mutated)
 
-    def test_signer_and_status_workflow_track_signed_attempt_8(self) -> None:
+    def test_status_preserves_attempt_8_while_signer_advances_to_attempt_9(
+        self,
+    ) -> None:
         for expected in (
             "jobspecs/nemo-v3-20260731-attempt-8-reviewed.json",
             "queue/pending/job-2026-nemo-v3-governed-attempt-8.json",
@@ -320,7 +323,7 @@ class ReviewedNemoV3Attempt8SpecTests(unittest.TestCase):
             SIGNER_SOURCE,
         )
         self.assertIn(
-            "signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}",
+            "signer is locked to ${ATTEMPT_9_REVIEWED_JOB_ID}",
             SIGNER_SOURCE,
         )
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)

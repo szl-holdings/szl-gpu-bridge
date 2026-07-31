@@ -312,9 +312,7 @@ class ReviewedNemoV3Attempt7SpecTests(unittest.TestCase):
             "const NEXT_RUNTIME_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-8';",
             SIGNER_SOURCE,
         )
-        self.assertIn(
-            "signer is locked to ${NEXT_RUNTIME_REVIEWED_JOB_ID}", SIGNER_SOURCE
-        )
+        self.assertIn("signer is locked to ${ATTEMPT_9_REVIEWED_JOB_ID}", SIGNER_SOURCE)
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
         self.assertNotIn("repository_dispatch", STATUS_WORKFLOW)
 

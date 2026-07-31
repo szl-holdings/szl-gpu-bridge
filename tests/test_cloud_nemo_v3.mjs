@@ -302,6 +302,37 @@ test('Nemo v3 attempt 8 binds the exact runtime recovery', () => {
   );
 });
 
+test('Nemo v3 attempt 9 binds the exact prefetch-checkout recovery', () => {
+  const reviewed = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260731-attempt-9-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(reviewed), NEMO_V3_PAYLOAD_TYPE);
+
+  const skippedPredecessor = structuredClone(reviewed);
+  skippedPredecessor.lineage.predecessorJobId = 'job-2026-nemo-v3-governed-attempt-7';
+  assert.throws(
+    () => validateNemoV3Spec(skippedPredecessor),
+    /transport evidence/,
+  );
+
+  const claimed = structuredClone(reviewed);
+  claimed.lineage.claimCreated = true;
+  assert.throws(
+    () => validateNemoV3Spec(claimed),
+    /claimCreated/,
+  );
+
+  const staleRuntime = structuredClone(reviewed);
+  staleRuntime.authorization.correctedBridgeRevision = 'a'.repeat(40);
+  assert.throws(
+    () => validateNemoV3Spec(staleRuntime),
+    /coordinated authorization/,
+  );
+});
+
 test('Nemo v3 canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
