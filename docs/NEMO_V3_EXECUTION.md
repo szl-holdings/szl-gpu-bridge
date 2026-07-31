@@ -388,7 +388,7 @@ never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
 revision. The protected envelope revision remains data-only and must be a
 strict descendant of that signed executable Bridge revision.
 
-## 11. Reviewed attempt 6 plaintext
+## 11. Reviewed attempt 6 and signed envelope
 
 The fresh host-policy recovery plaintext is:
 
@@ -409,8 +409,17 @@ exact attempt-5 envelope and payload hashes, envelope-publication revision
 validator admission, claim, image use, training, holdouts, candidate,
 receipt-intent, and terminal ledger effects did not.
 
-The plaintext status is `AWAITING_ENGINE_SIGNATURE`. It is not executable
-authority. A separate protected PR must create the exclusive b804-signed queue
-envelope before any runner registration, start, claim, or dispatch. Candidate,
-model-card, dataset, deployment, promotion, and all non-receipt uploads remain
-disabled.
+The separately protected, exclusive-create queue envelope now exists at:
+
+```text
+queue/pending/job-2026-nemo-v3-governed-attempt-6.json
+```
+
+Its raw SHA-256 is
+`c68e1ecf380d7023c27439e9988ca182ebd9b2446dc769269d4de1c48d507d70`.
+It verifies under active key `b8041281c81c4caa` and binds canonical payload
+SHA-256
+`d0fa9bd15f8e576411b643858d650470b6f1d5ddd56003cd53eda28d83dd914d`.
+Status is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists.
+Candidate, model-card, dataset, deployment, promotion, and all non-receipt
+uploads remain disabled.
