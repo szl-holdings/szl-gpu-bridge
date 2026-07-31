@@ -869,9 +869,12 @@ The reviewed attempt-16 JSON has raw SHA-256
 `1daa8ea3a30a1d497f60431f9f4a33a9edd5d286236f3e8bf44240ef8630c5da`;
 its signer-canonical payload SHA-256 is
 `0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8`.
-There is deliberately no
-`queue/pending/job-2026-nemo-v3-governed-attempt-16.json` in this phase.
-Therefore its status is `AWAITING_ENGINE_SIGNATURE`, not queued, executable, or
-dispatch authority. Only a later separate exclusive-create b804 signing and
-protected publication may establish queue authority; it may not modify or
-re-sign attempt 15.
+The separate exclusive-create b804 signing step produced exactly one DSSE
+envelope at `queue/pending/job-2026-nemo-v3-governed-attempt-16.json`. Its raw
+SHA-256 is
+`5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756`;
+its signature verifies under keyId `b8041281c81c4caa` and its decoded payload
+matches the reviewed canonical payload byte-for-byte. Its status is
+`QUEUED_AWAITING_GPU_RECEIPT`. The envelope does not modify or re-sign attempt
+15, and publication alone creates no runner, dispatch, claim, training,
+receipt, or release effect.
