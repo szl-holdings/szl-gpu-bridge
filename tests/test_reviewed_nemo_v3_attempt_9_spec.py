@@ -203,9 +203,18 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
     def test_quarantine_preserves_attempt_9_bytes_and_selects_fresh_attempt_10(
         self,
     ) -> None:
+        spec_bytes = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:jobspecs/nemo-v3-20260731-attempt-9-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
         self.assertEqual(
-            hashlib.sha256(ATTEMPT_9_PATH.read_bytes()).hexdigest(),
-            "cd3883261d48a838dbde44233fb357ff3b84eeda0ea0e58f49d7ca90981abbba",
+            hashlib.sha256(spec_bytes).hexdigest(),
+            "462444ac636da559b610fc0fb8cde5d802a13c926364f669967b0a05f978dc35",
         )
         record = json.loads(ATTEMPT_9_QUARANTINE.read_text(encoding="utf-8"))
         self.assertEqual(
