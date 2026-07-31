@@ -654,6 +654,11 @@ SHA-256 hashes, passes that verified local snapshot explicitly to Unsloth, and
 requires the returned tokenizer to be a non-null `PreTrainedTokenizerBase`
 bound to the same snapshot with a non-empty chat template. Missing, altered,
 unrecognized, or path-escaping tokenizer state fails closed before training.
+The exact attempt-11 run, claim, signed BLOCKED receipt, and zero-publication
+facts remain in
+`queue/evidence/job-2026-nemo-v3-governed-attempt-11.json`; the separate
+quarantine record stays within the A11oy-admitted immutable dispatch-denial
+schema.
 
 Attempt 12 preserves attempt 11's base license, dataset, recipe, evaluation,
 immutable image, receipt-only destination, and disabled candidate, adapter,

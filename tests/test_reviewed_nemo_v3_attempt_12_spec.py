@@ -126,16 +126,13 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
         for field in ("candidateUpload", "modelCardUpload", "datasetUpload"):
             self.assertFalse(self.attempt_12["ownerDispatch"][field])
 
-    def test_attempt_11_spec_envelope_and_quarantine_bytes_are_preserved(self) -> None:
+    def test_attempt_11_signed_bytes_are_preserved_and_evidence_is_exact(self) -> None:
         expected = {
             "jobspecs/nemo-v3-20260731-attempt-11-reviewed.json": (
                 "a9ec46dcbd9e011c6bddd7513e48a076e1755f06290ec8061caafe4411cad9ca"
             ),
             "queue/pending/job-2026-nemo-v3-governed-attempt-11.json": (
                 "7b9af824b529fa80ec51e060cd0fa14f1af8acc8ded5fff5b10f159acb861918"
-            ),
-            "queue/quarantine/job-2026-nemo-v3-governed-attempt-11.json": (
-                "78d78420465514c1cb0882f49e7cbd455ef2c74cb9b2b320a1bbacc5a57c804a"
             ),
         }
         for path, digest in expected.items():
@@ -145,6 +142,13 @@ class ReviewedNemoV3Attempt12SpecTests(unittest.TestCase):
                     cwd=ROOT,
                 )
                 self.assertEqual(hashlib.sha256(content).hexdigest(), digest)
+        evidence_path = (
+            ROOT / "queue" / "evidence" / f"{ATTEMPT_11_REVIEWED_JOB_ID}.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
+            "ab8876488cb198718b576c53db427242b85f5152628bae2c0d040ce8f82a4908",
+        )
 
     def test_signed_status_awaits_separate_gpu_receipt(self) -> None:
         self.assertTrue(ATTEMPT_12_QUEUE.is_file())
