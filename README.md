@@ -45,10 +45,10 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `HOST_EXECUTION_POLICY_BLOCKED + PRE_ADMISSION + NEVER_DISPATCH`. A future
   attempt 6 must bind protected A11oy main `78b35d244b89c7663063372ff459894bab2977b6`
   and owner-workflow blob `d29d937b2d398e9c207777a9a819aadd050ac231`.
-  Its distinct reviewed plaintext now exists, binds protected Bridge revision
-  `69a097d2eb0619506d673464353f1aea7174cf05`, and remains
-  `AWAITING_ENGINE_SIGNATURE`; no attempt-6 envelope, claim, dispatch, or
-  receipt exists.
+  Its distinct reviewed plaintext binds protected Bridge revision
+  `69a097d2eb0619506d673464353f1aea7174cf05`. The separately protected
+  b804-signed envelope now verifies and is `QUEUED_AWAITING_GPU_RECEIPT`; no
+  attempt-6 claim, dispatch, or receipt exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
