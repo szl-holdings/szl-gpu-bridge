@@ -112,7 +112,9 @@ class ReviewedNemoV3Attempt14SpecTests(unittest.TestCase):
             "failurePhase",
             "successorGeneration",
         ):
-            self.assertEqual(exact_lineage[field]["const"], self.attempt_14["lineage"][field])
+            self.assertEqual(
+                exact_lineage[field]["const"], self.attempt_14["lineage"][field]
+            )
 
         terminal_lineage = schema["$defs"]["terminalReceiptFailureLineage"][
             "properties"
