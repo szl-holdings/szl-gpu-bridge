@@ -368,6 +368,22 @@ Its raw SHA-256 is
 It verifies under active key `b8041281c81c4caa` and binds canonical payload
 SHA-256
 `374901dec6923e0c28688407e581d374827d76f7567970d8ec481b6bf140c67b`.
-Status is `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists.
-The protected envelope revision is data-only and a strict descendant of the
-signed executable Bridge revision.
+Exactly one dispatch created A11oy workflow run
+`https://github.com/szl-holdings/a11oy/actions/runs/30591897165`. Windows host
+execution policy rejected the generated PowerShell script before validator
+admission. Envelope verification, image use, prefetch, claim creation,
+training, finalization, and receipt upload were skipped. No claim, job
+directory, prefetch receipt, or terminal receipt exists.
+
+The immutable quarantine record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-5.json` therefore marks
+attempt 5
+`STALE_SOURCE + HOST_EXECUTION_POLICY_BLOCKED + PRE_ADMISSION + NEVER_DISPATCH`.
+Its reviewed spec and signed envelope remain byte-for-byte evidence and must
+never be retried, consumed, deleted, rewritten, or re-signed. A future attempt
+6 must bind protected A11oy main
+`78b35d244b89c7663063372ff459894bab2977b6`, owner-workflow blob
+`d29d937b2d398e9c207777a9a819aadd050ac231`, active key
+`b8041281c81c4caa`, and a separately reviewed protected Bridge runtime
+revision. The protected envelope revision remains data-only and must be a
+strict descendant of that signed executable Bridge revision.

@@ -36,16 +36,17 @@ cloud/verify-receipt.mjs ◄─────────────────�
   verification-only; coordinated administrative-recovery key
   `b8041281c81c4caa` is the sole active execution authority. No cryptographic
   continuity with either predecessor key is claimed. Attempt 2, successor
-  generation 3, and attempt 4 remain byte-preserved under explicit
+  generation 3, attempt 4, and attempt 5 remain byte-preserved under explicit
   `NEVER_DISPATCH` quarantine. Attempt 4's flat 14-property dispatch transport
-  was rejected by GitHub before event creation, so its signed envelope is
-  evidence only. Reviewed attempt 5 now binds the protected nested-v3 A11oy
-  workflow and keeps its signed executable Bridge revision distinct from the
-  protected envelope-publication revision. Its separately reviewed queue
-  envelope verifies under active key `b8041281c81c4caa` and is
-  `QUEUED_AWAITING_GPU_RECEIPT`; no claim, dispatch, or receipt exists yet. The
-  cloud trusts the separately announced laptop receipt key. An unverifiable
-  claim is treated as no claim.
+  was rejected before event creation. Attempt 5 created exactly one workflow
+  run, but Windows host execution policy rejected the generated PowerShell
+  script before validator admission, claim, image use, training, or receipt.
+  Its signed envelope is evidence only under
+  `HOST_EXECUTION_POLICY_BLOCKED + PRE_ADMISSION + NEVER_DISPATCH`. A future
+  attempt 6 must bind protected A11oy main `78b35d244b89c7663063372ff459894bab2977b6`
+  and owner-workflow blob `d29d937b2d398e9c207777a9a819aadd050ac231`.
+  The cloud trusts the separately announced laptop receipt key. An
+  unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a
