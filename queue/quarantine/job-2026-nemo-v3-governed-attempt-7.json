@@ -1,0 +1,26 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-7",
+  "recordedAt": "2026-07-31T04:52:00Z",
+  "status": [
+    "RUNTIME_CONTRACT_BINDING_REJECTED",
+    "PRE_CLAIM",
+    "NEVER_DISPATCH"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-7.json",
+  "queueFileSha256": "8c1e333f797a8de634217b19cd140994a1d4f3920afebdf6f658dcc984188a96",
+  "signedPayloadSha256": "0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "2b190b3806a5d2b3faa58f34c2db41c5dc4668fa",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "sourceRevision": "2b190b3806a5d2b3faa58f34c2db41c5dc4668fa",
+    "workflowBlob": "d29d937b2d398e9c207777a9a819aadd050ac231",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-8"
+  },
+  "reason": "Attempt 7 created one exact owner-dispatch workflow run, passed nested transport, b804 envelope, protected history, and pinned image validation, then failed before prefetch output or either claim because executable Bridge revision 2f33607d8fcbec76fe98290258ec3dfa728fb509 predates the attempt-7 reviewed binding. Run 30605081533 completed failure; no claim, job directory, input receipt, training, finalization, terminal ledger entry, or receipt exists. The reviewed spec and b804 DSSE envelope remain immutable evidence and are never dispatch authority."
+}

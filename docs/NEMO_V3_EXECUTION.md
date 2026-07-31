@@ -470,6 +470,21 @@ Its raw SHA-256 is
 It verifies under active key `b8041281c81c4caa` and binds canonical payload
 SHA-256
 `0fa239d3e14f0644d26b76c0e605ea8068b305cd4d96ea41385cad38fbdfbde7`.
-Status is `QUEUED_AWAITING_GPU_RECEIPT`; no attempt-7 runner, claim, training,
-candidate, or receipt exists. Candidate, model-card, dataset, deployment,
-promotion, and all non-receipt uploads remain disabled.
+Run `30605081533` passed nested transport, b804 envelope verification,
+protected Bridge history, and the immutable GPU image, then failed in
+authenticated prefetch before producing its prefetch receipt. Executable
+Bridge revision `2f33607d8fcbec76fe98290258ec3dfa728fb509` correctly rejected
+the later attempt-7 reviewed binding. Neither the workflow-level dispatch
+claim nor the runtime execution claim exists; no job directory, training,
+candidate, terminal ledger entry, or receipt exists.
+
+The immutable quarantine record
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-7.json` therefore marks
+attempt 7
+`RUNTIME_CONTRACT_BINDING_REJECTED + PRE_CLAIM + NEVER_DISPATCH`. Its spec
+and b804 envelope remain byte-for-byte evidence and must never be retried,
+consumed, deleted, rewritten, or re-signed. A fresh attempt 8 must bind the
+protected runtime-recovery revision, and the prefetch, dispatcher, and
+isolated runner each require that exact signed execution revision before any
+attempt-8 claim. Candidate, model-card, dataset, deployment, promotion, and
+all non-receipt uploads remain disabled.
