@@ -66,6 +66,9 @@ const ATTEMPT_10_CORRECTED_BRIDGE_REVISION = '37479c23af3228a57ad6018b3f9134186e
 const EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION = '434d653eaf100b9b3e5484687db1e6e6ca7116c9';
 const EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB = '7cf0c877399471a084d3e70638ef50ec28d7f646';
 const EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30613619902';
+const ATTEMPT_17_A11OY_SOURCE_REVISION = 'cad529a2cef4cb43024bf4974ae155d89f33fa5b';
+const ATTEMPT_17_OWNER_WORKFLOW_BLOB = '7cf0c877399471a084d3e70638ef50ec28d7f646';
+const ATTEMPT_17_A11OY_RELOCK_RUN_URL = 'https://github.com/szl-holdings/a11oy/actions/runs/30706177629';
 const ATTEMPT_11_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-11';
 const ATTEMPT_11_CORRECTED_BRIDGE_REVISION = 'f07263bc37ef6e90b313ba5576ef425d845cf287';
 const ATTEMPT_12_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-12';
@@ -166,6 +169,20 @@ const COORDINATED_JOB_BINDINGS = {
     successorGeneration: 12,
   },
 };
+const ADMITTED_A11OY_CONTEXTS = [
+  ...Object.values(COORDINATED_JOB_BINDINGS).map((binding) => ({
+    sourceRevision: binding.sourceRevision,
+    workflowBlob: binding.workflowBlob,
+    workflowVersion: binding.workflowVersion,
+    relockRunUrl: binding.relockRunUrl,
+  })),
+  {
+    sourceRevision: ATTEMPT_17_A11OY_SOURCE_REVISION,
+    workflowBlob: ATTEMPT_17_OWNER_WORKFLOW_BLOB,
+    workflowVersion: FINAL_OWNER_WORKFLOW_VERSION,
+    relockRunUrl: ATTEMPT_17_A11OY_RELOCK_RUN_URL,
+  },
+];
 
 const LEGACY_REPLACEMENT_FIELDS = [
   'sourceRevision', 'workflowBlob', 'engineKeyId',
@@ -246,7 +263,7 @@ export function resolveCoordinatedJobBinding(spec) {
     throw new Error('protected predecessor replacement trust context is invalid');
   }
 
-  const contexts = Object.values(COORDINATED_JOB_BINDINGS).filter(
+  const contexts = ADMITTED_A11OY_CONTEXTS.filter(
     (binding) => binding.sourceRevision === replacement.sourceRevision
       && binding.workflowBlob === replacement.workflowBlob,
   );
@@ -269,13 +286,37 @@ export function resolveCoordinatedJobBinding(spec) {
 
   const evidenceRecord = readProtectedJson(
     `queue/evidence/${predecessorJobId}.json`,
-    'protected predecessor execution evidence',
+    'protected predecessor evidence',
   );
-  const evidence = object(evidenceRecord.executionEvidence, 'executionEvidence');
-  if (evidenceRecord.kind !== 'szl-nemo-v3-execution-evidence'
-      || evidenceRecord.v !== 1
+  let evidence;
+  let transportEvidenceUrl;
+  if (evidenceRecord.kind === 'szl-nemo-v3-execution-evidence') {
+    evidence = object(evidenceRecord.executionEvidence, 'executionEvidence');
+    if (!/^[0-9]+$/.test(evidence.workflowRunId ?? '')) {
+      throw new Error('protected predecessor execution evidence boundary is invalid');
+    }
+    transportEvidenceUrl = `https://github.com/szl-holdings/a11oy/actions/runs/${evidence.workflowRunId}`;
+    evidence = { ...evidence, eventCreated: true, workflowRunCreated: true };
+  } else if (evidenceRecord.kind === 'szl-nemo-v3-pre-dispatch-evidence') {
+    evidence = object(evidenceRecord.preDispatchEvidence, 'preDispatchEvidence');
+    const zeroEffectFields = [
+      'eventCreated', 'workflowRunCreated', 'claimCreated', 'jobDirectoryCreated',
+      'prefetchReceiptCreated', 'trainingStarted', 'modelRepositoryCodeImported',
+      'holdoutsAccessed', 'receiptIntentProduced', 'receiptUploaded',
+      'candidateUploaded', 'adapterUploaded', 'modelCardUploaded', 'datasetUploaded',
+      'deployed', 'promoted',
+    ];
+    if (typeof evidence.evidenceUrl !== 'string'
+        || !evidence.evidenceUrl.startsWith('https://github.com/szl-holdings/')
+        || zeroEffectFields.some((field) => evidence[field] !== false)) {
+      throw new Error('protected predecessor pre-event evidence boundary is invalid');
+    }
+    transportEvidenceUrl = evidence.evidenceUrl;
+  } else {
+    throw new Error('protected predecessor evidence kind is not admitted');
+  }
+  if (evidenceRecord.v !== 1
       || evidenceRecord.jobId !== predecessorJobId
-      || !/^[0-9]+$/.test(evidence.workflowRunId ?? '')
       || !/^[0-9a-f]{40}$/.test(evidence.envelopeRevision ?? '')
       || !/^[0-9a-f]{40}$/.test(evidence.executionBridgeRevision ?? '')
       || evidence.sourceRevision !== quarantine.sourceRevision
@@ -292,7 +333,7 @@ export function resolveCoordinatedJobBinding(spec) {
     successorGeneration: generation,
     predecessorJobId,
     predecessorQuarantine: quarantine,
-    predecessorEvidence: evidence,
+    predecessorEvidence: { ...evidence, transportEvidenceUrl },
   };
 }
 
@@ -455,9 +496,9 @@ function validateLineage(spec, coordinatedBinding) {
     } else if (coordinatedBinding?.runtimeBound
         && coordinatedBinding.predecessorEvidence) {
       const evidence = coordinatedBinding.predecessorEvidence;
-      expectedEvidence = `https://github.com/szl-holdings/a11oy/actions/runs/${evidence.workflowRunId}`;
+      expectedEvidence = evidence.transportEvidenceUrl;
       expectedFailurePhase = evidence.failurePhase;
-      expectedEventCreated = true;
+      expectedEventCreated = evidence.eventCreated;
       expectedClaimCreated = evidence.claimCreated ?? false;
       expectedHoldoutsAccessed = evidence.holdoutsAccessed ?? false;
       expectedReceiptIntentProduced = evidence.receiptIntentProduced ?? false;
@@ -480,12 +521,12 @@ function validateLineage(spec, coordinatedBinding) {
         predecessorPayloadSha256: quarantine.signedPayloadSha256,
         predecessorEnvelopeRevision: evidence.envelopeRevision,
         predecessorExecutionBridgeRevision: evidence.executionBridgeRevision,
-        transportEvidenceUrl: `https://github.com/szl-holdings/a11oy/actions/runs/${evidence.workflowRunId}`,
+        transportEvidenceUrl: evidence.transportEvidenceUrl,
         failurePhase: evidence.failurePhase,
         successorGeneration: coordinatedBinding.successorGeneration,
         automaticRetry: false,
-        eventCreated: true,
-        workflowRunCreated: true,
+        eventCreated: evidence.eventCreated,
+        workflowRunCreated: evidence.workflowRunCreated,
         candidateProduced: false,
         scienceInputsReused: true,
       };

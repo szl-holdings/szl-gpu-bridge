@@ -883,7 +883,15 @@ A11oy PR #1217 advanced the protected source, the matching quarantine at
 terminal `QUARANTINED_NEVER_DISPATCH`. Attempt 16 is `STALE_SOURCE +
 PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT + NEVER_DISPATCH + NEVER_RESEND +
 NEVER_RESIGN`. Its spec and envelope bytes remain immutable; they are not retry,
-resend, re-sign, or dispatch authority. Its explicit null replacement grants no
-successor identity, source, workflow, signing, runner, or dispatch authority;
-any future attempt requires a separate protected release from then-settled A11oy
-and Bridge main.
+resend, re-sign, or dispatch authority.
+
+The subsequent protected admission authorizes only a distinct plaintext attempt
+17 identity from exact settled A11oy source
+`cad529a2cef4cb43024bf4974ae155d89f33fa5b`, owner-workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, workflow version
+`nemo-v3-owner-dispatch.v4`, and terminal relock run `30706177629`. The generic
+runtime now accepts both authenticated workflow-run evidence and exact
+pre-dispatch zero-event evidence, while preserving immediate-generation,
+source, workflow, relock, b804 key, envelope, payload, and effect-boundary
+checks. This admission does not create the attempt-17 reviewed spec or signed
+envelope and does not authorize a signer, runner, dispatch, receipt, or upload.
