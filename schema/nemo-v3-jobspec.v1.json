@@ -195,9 +195,9 @@
             "provisionalEngineKeyId": {"const": "815714c8d4ae3e4d"},
             "provisionalKeyStatus": {"const": "VERIFY_ONLY"},
             "coordinationMode": {"const": "FINAL_ACTIVE_TRUST_ROOT"},
-            "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025", "https://github.com/szl-holdings/a11oy/actions/runs/30601635066", "https://github.com/szl-holdings/a11oy/actions/runs/30607399378", "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"]},
+            "settledA11oyRelockRunUrl": {"enum": ["https://github.com/szl-holdings/a11oy/actions/runs/30561614589", "https://github.com/szl-holdings/a11oy/actions/runs/30588489971", "https://github.com/szl-holdings/a11oy/actions/runs/30592401025", "https://github.com/szl-holdings/a11oy/actions/runs/30601635066", "https://github.com/szl-holdings/a11oy/actions/runs/30607399378", "https://github.com/szl-holdings/a11oy/actions/runs/30613619902", "https://github.com/szl-holdings/a11oy/actions/runs/30706177629"]},
             "cryptographicContinuityClaimed": {"const": false},
-            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287", "d110abb8ea48c9382a70c3eead22dddf555f292b", "2783b3518abcec9f38d3f6504c06e305a4723801", "e150711a6ba6a0c29109a00da7fc82af2967f588", "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63", "b99f37260bcabf7f5c98cddbc5988a3ba87b766e"]}
+            "correctedBridgeRevision": {"enum": ["2237bb3f36663343ace29d98cda6c32e165450a0", "a2015accc0be8060c4084455e829a9373e5c99e2", "69a097d2eb0619506d673464353f1aea7174cf05", "2f33607d8fcbec76fe98290258ec3dfa728fb509", "dc36af2b264bbdb4cc101593c54c5b2c24c1d9cf", "eeabd1b52380d2b24439e53d5e4ad38f8114556c", "37479c23af3228a57ad6018b3f9134186e6d7fa7", "f07263bc37ef6e90b313ba5576ef425d845cf287", "d110abb8ea48c9382a70c3eead22dddf555f292b", "2783b3518abcec9f38d3f6504c06e305a4723801", "e150711a6ba6a0c29109a00da7fc82af2967f588", "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63", "b99f37260bcabf7f5c98cddbc5988a3ba87b766e", "120a49206354ad98779ac46a65ca1fae45131e1c"]}
           }
         }
       ]
@@ -775,6 +775,57 @@
                   "successorGeneration": {"const": 16},
                   "eventCreated": {"const": true},
                   "workflowRunCreated": {"const": true},
+                  "claimCreated": {"const": false},
+                  "trainingStarted": {"const": false},
+                  "modelRepositoryCodeImported": {"const": false},
+                  "holdoutsAccessed": {"const": false},
+                  "candidateProduced": {"const": false},
+                  "receiptIntentProduced": {"const": false},
+                  "terminalLedgerWritten": {"const": false}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"jobId": {"const": "job-2026-nemo-v3-governed-attempt-17"}},
+        "required": ["jobId"]
+      },
+      "then": {
+        "required": ["ownerDispatch", "authorization", "lineage"],
+        "properties": {
+          "source": {"properties": {"revision": {"const": "cad529a2cef4cb43024bf4974ae155d89f33fa5b"}}},
+          "base": {"properties": {"licenseId": {"const": "nvidia-nemotron-open-model-license"}}},
+          "ownerDispatch": {
+            "properties": {
+              "workflowBlob": {"const": "7cf0c877399471a084d3e70638ef50ec28d7f646"},
+              "workflowVersion": {"const": "nemo-v3-owner-dispatch.v4"}
+            }
+          },
+          "authorization": {
+            "properties": {
+              "settledA11oyRelockRunUrl": {"const": "https://github.com/szl-holdings/a11oy/actions/runs/30706177629"},
+              "correctedBridgeRevision": {"const": "120a49206354ad98779ac46a65ca1fae45131e1c"}
+            }
+          },
+          "lineage": {
+            "allOf": [
+              {"$ref": "#/$defs/transportFailureLineage"},
+              {
+                "properties": {
+                  "predecessorJobId": {"const": "job-2026-nemo-v3-governed-attempt-16"},
+                  "predecessorEnvelopeSha256": {"const": "5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756"},
+                  "predecessorPayloadSha256": {"const": "0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8"},
+                  "predecessorEnvelopeRevision": {"const": "0939008a73fa8b1912c842a304c5d0204a5b9d57"},
+                  "predecessorExecutionBridgeRevision": {"const": "b99f37260bcabf7f5c98cddbc5988a3ba87b766e"},
+                  "transportEvidenceUrl": {"const": "https://github.com/szl-holdings/a11oy/pull/1217"},
+                  "failurePhase": {"const": "PRE_DISPATCH_VALIDATOR_REJECTED"},
+                  "successorGeneration": {"const": 17},
+                  "eventCreated": {"const": false},
+                  "workflowRunCreated": {"const": false},
                   "claimCreated": {"const": false},
                   "trainingStarted": {"const": false},
                   "modelRepositoryCodeImported": {"const": false},

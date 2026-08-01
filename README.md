@@ -239,8 +239,17 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `7cf0c877399471a084d3e70638ef50ec28d7f646`, and terminal relock run
   `30706177629`. It admits the preserved zero-event evidence without modifying
   the attempt-16 spec, envelope, evidence, or `NEVER_*` dispositions. It does
-  not create an attempt-17 spec or envelope and grants no signer, runner,
-  dispatch, receipt, or upload authority.
+  not modify the attempt-16 evidence or grant runner, dispatch, receipt, or
+  upload authority. The next separately reviewed plaintext is now
+  `jobspecs/nemo-v3-20260801-attempt-17-reviewed.json`. It binds exact protected
+  Bridge runtime `120a49206354ad98779ac46a65ca1fae45131e1c`, preserves the
+  attempt-16 zero-event lineage, and keeps every science, license, receipt-only,
+  and publication boundary closed. Its raw JSON SHA-256 is
+  `de8e70374257f6df4baeeb7d7ce629cc9d8a8adeb0236be638e5eb239eb3c7b8`;
+  its signer-canonical payload SHA-256 is
+  `3aa118904933b0c5020cd21da1fc42531545a96f758d08ece3151e246255503c`.
+  No attempt-17 queue envelope exists in this phase: the status is
+  `AWAITING_ENGINE_SIGNATURE`, not dispatched or operational.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

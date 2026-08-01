@@ -271,7 +271,7 @@ class ReviewedNemoV3Attempt9SpecTests(unittest.TestCase):
             SIGNER_SOURCE,
         )
         self.assertIn(
-            "signer is locked to ${ATTEMPT_16_REVIEWED_JOB_ID}",
+            "signer is locked to ${ATTEMPT_17_REVIEWED_JOB_ID}",
             SIGNER_SOURCE,
         )
         self.assertIn("{ flag: 'wx' }", SIGNER_SOURCE)
