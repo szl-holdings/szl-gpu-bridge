@@ -77,6 +77,8 @@ const ATTEMPT_13_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-13';
 const ATTEMPT_14_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-14';
 const ATTEMPT_15_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-15';
 const ATTEMPT_16_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-16';
+const ATTEMPT_17_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-17';
+const ATTEMPT_17_CORRECTED_BRIDGE_REVISION = '120a49206354ad98779ac46a65ca1fae45131e1c';
 const QUARANTINED_JOB_IDS = new Set([
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
@@ -183,6 +185,9 @@ const ADMITTED_A11OY_CONTEXTS = [
     relockRunUrl: ATTEMPT_17_A11OY_RELOCK_RUN_URL,
   },
 ];
+const RUNTIME_BOUND_EXECUTION_REVISIONS = {
+  [ATTEMPT_17_REVIEWED_JOB_ID]: ATTEMPT_17_CORRECTED_BRIDGE_REVISION,
+};
 
 const LEGACY_REPLACEMENT_FIELDS = [
   'sourceRevision', 'workflowBlob', 'engineKeyId',
@@ -324,11 +329,16 @@ export function resolveCoordinatedJobBinding(spec) {
       || !evidence.failurePhase) {
     throw new Error('protected predecessor execution evidence boundary is invalid');
   }
+  const correctedBridgeRevision = RUNTIME_BOUND_EXECUTION_REVISIONS[spec.jobId];
+  if (generation >= 17 && !correctedBridgeRevision) {
+    throw new Error('runtime-bound successor lacks an exact protected execution revision');
+  }
   return {
     sourceRevision: replacement.sourceRevision,
     workflowBlob: replacement.workflowBlob,
     workflowVersion: context.workflowVersion,
     relockRunUrl: context.relockRunUrl,
+    correctedBridgeRevision,
     runtimeBound: true,
     successorGeneration: generation,
     predecessorJobId,
@@ -658,7 +668,7 @@ function validateAuthorization(spec, coordinatedBinding) {
         || authorization.coordinationMode !== 'FINAL_ACTIVE_TRUST_ROOT'
         || authorization.settledA11oyRelockRunUrl !== coordinatedBinding.relockRunUrl
         || authorization.cryptographicContinuityClaimed !== false
-        || (!coordinatedBinding.runtimeBound
+        || (coordinatedBinding.correctedBridgeRevision
             && authorization.correctedBridgeRevision !== coordinatedBinding.correctedBridgeRevision)) {
       throw new Error('coordinated authorization boundary is invalid');
     }
@@ -1068,8 +1078,8 @@ export function main(argv = process.argv.slice(2), env = process.env) {
   if (QUARANTINED_JOB_IDS.has(spec.jobId)) {
     fail(`job ${spec.jobId} is quarantined and marked NEVER_DISPATCH`);
   }
-  if (spec.jobId !== ATTEMPT_16_REVIEWED_JOB_ID) {
-    fail(`signer is locked to ${ATTEMPT_16_REVIEWED_JOB_ID}`);
+  if (spec.jobId !== ATTEMPT_17_REVIEWED_JOB_ID) {
+    fail(`signer is locked to ${ATTEMPT_17_REVIEWED_JOB_ID}`);
   }
   const keyPath = env.SZL_QUANT_KEY;
   if (!keyPath) fail('SZL_QUANT_KEY not set — refusing unsigned Nemo v3 job');

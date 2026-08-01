@@ -893,5 +893,35 @@ The subsequent protected admission authorizes only a distinct plaintext attempt
 runtime now accepts both authenticated workflow-run evidence and exact
 pre-dispatch zero-event evidence, while preserving immediate-generation,
 source, workflow, relock, b804 key, envelope, payload, and effect-boundary
-checks. This admission does not create the attempt-17 reviewed spec or signed
-envelope and does not authorize a signer, runner, dispatch, receipt, or upload.
+checks.
+
+## Reviewed attempt 17 settled-runtime successor
+
+`jobspecs/nemo-v3-20260801-attempt-17-reviewed.json` is the distinct plaintext
+successor authorized by that protected admission. It binds exact settled A11oy
+source `cad529a2cef4cb43024bf4974ae155d89f33fa5b`, owner-workflow blob
+`7cf0c877399471a084d3e70638ef50ec28d7f646`, workflow version
+`nemo-v3-owner-dispatch.v4`, canonical relock run `30706177629`, and exact
+protected Bridge execution runtime
+`120a49206354ad98779ac46a65ca1fae45131e1c`.
+
+Its lineage binds attempt 16's preserved DSSE envelope SHA-256
+`5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756`,
+canonical payload SHA-256
+`0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8`,
+envelope revision `0939008a73fa8b1912c842a304c5d0204a5b9d57`, execution
+revision `b99f37260bcabf7f5c98cddbc5988a3ba87b766e`, A11oy PR #1217,
+and the exact `PRE_DISPATCH_VALIDATOR_REJECTED` zero-event boundary. Attempt
+16 remains immutable `NEVER_DISPATCH + NEVER_RESEND + NEVER_RESIGN` evidence.
+
+Attempt 17 preserves the model, tokenizer, local dataset and holdout hashes,
+recipe, gates, license acknowledgement, b804 public trust root, receipt-only
+destination, and all disabled candidate/model-card/dataset publication flags.
+The reviewed JSON SHA-256 is
+`de8e70374257f6df4baeeb7d7ce629cc9d8a8adeb0236be638e5eb239eb3c7b8`;
+its signer-canonical payload SHA-256 is
+`3aa118904933b0c5020cd21da1fc42531545a96f758d08ece3151e246255503c`.
+This phase contains no attempt-17 queue envelope, runner, dispatch event,
+receipt, upload, deployment, or promotion. Its honest status is
+`AWAITING_ENGINE_SIGNATURE`; signing is a separate exclusive-create protected
+phase.

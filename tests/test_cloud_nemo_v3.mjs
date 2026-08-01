@@ -681,40 +681,18 @@ test('Nemo v3 generic binding admits attempt 16 only from exact attempt 15 quara
 });
 
 test('Nemo v3 generic binding admits attempt 17 only from exact attempt 16 pre-event evidence', () => {
-  const attempt16 = JSON.parse(
+  const attempt17 = JSON.parse(
     readFileSync(
-      new URL('../jobspecs/nemo-v3-20260731-attempt-16-reviewed.json', import.meta.url),
+      new URL('../jobspecs/nemo-v3-20260801-attempt-17-reviewed.json', import.meta.url),
       'utf8',
     ),
   );
-  const attempt17 = structuredClone(attempt16);
-  attempt17.jobId = 'job-2026-nemo-v3-governed-attempt-17';
-  attempt17.source.revision = 'cad529a2cef4cb43024bf4974ae155d89f33fa5b';
-  attempt17.authorization.settledA11oyRelockRunUrl = 'https://github.com/szl-holdings/a11oy/actions/runs/30706177629';
-  attempt17.authorization.correctedBridgeRevision = 'b'.repeat(40);
-  attempt17.lineage = {
-    predecessorJobId: 'job-2026-nemo-v3-governed-attempt-16',
-    predecessorEnvelopeSha256: '5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756',
-    predecessorPayloadSha256: '0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8',
-    predecessorEnvelopeRevision: '0939008a73fa8b1912c842a304c5d0204a5b9d57',
-    predecessorExecutionBridgeRevision: 'b99f37260bcabf7f5c98cddbc5988a3ba87b766e',
-    transportEvidenceUrl: 'https://github.com/szl-holdings/a11oy/pull/1217',
-    failurePhase: 'PRE_DISPATCH_VALIDATOR_REJECTED',
-    successorGeneration: 17,
-    automaticRetry: false,
-    eventCreated: false,
-    workflowRunCreated: false,
-    claimCreated: false,
-    trainingStarted: false,
-    modelRepositoryCodeImported: false,
-    holdoutsAccessed: false,
-    candidateProduced: false,
-    receiptIntentProduced: false,
-    terminalLedgerWritten: false,
-    scienceInputsReused: true,
-  };
 
   assert.equal(validateNemoV3Spec(attempt17), NEMO_V3_PAYLOAD_TYPE);
+  assert.equal(
+    attempt17.authorization.correctedBridgeRevision,
+    '120a49206354ad98779ac46a65ca1fae45131e1c',
+  );
   const binding = resolveCoordinatedJobBinding(attempt17);
   assert.equal(binding.runtimeBound, true);
   assert.equal(binding.successorGeneration, 17);

@@ -91,6 +91,7 @@ ATTEMPT_14_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-14"
 ATTEMPT_15_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-15"
 ATTEMPT_16_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-16"
 ATTEMPT_17_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-17"
+ATTEMPT_17_CORRECTED_BRIDGE_REVISION = "120a49206354ad98779ac46a65ca1fae45131e1c"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -782,6 +783,9 @@ _ADMITTED_A11OY_CONTEXTS.add(
         ATTEMPT_17_A11OY_RELOCK_RUN_URL,
     )
 )
+_RUNTIME_BOUND_EXECUTION_REVISIONS = {
+    ATTEMPT_17_REVIEWED_JOB_ID: ATTEMPT_17_CORRECTED_BRIDGE_REVISION,
+}
 _REPLACEMENT_FIELDS = frozenset(
     {
         "sourceRevision",
@@ -1028,11 +1032,17 @@ def _derived_runtime_binding(spec: dict[str, Any]) -> dict[str, Any]:
         raise ContractError(
             "new runtime successor replacement lacks exact context and generation"
         )
+    corrected_bridge_revision = _RUNTIME_BOUND_EXECUTION_REVISIONS.get(job_id)
+    if generation >= 17 and corrected_bridge_revision is None:
+        raise ContractError(
+            "runtime-bound successor lacks an exact protected execution revision"
+        )
     return {
         "sourceRevision": source_revision,
         "workflowBlob": workflow_blob,
         "workflowVersion": workflow_version,
         "relockRunUrl": relock_run_url,
+        "correctedBridgeRevision": corrected_bridge_revision,
         "runtimeBound": True,
         "successorGeneration": generation,
         "predecessorJobId": predecessor_id,
@@ -1318,10 +1328,12 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
                 "authorization.correctedBridgeRevision",
                 exact40=True,
             )
+            expected_bridge_revision = coordinated_binding.get(
+                "correctedBridgeRevision"
+            )
             if (
-                not coordinated_binding.get("runtimeBound")
-                and authorization["correctedBridgeRevision"]
-                != coordinated_binding["correctedBridgeRevision"]
+                expected_bridge_revision is not None
+                and authorization["correctedBridgeRevision"] != expected_bridge_revision
             ):
                 raise ContractError(
                     "coordinated authorization does not bind corrected bridge main"

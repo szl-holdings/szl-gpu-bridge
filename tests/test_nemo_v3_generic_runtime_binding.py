@@ -20,7 +20,7 @@ from frontier_contract import ContractError  # noqa: E402
 ATTEMPT_15_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-15-reviewed.json"
 ATTEMPT_15_RUNTIME = "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63"
 ATTEMPT_16_RUNTIME = "a" * 40
-ATTEMPT_17_RUNTIME = "b" * 40
+ATTEMPT_17_RUNTIME = "120a49206354ad98779ac46a65ca1fae45131e1c"
 
 
 def attempt_16_spec() -> dict:
