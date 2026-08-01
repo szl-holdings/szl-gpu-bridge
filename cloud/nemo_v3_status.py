@@ -251,10 +251,40 @@ def verify_quarantine(
             "replacement",
             "reason",
         }
-        expected_execution_evidence = policy.get("execution_evidence")
-        if expected_execution_evidence is not None:
-            evidence_relative = policy.get("execution_evidence_path")
-            evidence_sha256 = policy.get("execution_evidence_sha256")
+        evidence_contracts = (
+            (
+                "execution_evidence",
+                "execution_evidence_path",
+                "execution_evidence_sha256",
+                "szl-nemo-v3-execution-evidence",
+                "executionEvidence",
+            ),
+            (
+                "pre_event_evidence",
+                "pre_event_evidence_path",
+                "pre_event_evidence_sha256",
+                "szl-nemo-v3-pre-dispatch-evidence",
+                "preDispatchEvidence",
+            ),
+        )
+        active_evidence = [
+            contract
+            for contract in evidence_contracts
+            if policy.get(contract[0]) is not None
+        ]
+        if len(active_evidence) > 1:
+            raise StatusError("quarantine policy has conflicting evidence contracts")
+        if active_evidence:
+            (
+                policy_field,
+                path_field,
+                sha_field,
+                evidence_kind,
+                record_field,
+            ) = active_evidence[0]
+            expected_evidence = policy[policy_field]
+            evidence_relative = policy.get(path_field)
+            evidence_sha256 = policy.get(sha_field)
             if (
                 not isinstance(evidence_relative, str)
                 or not evidence_relative
@@ -262,15 +292,15 @@ def verify_quarantine(
                 or len(evidence_sha256) != 64
             ):
                 raise StatusError(
-                    "execution evidence policy is missing an exact path or SHA-256"
+                    "transition evidence policy is missing an exact path or SHA-256"
                 )
             relative_path = pathlib.PurePosixPath(evidence_relative)
             if relative_path.is_absolute() or ".." in relative_path.parts:
-                raise StatusError("execution evidence path escapes the repository")
+                raise StatusError("transition evidence path escapes the repository")
             evidence_path = root.joinpath(*relative_path.parts)
             if not evidence_path.is_file() or evidence_path.is_symlink():
                 raise StatusError(
-                    "required immutable execution evidence is missing or unsafe"
+                    "required immutable transition evidence is missing or unsafe"
                 )
             evidence_path.resolve(strict=True).relative_to(root.resolve(strict=True))
             evidence_bytes = evidence_path.read_bytes()
@@ -279,16 +309,14 @@ def verify_quarantine(
                 hashlib.sha256(evidence_bytes).hexdigest() != evidence_sha256
                 or not isinstance(evidence_record, dict)
                 or set(evidence_record)
-                != {"kind", "v", "jobId", "executionEvidence"}
-                or evidence_record.get("kind")
-                != "szl-nemo-v3-execution-evidence"
+                != {"kind", "v", "jobId", record_field}
+                or evidence_record.get("kind") != evidence_kind
                 or evidence_record.get("v") != 1
                 or evidence_record.get("jobId") != spec["jobId"]
-                or evidence_record.get("executionEvidence")
-                != expected_execution_evidence
+                or evidence_record.get(record_field) != expected_evidence
             ):
                 raise StatusError(
-                    "standalone execution evidence does not bind immutable truth"
+                    "standalone transition evidence does not bind immutable truth"
                 )
         statuses = tuple(policy["statuses"])
         expected_queue_path = f"queue/pending/{spec['jobId']}.json"

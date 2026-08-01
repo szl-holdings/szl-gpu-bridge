@@ -1,0 +1,23 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-16",
+  "recordedAt": "2026-08-01T13:55:33Z",
+  "status": [
+    "STALE_SOURCE",
+    "PRE_DISPATCH_VALIDATOR_REJECTED",
+    "PRE_EVENT",
+    "NEVER_DISPATCH",
+    "NEVER_RESEND",
+    "NEVER_RESIGN"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-16.json",
+  "queueFileSha256": "5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756",
+  "signedPayloadSha256": "0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8",
+  "engineKeyId": "b8041281c81c4caa",
+  "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": null,
+  "reason": "Attempt 16 was signed exactly once but never submitted. The pre-dispatch validator rejected its protected attempt-15 replacement because A11oy had not yet admitted the three runtime context fields required by the Bridge generic successor contract. No repository-dispatch event, workflow run, runner, claim, job directory, prefetch, image use, training, finalization, receipt, candidate, adapter, model-card, dataset, deployment, publication, promotion, or other effect exists. A11oy PR #1217 repaired that validator boundary under normal protection and advanced main, making attempt 16 stale. Its reviewed spec and b804 DSSE envelope remain immutable evidence and are never retry, resend, re-sign, or dispatch authority."
+}
