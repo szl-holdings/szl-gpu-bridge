@@ -15,6 +15,15 @@ class TrainingReceiptsCardTests(unittest.TestCase):
         self.assertIn("not a training corpus", card)
         self.assertIn("missing evidence", card)
         self.assertIn("license: other", card)
+        self.assertIn(
+            "license_name: SZL Governed Operational Evidence - No Blanket Reuse Grant",
+            card,
+        )
+        self.assertIn(
+            "license_link: https://github.com/szl-holdings/szl-gpu-bridge/blob/main/"
+            "hf/szl-training-receipts/README.md#license-and-data-handling",
+            card,
+        )
         self.assertNotIn("__SOURCE_REVISION__", card)
 
     def test_card_rejects_mutable_source_reference(self) -> None:

@@ -1,6 +1,8 @@
 ---
 pretty_name: SZL Training Receipts
 license: other
+license_name: SZL Governed Operational Evidence - No Blanket Reuse Grant
+license_link: https://github.com/szl-holdings/szl-gpu-bridge/blob/main/hf/szl-training-receipts/README.md#license-and-data-handling
 tags:
 - governance
 - receipts
