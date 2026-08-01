@@ -874,7 +874,16 @@ envelope at `queue/pending/job-2026-nemo-v3-governed-attempt-16.json`. Its raw
 SHA-256 is
 `5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756`;
 its signature verifies under keyId `b8041281c81c4caa` and its decoded payload
-matches the reviewed canonical payload byte-for-byte. Its status is
-`QUEUED_AWAITING_GPU_RECEIPT`. The envelope does not modify or re-sign attempt
-15, and publication alone creates no runner, dispatch, claim, training,
-receipt, or release effect.
+matches the reviewed canonical payload byte-for-byte. A pre-dispatch validator
+rejected it before GitHub accepted an event because A11oy had not yet admitted
+the three runtime replacement fields. The exact zero-effect boundary is
+preserved at `queue/evidence/job-2026-nemo-v3-governed-attempt-16.json`; after
+A11oy PR #1217 advanced the protected source, the matching quarantine at
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-16.json` made the status
+terminal `QUARANTINED_NEVER_DISPATCH`. Attempt 16 is `STALE_SOURCE +
+PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT + NEVER_DISPATCH + NEVER_RESEND +
+NEVER_RESIGN`. Its spec and envelope bytes remain immutable; they are not retry,
+resend, re-sign, or dispatch authority. Its explicit null replacement grants no
+successor identity, source, workflow, signing, runner, or dispatch authority;
+any future attempt requires a separate protected release from then-settled A11oy
+and Bridge main.

@@ -670,7 +670,10 @@ test('Nemo v3 generic binding admits attempt 16 only from exact attempt 15 quara
   unknown.jobId = 'job-2026-nemo-v3-governed-attempt-17';
   unknown.lineage.predecessorJobId = 'job-2026-nemo-v3-governed-attempt-16';
   unknown.lineage.successorGeneration = 17;
-  assert.throws(() => validateNemoV3Spec(unknown), /quarantine.*unavailable|unavailable.*quarantine/);
+  assert.throws(
+    () => validateNemoV3Spec(unknown),
+    /protected predecessor replacement/,
+  );
 
   const pathAnomaly = structuredClone(attempt16);
   pathAnomaly.lineage.predecessorJobId = '../queue/quarantine/escape';

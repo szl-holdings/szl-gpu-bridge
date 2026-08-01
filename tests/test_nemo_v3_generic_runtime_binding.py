@@ -74,6 +74,9 @@ class GenericRuntimeBindingTests(unittest.TestCase):
             envelope.write_text("{}\n", encoding="utf-8")
             with (
                 mock.patch.object(
+                    nemo_v3_contract, "quarantine_policy", return_value=None
+                ),
+                mock.patch.object(
                     prefetch_nemo_v3,
                     "load_pin",
                     return_value={"keyId": nemo_v3_contract.COORDINATED_ENGINE_KEY_ID},
@@ -109,6 +112,9 @@ class GenericRuntimeBindingTests(unittest.TestCase):
 
             with (
                 mock.patch.object(
+                    nemo_v3_contract, "quarantine_policy", return_value=None
+                ),
+                mock.patch.object(
                     runjob_nemo_v3,
                     "load_engine_pin_for_envelope",
                     return_value={"keyId": nemo_v3_contract.COORDINATED_ENGINE_KEY_ID},
@@ -136,19 +142,22 @@ class GenericRuntimeBindingTests(unittest.TestCase):
                 self.assertEqual(runjob_nemo_v3.main(str(envelope)), 4)
 
             claim = {"executionBridgeRevision": ATTEMPT_16_RUNTIME}
-            finalize_nemo_v3_receipt.require_claim_bound_dispatchable(
-                spec,
-                claim,
-                ATTEMPT_16_RUNTIME,
-            )
-            with self.assertRaisesRegex(
-                ValueError, "explicit execution Bridge revision"
+            with mock.patch.object(
+                nemo_v3_contract, "quarantine_policy", return_value=None
             ):
                 finalize_nemo_v3_receipt.require_claim_bound_dispatchable(
                     spec,
                     claim,
-                    "b" * 40,
+                    ATTEMPT_16_RUNTIME,
                 )
+                with self.assertRaisesRegex(
+                    ValueError, "explicit execution Bridge revision"
+                ):
+                    finalize_nemo_v3_receipt.require_claim_bound_dispatchable(
+                        spec,
+                        claim,
+                        "b" * 40,
+                    )
 
     def test_attempt_15_uses_generic_predecessor_binding(self) -> None:
         spec = json.loads(ATTEMPT_15_PATH.read_text(encoding="utf-8"))
@@ -175,10 +184,11 @@ class GenericRuntimeBindingTests(unittest.TestCase):
     def test_attempt_16_requires_exact_protected_attempt_15_replacement(self) -> None:
         spec = attempt_16_spec()
         self.assertIs(nemo_v3_contract.validate_nemo_v3_spec(spec), spec)
-        nemo_v3_contract.require_nemo_v3_dispatchable(
-            spec,
-            expected_execution_bridge_revision=ATTEMPT_16_RUNTIME,
-        )
+        with self.assertRaisesRegex(ContractError, "quarantined"):
+            nemo_v3_contract.require_nemo_v3_dispatchable(
+                spec,
+                expected_execution_bridge_revision=ATTEMPT_16_RUNTIME,
+            )
 
         policy = nemo_v3_contract.QUARANTINE_POLICIES.pop(
             nemo_v3_contract.ATTEMPT_15_REVIEWED_JOB_ID
@@ -219,16 +229,19 @@ class GenericRuntimeBindingTests(unittest.TestCase):
                     with self.assertRaises(ContractError):
                         nemo_v3_contract.validate_nemo_v3_spec(attempt_16_spec())
 
-        with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
-            nemo_v3_contract.require_nemo_v3_dispatchable(
-                attempt_16_spec(),
-                expected_execution_bridge_revision="b" * 40,
-            )
-        with self.assertRaises(ContractError):
-            nemo_v3_contract.require_nemo_v3_dispatchable(
-                attempt_16_spec(),
-                expected_execution_bridge_revision="main",
-            )
+        with mock.patch.object(
+            nemo_v3_contract, "quarantine_policy", return_value=None
+        ):
+            with self.assertRaisesRegex(ContractError, "runtime-bound successor"):
+                nemo_v3_contract.require_nemo_v3_dispatchable(
+                    attempt_16_spec(),
+                    expected_execution_bridge_revision="b" * 40,
+                )
+            with self.assertRaises(ContractError):
+                nemo_v3_contract.require_nemo_v3_dispatchable(
+                    attempt_16_spec(),
+                    expected_execution_bridge_revision="main",
+                )
 
     def test_unknown_skipped_replayed_and_path_anomaly_are_rejected(self) -> None:
         unknown = attempt_16_spec()
@@ -237,7 +250,7 @@ class GenericRuntimeBindingTests(unittest.TestCase):
             nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID
         )
         unknown["lineage"]["successorGeneration"] = 17
-        with self.assertRaisesRegex(ContractError, "predecessor quarantine"):
+        with self.assertRaisesRegex(ContractError, "protected predecessor replacement"):
             nemo_v3_contract.validate_nemo_v3_spec(unknown)
 
         skipped = copy.deepcopy(unknown)
@@ -258,81 +271,17 @@ class GenericRuntimeBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "idempotency pattern"):
             nemo_v3_contract.validate_nemo_v3_spec(malformed)
 
-    def test_future_successor_needs_a_new_exact_protected_quarantine(self) -> None:
-        predecessor = attempt_16_spec()
-        successor = copy.deepcopy(predecessor)
+    def test_attempt_16_quarantine_grants_no_future_successor(self) -> None:
+        successor = attempt_16_spec()
         successor["jobId"] = "job-2026-nemo-v3-governed-attempt-17"
         successor["authorization"]["correctedBridgeRevision"] = "b" * 40
-        successor["lineage"] = {
-            "predecessorJobId": nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID,
-            "predecessorEnvelopeSha256": "c" * 64,
-            "predecessorPayloadSha256": "d" * 64,
-            "predecessorEnvelopeRevision": "e" * 40,
-            "predecessorExecutionBridgeRevision": ATTEMPT_16_RUNTIME,
-            "transportEvidenceUrl": (
-                "https://github.com/szl-holdings/a11oy/actions/runs/39999999999"
-            ),
-            "failurePhase": "PRE_CLAIM_AUTHENTICATED_RUNTIME_BINDING",
-            "successorGeneration": 17,
-            "automaticRetry": False,
-            "eventCreated": True,
-            "workflowRunCreated": True,
-            "claimCreated": False,
-            "trainingStarted": False,
-            "modelRepositoryCodeImported": False,
-            "holdoutsAccessed": False,
-            "candidateProduced": False,
-            "receiptIntentProduced": False,
-            "terminalLedgerWritten": False,
-            "scienceInputsReused": True,
-        }
-        policy = {
-            "statuses": ("RUNTIME_JOB_BINDING_REJECTED", "NEVER_DISPATCH"),
-            "queue_file_sha256": "c" * 64,
-            "payload_sha256": "d" * 64,
-            "engine_key_id": nemo_v3_contract.COORDINATED_ENGINE_KEY_ID,
-            "source_revision": nemo_v3_contract.EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
-            "replacement": {
-                "sourceRevision": (
-                    nemo_v3_contract.EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION
-                ),
-                "workflowBlob": nemo_v3_contract.EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB,
-                "workflowVersion": "nemo-v3-owner-dispatch.v4",
-                "settledA11oyRelockRunUrl": (
-                    nemo_v3_contract.EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL
-                ),
-                "engineKeyId": nemo_v3_contract.COORDINATED_ENGINE_KEY_ID,
-                "enginePublicKeySpkiSha256": (
-                    nemo_v3_contract.COORDINATED_ENGINE_SPKI_SHA256
-                ),
-                "reviewedJobId": successor["jobId"],
-                "successorGeneration": 17,
-            },
-            "execution_evidence": {
-                "workflowRunId": "39999999999",
-                "failurePhase": "PRE_CLAIM_AUTHENTICATED_RUNTIME_BINDING",
-                "sourceRevision": (
-                    nemo_v3_contract.EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION
-                ),
-                "envelopeRevision": "e" * 40,
-                "executionBridgeRevision": ATTEMPT_16_RUNTIME,
-                "claimCreated": False,
-                "trainingStarted": False,
-                "modelRepositoryCodeImported": False,
-                "holdoutsAccessed": False,
-                "receiptIntentProduced": False,
-                "receiptUploaded": False,
-            },
-        }
-        with mock.patch.dict(
-            nemo_v3_contract.QUARANTINE_POLICIES,
-            {nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID: policy},
-        ):
-            self.assertIs(nemo_v3_contract.validate_nemo_v3_spec(successor), successor)
-            nemo_v3_contract.require_nemo_v3_dispatchable(
-                successor,
-                expected_execution_bridge_revision="b" * 40,
-            )
+        successor["lineage"]["predecessorJobId"] = (
+            nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID
+        )
+        successor["lineage"]["successorGeneration"] = 17
+
+        with self.assertRaisesRegex(ContractError, "protected predecessor replacement"):
+            nemo_v3_contract.validate_nemo_v3_spec(successor)
 
 
 if __name__ == "__main__":

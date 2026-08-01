@@ -226,10 +226,13 @@ cloud/verify-receipt.mjs ◄─────────────────�
   Its separate exclusive-create b804 DSSE queue envelope exists at
   `queue/pending/job-2026-nemo-v3-governed-attempt-16.json`, with raw SHA-256
   `5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756`.
-  The signature verifies under keyId `b8041281c81c4caa`, its decoded payload
-  matches the reviewed canonical payload byte-for-byte, and its honest status
-  is `QUEUED_AWAITING_GPU_RECEIPT`. Publication alone creates no runner,
-  dispatch, claim, training, receipt, or release effect.
+  The signature verifies under keyId `b8041281c81c4caa` and its decoded payload
+  matches the reviewed canonical payload byte-for-byte. The pre-dispatch
+  validator rejected the envelope before event creation; A11oy PR #1217 then
+  advanced the protected source. Attempt 16 is therefore immutable
+  `STALE_SOURCE + PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT + NEVER_DISPATCH
+  + NEVER_RESEND + NEVER_RESIGN` evidence. No runner, dispatch event, workflow
+  run, claim, training, receipt, or release effect exists.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

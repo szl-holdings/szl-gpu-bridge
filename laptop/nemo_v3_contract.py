@@ -606,6 +606,61 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
             "promoted": False,
         },
     },
+    ATTEMPT_16_REVIEWED_JOB_ID: {
+        "statuses": (
+            "STALE_SOURCE",
+            "PRE_DISPATCH_VALIDATOR_REJECTED",
+            "PRE_EVENT",
+            "NEVER_DISPATCH",
+            "NEVER_RESEND",
+            "NEVER_RESIGN",
+        ),
+        "queue_file_sha256": (
+            "5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756"
+        ),
+        "payload_sha256": (
+            "0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8"
+        ),
+        "engine_key_id": COORDINATED_ENGINE_KEY_ID,
+        "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+        "replacement": None,
+        "pre_event_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-16.json"
+        ),
+        "pre_event_evidence_sha256": (
+            "efff8d60590b317a873772e72e401165300331daf5431136ec18a1ddcab85389"
+        ),
+        "pre_event_evidence": {
+            "failurePhase": "PRE_DISPATCH_VALIDATOR_REJECTED",
+            "evidenceUrl": "https://github.com/szl-holdings/a11oy/pull/1217",
+            "errorType": "DispatchValidationError",
+            "error": (
+                "predecessor quarantine replacement contains unsupported fields: "
+                "['settledA11oyRelockRunUrl', 'successorGeneration', "
+                "'workflowVersion']"
+            ),
+            "sourceRevision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
+            "supersedingSourceRevision": ("a7e70c2b3dd198b9368d31382b25fddbd8caad89"),
+            "envelopeRevision": "0939008a73fa8b1912c842a304c5d0204a5b9d57",
+            "executionBridgeRevision": ("b99f37260bcabf7f5c98cddbc5988a3ba87b766e"),
+            "eventCreated": False,
+            "workflowRunCreated": False,
+            "claimCreated": False,
+            "jobDirectoryCreated": False,
+            "prefetchReceiptCreated": False,
+            "trainingStarted": False,
+            "modelRepositoryCodeImported": False,
+            "holdoutsAccessed": False,
+            "receiptIntentProduced": False,
+            "receiptUploaded": False,
+            "candidateUploaded": False,
+            "adapterUploaded": False,
+            "modelCardUploaded": False,
+            "datasetUploaded": False,
+            "deployed": False,
+            "promoted": False,
+        },
+    },
 }
 QUARANTINED_NEMO_JOB_IDS = frozenset(QUARANTINE_POLICIES)
 _OWNER_WORKFLOW_IDENTITY = (
