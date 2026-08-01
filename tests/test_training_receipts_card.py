@@ -49,7 +49,9 @@ class TrainingReceiptsCardTests(unittest.TestCase):
         card = render_card(SOURCE_SHA).decode("utf-8")
         with self.assertRaisesRegex(ValueError, "no-blanket-reuse terms"):
             validate_card_metadata(
-                card.replace("do not receive a blanket data-reuse grant", "are reusable")
+                card.replace(
+                    "do not receive a blanket data-reuse grant", "are reusable"
+                )
             )
 
     def test_card_rejects_mutable_source_reference(self) -> None:
