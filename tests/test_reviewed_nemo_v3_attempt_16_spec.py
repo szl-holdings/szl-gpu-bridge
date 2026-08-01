@@ -261,7 +261,21 @@ class ReviewedNemoV3Attempt16SpecTests(unittest.TestCase):
         self.assertEqual(quarantine["jobId"], ATTEMPT_16_REVIEWED_JOB_ID)
         self.assertTrue(quarantine["preserveEnvelope"])
         self.assertFalse(quarantine["dispatchAuthorized"])
-        self.assertIsNone(quarantine["replacement"])
+        self.assertEqual(
+            quarantine["replacement"],
+            {
+                "sourceRevision": "cad529a2cef4cb43024bf4974ae155d89f33fa5b",
+                "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+                "workflowVersion": "nemo-v3-owner-dispatch.v4",
+                "settledA11oyRelockRunUrl": (
+                    "https://github.com/szl-holdings/a11oy/actions/runs/30706177629"
+                ),
+                "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+                "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+                "reviewedJobId": "job-2026-nemo-v3-governed-attempt-17",
+                "successorGeneration": 17,
+            },
+        )
         pre_dispatch = evidence["preDispatchEvidence"]
         self.assertEqual(
             pre_dispatch["supersedingSourceRevision"],

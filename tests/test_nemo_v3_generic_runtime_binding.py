@@ -20,6 +20,7 @@ from frontier_contract import ContractError  # noqa: E402
 ATTEMPT_15_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-15-reviewed.json"
 ATTEMPT_15_RUNTIME = "60b9894efe9e0e782999aaa4ee5b0d668e7a9b63"
 ATTEMPT_16_RUNTIME = "a" * 40
+ATTEMPT_17_RUNTIME = "b" * 40
 
 
 def attempt_16_spec() -> dict:
@@ -44,6 +45,47 @@ def attempt_16_spec() -> dict:
         "automaticRetry": False,
         "eventCreated": True,
         "workflowRunCreated": True,
+        "claimCreated": False,
+        "trainingStarted": False,
+        "modelRepositoryCodeImported": False,
+        "holdoutsAccessed": False,
+        "candidateProduced": False,
+        "receiptIntentProduced": False,
+        "terminalLedgerWritten": False,
+        "scienceInputsReused": True,
+    }
+    return spec
+
+
+def attempt_17_spec() -> dict:
+    spec = attempt_16_spec()
+    spec["jobId"] = nemo_v3_contract.ATTEMPT_17_REVIEWED_JOB_ID
+    spec["source"]["revision"] = nemo_v3_contract.ATTEMPT_17_A11OY_SOURCE_REVISION
+    spec["ownerDispatch"]["workflowBlob"] = (
+        nemo_v3_contract.ATTEMPT_17_OWNER_WORKFLOW_BLOB
+    )
+    spec["authorization"]["settledA11oyRelockRunUrl"] = (
+        nemo_v3_contract.ATTEMPT_17_A11OY_RELOCK_RUN_URL
+    )
+    spec["authorization"]["correctedBridgeRevision"] = ATTEMPT_17_RUNTIME
+    spec["lineage"] = {
+        "predecessorJobId": nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID,
+        "predecessorEnvelopeSha256": (
+            "5f657aebb650c6a9c19b4b52e710236220fe7ab89e6a50488ee270017a78f756"
+        ),
+        "predecessorPayloadSha256": (
+            "0b80bc0e42edd75de9e63f9f74f53df1d10c328d89b84c8481834a27fa4111f8"
+        ),
+        "predecessorEnvelopeRevision": "0939008a73fa8b1912c842a304c5d0204a5b9d57",
+        "predecessorExecutionBridgeRevision": (
+            "b99f37260bcabf7f5c98cddbc5988a3ba87b766e"
+        ),
+        "transportEvidenceUrl": "https://github.com/szl-holdings/a11oy/pull/1217",
+        "failurePhase": "PRE_DISPATCH_VALIDATOR_REJECTED",
+        "successorGeneration": 17,
+        "automaticRetry": False,
+        "eventCreated": False,
+        "workflowRunCreated": False,
         "claimCreated": False,
         "trainingStarted": False,
         "modelRepositoryCodeImported": False,
@@ -244,13 +286,13 @@ class GenericRuntimeBindingTests(unittest.TestCase):
                 )
 
     def test_unknown_skipped_replayed_and_path_anomaly_are_rejected(self) -> None:
-        unknown = attempt_16_spec()
-        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-17"
+        unknown = attempt_17_spec()
+        unknown["jobId"] = "job-2026-nemo-v3-governed-attempt-18"
         unknown["lineage"]["predecessorJobId"] = (
-            nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID
+            nemo_v3_contract.ATTEMPT_17_REVIEWED_JOB_ID
         )
-        unknown["lineage"]["successorGeneration"] = 17
-        with self.assertRaisesRegex(ContractError, "protected predecessor replacement"):
+        unknown["lineage"]["successorGeneration"] = 18
+        with self.assertRaisesRegex(ContractError, "predecessor quarantine"):
             nemo_v3_contract.validate_nemo_v3_spec(unknown)
 
         skipped = copy.deepcopy(unknown)
@@ -271,17 +313,43 @@ class GenericRuntimeBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "idempotency pattern"):
             nemo_v3_contract.validate_nemo_v3_spec(malformed)
 
-    def test_attempt_16_quarantine_grants_no_future_successor(self) -> None:
-        successor = attempt_16_spec()
-        successor["jobId"] = "job-2026-nemo-v3-governed-attempt-17"
-        successor["authorization"]["correctedBridgeRevision"] = "b" * 40
-        successor["lineage"]["predecessorJobId"] = (
-            nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID
+    def test_attempt_16_quarantine_admits_only_exact_attempt_17(self) -> None:
+        successor = attempt_17_spec()
+        self.assertIs(nemo_v3_contract.validate_nemo_v3_spec(successor), successor)
+        nemo_v3_contract.require_nemo_v3_dispatchable(
+            successor,
+            expected_execution_bridge_revision=ATTEMPT_17_RUNTIME,
         )
-        successor["lineage"]["successorGeneration"] = 17
 
-        with self.assertRaisesRegex(ContractError, "protected predecessor replacement"):
-            nemo_v3_contract.validate_nemo_v3_spec(successor)
+        for path, value in (
+            (("source", "revision"), "1" * 40),
+            (("ownerDispatch", "workflowBlob"), "2" * 40),
+            (
+                ("authorization", "settledA11oyRelockRunUrl"),
+                "https://github.com/szl-holdings/a11oy/actions/runs/1",
+            ),
+            (("lineage", "eventCreated"), True),
+            (("lineage", "workflowRunCreated"), True),
+            (("lineage", "transportEvidenceUrl"), "https://example.com/fake"),
+        ):
+            with self.subTest(path=path):
+                mutated = copy.deepcopy(successor)
+                mutated[path[0]][path[1]] = value
+                with self.assertRaises(ContractError):
+                    nemo_v3_contract.validate_nemo_v3_spec(mutated)
+
+        policy = copy.deepcopy(
+            nemo_v3_contract.QUARANTINE_POLICIES[
+                nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID
+            ]
+        )
+        policy["pre_event_evidence"]["receiptUploaded"] = True
+        with mock.patch.dict(
+            nemo_v3_contract.QUARANTINE_POLICIES,
+            {nemo_v3_contract.ATTEMPT_16_REVIEWED_JOB_ID: policy},
+        ):
+            with self.assertRaisesRegex(ContractError, "zero-event boundary"):
+                nemo_v3_contract.validate_nemo_v3_spec(successor)
 
 
 if __name__ == "__main__":

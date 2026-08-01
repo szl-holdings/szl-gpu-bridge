@@ -233,6 +233,14 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `STALE_SOURCE + PRE_DISPATCH_VALIDATOR_REJECTED + PRE_EVENT + NEVER_DISPATCH
   + NEVER_RESEND + NEVER_RESIGN` evidence. No runner, dispatch event, workflow
   run, claim, training, receipt, or release effect exists.
+  A separate protected admission binds only the next plaintext identity,
+  attempt 17, to exact A11oy source
+  `cad529a2cef4cb43024bf4974ae155d89f33fa5b`, immutable owner-workflow blob
+  `7cf0c877399471a084d3e70638ef50ec28d7f646`, and terminal relock run
+  `30706177629`. It admits the preserved zero-event evidence without modifying
+  the attempt-16 spec, envelope, evidence, or `NEVER_*` dispositions. It does
+  not create an attempt-17 spec or envelope and grants no signer, runner,
+  dispatch, receipt, or upload authority.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the

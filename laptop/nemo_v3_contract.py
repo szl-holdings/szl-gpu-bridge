@@ -77,6 +77,11 @@ EXPLICIT_RUNTIME_OWNER_WORKFLOW_BLOB = "7cf0c877399471a084d3e70638ef50ec28d7f646
 EXPLICIT_RUNTIME_A11OY_RELOCK_RUN_URL = (
     "https://github.com/szl-holdings/a11oy/actions/runs/30613619902"
 )
+ATTEMPT_17_A11OY_SOURCE_REVISION = "cad529a2cef4cb43024bf4974ae155d89f33fa5b"
+ATTEMPT_17_OWNER_WORKFLOW_BLOB = "7cf0c877399471a084d3e70638ef50ec28d7f646"
+ATTEMPT_17_A11OY_RELOCK_RUN_URL = (
+    "https://github.com/szl-holdings/a11oy/actions/runs/30706177629"
+)
 ATTEMPT_11_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-11"
 ATTEMPT_11_CORRECTED_BRIDGE_REVISION = "f07263bc37ef6e90b313ba5576ef425d845cf287"
 ATTEMPT_12_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-12"
@@ -85,6 +90,7 @@ ATTEMPT_13_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-13"
 ATTEMPT_14_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-14"
 ATTEMPT_15_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-15"
 ATTEMPT_16_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-16"
+ATTEMPT_17_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-17"
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -178,6 +184,16 @@ _ATTEMPT_16_REPLACEMENT = {
     "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
     "reviewedJobId": ATTEMPT_16_REVIEWED_JOB_ID,
     "successorGeneration": 16,
+}
+_ATTEMPT_17_REPLACEMENT = {
+    "sourceRevision": ATTEMPT_17_A11OY_SOURCE_REVISION,
+    "workflowBlob": ATTEMPT_17_OWNER_WORKFLOW_BLOB,
+    "workflowVersion": "nemo-v3-owner-dispatch.v4",
+    "settledA11oyRelockRunUrl": ATTEMPT_17_A11OY_RELOCK_RUN_URL,
+    "engineKeyId": COORDINATED_ENGINE_KEY_ID,
+    "enginePublicKeySpkiSha256": COORDINATED_ENGINE_SPKI_SHA256,
+    "reviewedJobId": ATTEMPT_17_REVIEWED_JOB_ID,
+    "successorGeneration": 17,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
     "job-2026-nemo-v3-governed-attempt-2": {
@@ -623,7 +639,7 @@ QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
         ),
         "engine_key_id": COORDINATED_ENGINE_KEY_ID,
         "source_revision": EXPLICIT_RUNTIME_A11OY_SOURCE_REVISION,
-        "replacement": None,
+        "replacement": _ATTEMPT_17_REPLACEMENT,
         "pre_event_evidence_path": (
             "queue/evidence/job-2026-nemo-v3-governed-attempt-16.json"
         ),
@@ -749,6 +765,23 @@ _COORDINATED_JOB_BINDINGS = {
         "successorGeneration": 12,
     },
 }
+_ADMITTED_A11OY_CONTEXTS = {
+    (
+        binding["sourceRevision"],
+        binding["workflowBlob"],
+        binding["workflowVersion"],
+        binding["relockRunUrl"],
+    )
+    for binding in _COORDINATED_JOB_BINDINGS.values()
+}
+_ADMITTED_A11OY_CONTEXTS.add(
+    (
+        ATTEMPT_17_A11OY_SOURCE_REVISION,
+        ATTEMPT_17_OWNER_WORKFLOW_BLOB,
+        _FINAL_OWNER_WORKFLOW_VERSION,
+        ATTEMPT_17_A11OY_RELOCK_RUN_URL,
+    )
+)
 _REPLACEMENT_FIELDS = frozenset(
     {
         "sourceRevision",
@@ -969,13 +1002,14 @@ def _derived_runtime_binding(spec: dict[str, Any]) -> dict[str, Any]:
     _revision(source_revision, "predecessor replacement sourceRevision", exact40=True)
     _revision(workflow_blob, "predecessor replacement workflowBlob", exact40=True)
     matching_contexts = {
-        (
-            binding["workflowVersion"],
-            binding["relockRunUrl"],
-        )
-        for binding in _COORDINATED_JOB_BINDINGS.values()
-        if binding["sourceRevision"] == source_revision
-        and binding["workflowBlob"] == workflow_blob
+        (workflow_version, relock_run_url)
+        for (
+            context_source,
+            context_workflow,
+            workflow_version,
+            relock_run_url,
+        ) in _ADMITTED_A11OY_CONTEXTS
+        if context_source == source_revision and context_workflow == workflow_blob
     }
     if len(matching_contexts) != 1:
         raise ContractError(
@@ -1013,6 +1047,64 @@ def _coordinated_job_binding(spec: dict[str, Any]) -> dict[str, Any]:
     return _derived_runtime_binding(spec)
 
 
+def _runtime_predecessor_evidence(
+    binding: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    policy = binding.get("predecessorPolicy")
+    if not isinstance(policy, dict):
+        raise ContractError("runtime-bound successor lacks a predecessor policy")
+    evidence = policy.get("execution_evidence")
+    if isinstance(evidence, dict):
+        workflow_run_id = evidence.get("workflowRunId")
+        if not isinstance(workflow_run_id, str) or not workflow_run_id.isdigit():
+            raise ContractError(
+                "protected predecessor execution evidence has an invalid workflow run"
+            )
+        normalized = {
+            **evidence,
+            "eventCreated": True,
+            "workflowRunCreated": True,
+        }
+        return (
+            normalized,
+            "https://github.com/szl-holdings/a11oy/actions/runs/" + workflow_run_id,
+        )
+
+    evidence = policy.get("pre_event_evidence")
+    if not isinstance(evidence, dict):
+        raise ContractError(
+            "protected predecessor quarantine lacks exact execution or pre-event evidence"
+        )
+    evidence_url = evidence.get("evidenceUrl")
+    zero_effect_fields = (
+        "eventCreated",
+        "workflowRunCreated",
+        "claimCreated",
+        "jobDirectoryCreated",
+        "prefetchReceiptCreated",
+        "trainingStarted",
+        "modelRepositoryCodeImported",
+        "holdoutsAccessed",
+        "receiptIntentProduced",
+        "receiptUploaded",
+        "candidateUploaded",
+        "adapterUploaded",
+        "modelCardUploaded",
+        "datasetUploaded",
+        "deployed",
+        "promoted",
+    )
+    if (
+        not isinstance(evidence_url, str)
+        or not evidence_url.startswith("https://github.com/szl-holdings/")
+        or any(evidence.get(field) is not False for field in zero_effect_fields)
+    ):
+        raise ContractError(
+            "protected predecessor pre-event evidence is not an exact zero-event boundary"
+        )
+    return evidence, evidence_url
+
+
 def _require_exact_runtime_predecessor_lineage(
     lineage: dict[str, Any], binding: dict[str, Any]
 ) -> None:
@@ -1021,16 +1113,7 @@ def _require_exact_runtime_predecessor_lineage(
     policy = binding.get("predecessorPolicy")
     if not isinstance(policy, dict):
         return
-    evidence = policy.get("execution_evidence")
-    if not isinstance(evidence, dict):
-        raise ContractError(
-            "protected predecessor quarantine lacks exact execution evidence"
-        )
-    workflow_run_id = evidence.get("workflowRunId")
-    if not isinstance(workflow_run_id, str) or not workflow_run_id.isdigit():
-        raise ContractError(
-            "protected predecessor execution evidence has an invalid workflow run"
-        )
+    evidence, transport_evidence_url = _runtime_predecessor_evidence(binding)
     predecessor_source_revision = policy.get("source_revision")
     _revision(
         predecessor_source_revision,
@@ -1047,14 +1130,12 @@ def _require_exact_runtime_predecessor_lineage(
         "predecessorPayloadSha256": policy.get("payload_sha256"),
         "predecessorEnvelopeRevision": evidence.get("envelopeRevision"),
         "predecessorExecutionBridgeRevision": evidence.get("executionBridgeRevision"),
-        "transportEvidenceUrl": (
-            "https://github.com/szl-holdings/a11oy/actions/runs/" + workflow_run_id
-        ),
+        "transportEvidenceUrl": transport_evidence_url,
         "failurePhase": evidence.get("failurePhase"),
         "successorGeneration": binding["successorGeneration"],
         "automaticRetry": False,
-        "eventCreated": True,
-        "workflowRunCreated": True,
+        "eventCreated": evidence.get("eventCreated"),
+        "workflowRunCreated": evidence.get("workflowRunCreated"),
         "candidateProduced": False,
         "scienceInputsReused": True,
     }
@@ -1465,15 +1546,11 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
             elif coordinated_binding is not None and coordinated_binding.get(
                 "runtimeBound"
             ):
-                evidence = coordinated_binding["predecessorPolicy"][
-                    "execution_evidence"
-                ]
-                expected_transport_evidence = (
-                    "https://github.com/szl-holdings/a11oy/actions/runs/"
-                    + evidence["workflowRunId"]
+                evidence, expected_transport_evidence = _runtime_predecessor_evidence(
+                    coordinated_binding
                 )
                 expected_failure_phase = evidence["failurePhase"]
-                expected_event_created = True
+                expected_event_created = evidence["eventCreated"]
                 expected_claim_created = evidence.get("claimCreated", False)
                 expected_holdouts_accessed = evidence.get("holdoutsAccessed", False)
                 expected_receipt_intent_produced = evidence.get(

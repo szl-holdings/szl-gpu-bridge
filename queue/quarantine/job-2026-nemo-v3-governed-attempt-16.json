@@ -18,6 +18,15 @@
   "sourceRevision": "434d653eaf100b9b3e5484687db1e6e6ca7116c9",
   "preserveEnvelope": true,
   "dispatchAuthorized": false,
-  "replacement": null,
+  "replacement": {
+    "sourceRevision": "cad529a2cef4cb43024bf4974ae155d89f33fa5b",
+    "workflowBlob": "7cf0c877399471a084d3e70638ef50ec28d7f646",
+    "workflowVersion": "nemo-v3-owner-dispatch.v4",
+    "settledA11oyRelockRunUrl": "https://github.com/szl-holdings/a11oy/actions/runs/30706177629",
+    "engineKeyId": "b8041281c81c4caa",
+    "enginePublicKeySpkiSha256": "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf",
+    "reviewedJobId": "job-2026-nemo-v3-governed-attempt-17",
+    "successorGeneration": 17
+  },
   "reason": "Attempt 16 was signed exactly once but never submitted. The pre-dispatch validator rejected its protected attempt-15 replacement because A11oy had not yet admitted the three runtime context fields required by the Bridge generic successor contract. No repository-dispatch event, workflow run, runner, claim, job directory, prefetch, image use, training, finalization, receipt, candidate, adapter, model-card, dataset, deployment, publication, promotion, or other effect exists. A11oy PR #1217 repaired that validator boundary under normal protection and advanced main, making attempt 16 stale. Its reviewed spec and b804 DSSE envelope remain immutable evidence and are never retry, resend, re-sign, or dispatch authority."
 }
