@@ -15,9 +15,13 @@ class TrainingReceiptsCardTests(unittest.TestCase):
         self.assertIn("not a training corpus", card)
         self.assertIn("missing evidence", card)
         self.assertIn("license: other", card)
-        self.assertIn(
-            "license_name: SZL Governed Operational Evidence - No Blanket Reuse Grant",
-            card,
+        license_name = "szl-governed-operational-evidence-no-blanket-reuse-grant"
+        self.assertIn(f"license_name: {license_name}", card)
+        self.assertTrue(
+            all(
+                character in "abcdefghijklmnopqrstuvwxyz0123456789-."
+                for character in license_name
+            )
         )
         self.assertIn(
             "license_link: https://github.com/szl-holdings/szl-gpu-bridge/blob/main/"
