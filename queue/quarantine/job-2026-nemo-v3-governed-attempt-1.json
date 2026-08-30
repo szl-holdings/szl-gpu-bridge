@@ -1,0 +1,27 @@
+{
+  "kind": "szl-nemo-v3-queue-quarantine",
+  "v": 1,
+  "jobId": "job-2026-nemo-v3-governed-attempt-1",
+  "recordedAt": "2026-08-30T13:06:15Z",
+  "status": [
+    "PRE_TRAINING_RUNTIME_SOURCE_PARSE",
+    "POST_CLAIM",
+    "NEVER_DISPATCH",
+    "NEVER_RESEND",
+    "NEVER_RESIGN"
+  ],
+  "queuePath": "queue/pending/job-2026-nemo-v3-governed-attempt-1.json",
+  "queueFileSha256": "0686889c3abcf54e3f6b2151bc60155176e1eccb25af7b01d9f1fbf05080d80d",
+  "signedPayloadSha256": "8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055",
+  "engineKeyId": "5c6cf59741ade920",
+  "sourceRevision": "a5351c8e37a7cfe54e0c3cf53c8bbd460a16c11c",
+  "preserveEnvelope": true,
+  "dispatchAuthorized": false,
+  "replacement": {
+    "reviewedJobId": "job-2026-nemo-v3-governed-successor-2",
+    "reviewedSpecPath": "jobspecs/nemo-v3-20260729-successor-2-reviewed.json",
+    "reviewedSpecSha256": "9d58f752c26ac37ae7fa4999e33a6f136d060e97704124df26f0ee7948a11746",
+    "automaticRetry": false
+  },
+  "reason": "Attempt 1 created the exclusive owner-host claim 77fd63583bf11f1d7416cea7e6e0c02b230973d4773f9c409ce18aa83140f10b at 2026-07-29T16:41:34.8842570+00:00 and consumed its single authorization. The claim bound historical runtime envelope SHA-256 09187c0a724c8caf8a11dcd492d3f284af8a18791adac7e1a98b9a21bf81591b, Bridge 114c3030763291009d665ae88cb3d6537fccacef, and image sha256:537e4a25a503d202ec75dbb9035bd9688ba2ae8d8a7555466840e581d5109f28. The separately preserved repository queue file has raw SHA-256 0686889c3abcf54e3f6b2151bc60155176e1eccb25af7b01d9f1fbf05080d80d and signed payload SHA-256 8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055; those distinct byte identities are not conflated. Python 3.11 rejected the runtime source before training, model-repository import, holdout access, candidate production, receipt intent, or terminal-ledger publication. Protected successor-2 records this exact zero-effect lineage and is not an automatic retry. Attempt 1 remains immutable evidence and is never dispatch, resend, re-sign, release, deployment, or promotion authority."
+}
