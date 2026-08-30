@@ -242,6 +242,20 @@ source parsing, before training, model-repository import, holdout access,
 candidate creation, receipt-intent creation, or terminal-ledger publication.
 The scientific inputs remain frozen; the job and candidate identities are new.
 
+The transition is now machine-bound in
+`queue/evidence/job-2026-nemo-v3-governed-attempt-1.json` and
+`queue/quarantine/job-2026-nemo-v3-governed-attempt-1.json`. The evidence mirrors
+that exact successor lineage. The quarantine separately binds the preserved
+repository queue-file SHA-256
+`0686889c3abcf54e3f6b2151bc60155176e1eccb25af7b01d9f1fbf05080d80d`, its
+signed-payload SHA-256
+`8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055`, and
+the owner-host claim's historical runtime-envelope SHA-256
+`09187c0a724c8caf8a11dcd492d3f284af8a18791adac7e1a98b9a21bf81591b`
+without conflating those byte identities. Status verification terminates as
+`QUARANTINED_NEVER_DISPATCH` without receipt discovery; the original reviewed
+spec and pending DSSE envelope remain byte-for-byte immutable.
+
 This protected plaintext is still not executable. It requires a fresh signature
 from the offline engine key `5c6cf59741ade920`, a new protected queue envelope,
 an exact-main image build and CUDA smoke receipt, authenticated no-code prefetch,

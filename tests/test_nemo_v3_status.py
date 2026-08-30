@@ -35,6 +35,7 @@ class NemoV3StatusTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        self.spec["jobId"] = "job-2026-nemo-v3-status-test"
         (self.root / "jobspecs" / "nemo-v3-20260722-reviewed.json").write_text(
             json.dumps(self.spec, indent=2) + "\n", encoding="utf-8"
         )

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -11,13 +13,41 @@ sys.path.insert(0, str(ROOT / "cloud"))
 sys.path.insert(0, str(ROOT / "laptop"))
 
 import nemo_v3_status  # noqa: E402
-from nemo_v3_contract import record_ids_sha256, validate_nemo_v3_spec  # noqa: E402
+from nemo_v3_contract import (  # noqa: E402
+    ContractError,
+    quarantine_policy,
+    record_ids_sha256,
+    require_nemo_v3_dispatchable,
+    validate_nemo_v3_spec,
+)
 
 SPEC_PATH = ROOT / "jobspecs" / "nemo-v3-20260722-reviewed.json"
+SUCCESSOR_PATH = ROOT / "jobspecs" / "nemo-v3-20260729-successor-2-reviewed.json"
+QUEUE_PATH = ROOT / "queue" / "pending" / "job-2026-nemo-v3-governed-attempt-1.json"
+EVIDENCE_PATH = ROOT / "queue" / "evidence" / "job-2026-nemo-v3-governed-attempt-1.json"
+QUARANTINE_PATH = (
+    ROOT / "queue" / "quarantine" / "job-2026-nemo-v3-governed-attempt-1.json"
+)
 EXPECTED_QUEUE_PAYLOAD_SHA256 = (
     "8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055"
 )
 EXPECTED_ENGINE_KEY_ID = "5c6cf59741ade920"
+EXPECTED_QUEUE_FILE_SHA256 = (
+    "0686889c3abcf54e3f6b2151bc60155176e1eccb25af7b01d9f1fbf05080d80d"
+)
+EXPECTED_SUCCESSOR_BLOB_SHA256 = (
+    "9d58f752c26ac37ae7fa4999e33a6f136d060e97704124df26f0ee7948a11746"
+)
+EXPECTED_EVIDENCE_SHA256 = (
+    "d3f28fd63ee4c84ecf7aa72300a7fe55a29033953906356a83fdf089f47aaed6"
+)
+EXPECTED_QUARANTINE_STATUSES = (
+    "PRE_TRAINING_RUNTIME_SOURCE_PARSE",
+    "POST_CLAIM",
+    "NEVER_DISPATCH",
+    "NEVER_RESEND",
+    "NEVER_RESIGN",
+)
 
 
 class ReviewedNemoV3SpecTests(unittest.TestCase):
@@ -131,6 +161,62 @@ class ReviewedNemoV3SpecTests(unittest.TestCase):
             evidence.path,
             f"queue/pending/{self.spec['jobId']}.json",
         )
+
+    def test_consumed_predecessor_is_immutable_terminal_quarantine(self) -> None:
+        successor = json.loads(SUCCESSOR_PATH.read_text(encoding="utf-8"))
+        evidence = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
+        quarantine = json.loads(QUARANTINE_PATH.read_text(encoding="utf-8"))
+        policy = quarantine_policy(self.spec)
+        self.assertIsNotNone(policy)
+        self.assertEqual(tuple(policy["statuses"]), EXPECTED_QUARANTINE_STATUSES)
+        self.assertEqual(evidence["executionEvidence"], successor["lineage"])
+        self.assertEqual(
+            hashlib.sha256(EVIDENCE_PATH.read_bytes()).hexdigest(),
+            EXPECTED_EVIDENCE_SHA256,
+        )
+        successor_blob = subprocess.check_output(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                "HEAD:jobspecs/nemo-v3-20260729-successor-2-reviewed.json",
+            ],
+            cwd=ROOT,
+        )
+        self.assertEqual(
+            hashlib.sha256(successor_blob).hexdigest(),
+            EXPECTED_SUCCESSOR_BLOB_SHA256,
+        )
+        self.assertEqual(
+            hashlib.sha256(QUEUE_PATH.read_bytes()).hexdigest(),
+            EXPECTED_QUEUE_FILE_SHA256,
+        )
+        self.assertEqual(quarantine["status"], list(EXPECTED_QUARANTINE_STATUSES))
+        self.assertEqual(quarantine["replacement"]["reviewedJobId"], successor["jobId"])
+        self.assertEqual(
+            quarantine["replacement"]["reviewedSpecSha256"],
+            EXPECTED_SUCCESSOR_BLOB_SHA256,
+        )
+        self.assertTrue(quarantine["preserveEnvelope"])
+        self.assertFalse(quarantine["dispatchAuthorized"])
+
+        def unexpected_receipt_loader(_spec: dict[str, object], _token: str) -> None:
+            self.fail("terminal quarantine must not inspect the receipt repository")
+
+        report = nemo_v3_status.evaluate(
+            root=ROOT,
+            spec_path=SPEC_PATH,
+            receipt_loader=unexpected_receipt_loader,
+            now=datetime(2026, 8, 30, tzinfo=timezone.utc),
+        )
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertTrue(report["terminal"])
+        self.assertTrue(report["queue"]["valid"], report["queue"]["error"])
+        self.assertTrue(report["quarantine"]["valid"], report["quarantine"]["error"])
+        self.assertEqual(report["quarantine"]["statuses"], EXPECTED_QUARANTINE_STATUSES)
+        self.assertFalse(report["receipt"]["present"])
+        with self.assertRaisesRegex(ContractError, "NEVER_DISPATCH"):
+            require_nemo_v3_dispatchable(self.spec)
 
 
 if __name__ == "__main__":

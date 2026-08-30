@@ -80,6 +80,7 @@ const ATTEMPT_16_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-16';
 const ATTEMPT_17_REVIEWED_JOB_ID = 'job-2026-nemo-v3-governed-attempt-17';
 const ATTEMPT_17_CORRECTED_BRIDGE_REVISION = '120a49206354ad98779ac46a65ca1fae45131e1c';
 const QUARANTINED_JOB_IDS = new Set([
+  'job-2026-nemo-v3-governed-attempt-1',
   'job-2026-nemo-v3-governed-attempt-2',
   'job-2026-nemo-v3-governed-successor-3',
   'job-2026-nemo-v3-governed-attempt-4',

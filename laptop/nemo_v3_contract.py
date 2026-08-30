@@ -29,6 +29,8 @@ _ENGINE_KEY_ID = re.compile(r"^[0-9a-f]{16}$")
 _SAFE_PATH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
 _HOLDOUT_NAMES = ("original-v2", "shadow-v2", "challenge-v3")
 LEGACY_ENGINE_KEY_ID = "5c6cf59741ade920"
+ATTEMPT_1_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-1"
+SUCCESSOR_2_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-successor-2"
 PROVISIONAL_ENGINE_KEY_ID = "815714c8d4ae3e4d"
 COORDINATED_ENGINE_KEY_ID = "b8041281c81c4caa"
 COORDINATED_ENGINE_SPKI_SHA256 = (
@@ -92,6 +94,42 @@ ATTEMPT_15_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-15"
 ATTEMPT_16_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-16"
 ATTEMPT_17_REVIEWED_JOB_ID = "job-2026-nemo-v3-governed-attempt-17"
 ATTEMPT_17_CORRECTED_BRIDGE_REVISION = "120a49206354ad98779ac46a65ca1fae45131e1c"
+_PREDECESSOR_SUCCESSOR_REPLACEMENT = {
+    "reviewedJobId": SUCCESSOR_2_REVIEWED_JOB_ID,
+    "reviewedSpecPath": "jobspecs/nemo-v3-20260729-successor-2-reviewed.json",
+    "reviewedSpecSha256": (
+        "9d58f752c26ac37ae7fa4999e33a6f136d060e97704124df26f0ee7948a11746"
+    ),
+    "automaticRetry": False,
+}
+_PREDECESSOR_EXECUTION_EVIDENCE = {
+    "predecessorJobId": ATTEMPT_1_REVIEWED_JOB_ID,
+    "predecessorClaimSha256": (
+        "77fd63583bf11f1d7416cea7e6e0c02b230973d4773f9c409ce18aa83140f10b"
+    ),
+    "predecessorEnvelopeSha256": (
+        "09187c0a724c8caf8a11dcd492d3f284af8a18791adac7e1a98b9a21bf81591b"
+    ),
+    "predecessorBridgeRevision": "114c3030763291009d665ae88cb3d6537fccacef",
+    "predecessorImageId": (
+        "sha256:537e4a25a503d202ec75dbb9035bd9688ba2ae8d8a7555466840e581d5109f28"
+    ),
+    "predecessorClaimedAt": "2026-07-29T16:41:34.8842570+00:00",
+    "incidentUrl": (
+        "https://github.com/szl-holdings/szl-gpu-bridge/issues/4"
+        "#issuecomment-5120817312"
+    ),
+    "failurePhase": "PRE_TRAINING_RUNTIME_SOURCE_PARSE",
+    "successorGeneration": 2,
+    "automaticRetry": False,
+    "trainingStarted": False,
+    "modelRepositoryCodeImported": False,
+    "holdoutsAccessed": False,
+    "candidateProduced": False,
+    "receiptIntentProduced": False,
+    "terminalLedgerWritten": False,
+    "scienceInputsReused": True,
+}
 _ATTEMPT_4_REPLACEMENT = {
     "sourceRevision": SETTLED_A11OY_SOURCE_REVISION,
     "workflowBlob": SETTLED_OWNER_WORKFLOW_BLOB,
@@ -197,6 +235,31 @@ _ATTEMPT_17_REPLACEMENT = {
     "successorGeneration": 17,
 }
 QUARANTINE_POLICIES: dict[str, dict[str, Any]] = {
+    ATTEMPT_1_REVIEWED_JOB_ID: {
+        "statuses": (
+            "PRE_TRAINING_RUNTIME_SOURCE_PARSE",
+            "POST_CLAIM",
+            "NEVER_DISPATCH",
+            "NEVER_RESEND",
+            "NEVER_RESIGN",
+        ),
+        "queue_file_sha256": (
+            "0686889c3abcf54e3f6b2151bc60155176e1eccb25af7b01d9f1fbf05080d80d"
+        ),
+        "payload_sha256": (
+            "8a5c2e3f99711be84e45371824ca737d480e587ff61c55cc3d30ad96d2c62055"
+        ),
+        "engine_key_id": LEGACY_ENGINE_KEY_ID,
+        "source_revision": "a5351c8e37a7cfe54e0c3cf53c8bbd460a16c11c",
+        "replacement": _PREDECESSOR_SUCCESSOR_REPLACEMENT,
+        "execution_evidence_path": (
+            "queue/evidence/job-2026-nemo-v3-governed-attempt-1.json"
+        ),
+        "execution_evidence_sha256": (
+            "d3f28fd63ee4c84ecf7aa72300a7fe55a29033953906356a83fdf089f47aaed6"
+        ),
+        "execution_evidence": _PREDECESSOR_EXECUTION_EVIDENCE,
+    },
     "job-2026-nemo-v3-governed-attempt-2": {
         "statuses": ("STALE_SOURCE", "RETIRED_KEY", "NEVER_DISPATCH"),
         "queue_file_sha256": (

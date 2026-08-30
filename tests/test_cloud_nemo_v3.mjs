@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   NEMO_V3_PAYLOAD_TYPE,
   canonicalize,
@@ -123,6 +125,28 @@ test('Nemo v3 successor requires fail-closed predecessor lineage', () => {
   assert.equal(validateNemoV3Spec(successor), NEMO_V3_PAYLOAD_TYPE);
   successor.lineage.automaticRetry = true;
   assert.throws(() => validateNemoV3Spec(successor), /automaticRetry/);
+});
+
+test('Nemo v3 signer refuses the consumed predecessor but keeps successor-2 reviewable', () => {
+  const signer = fileURLToPath(new URL('../cloud/sign-nemo-v3-job.mjs', import.meta.url));
+  const predecessorPath = fileURLToPath(
+    new URL('../jobspecs/nemo-v3-20260722-reviewed.json', import.meta.url),
+  );
+  const result = spawnSync(process.execPath, [signer, predecessorPath], {
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /quarantined.*NEVER_DISPATCH/);
+  assert.doesNotMatch(result.stderr, /SZL_QUANT_KEY/);
+  const predecessor = JSON.parse(readFileSync(predecessorPath, 'utf8'));
+  assert.equal(validateNemoV3Spec(predecessor), NEMO_V3_PAYLOAD_TYPE);
+  const successor = JSON.parse(
+    readFileSync(
+      new URL('../jobspecs/nemo-v3-20260729-successor-2-reviewed.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  assert.equal(validateNemoV3Spec(successor), NEMO_V3_PAYLOAD_TYPE);
 });
 
 test('Nemo v3 owner dispatch binds exact workflow and receipt-only effects', () => {
