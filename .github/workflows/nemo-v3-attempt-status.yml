@@ -110,7 +110,7 @@ on:
       - docs/NEMO_V3_EXECUTION.md
       - .github/workflows/nemo-v3-attempt-status.yml
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -135,108 +135,33 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - attempt_id: predecessor
-            spec_path: jobspecs/nemo-v3-20260722-reviewed.json
-            report_path: reports/nemo-v3-attempt-status.json
-            report_title: '[nemo-v3-attempt] governed single attempt'
-            report_marker: szl-nemo-v3-governed-attempt
-            report_heading: SZL-Nemo v3 governed single attempt
+          # Terminal history remains discoverable in immutable reports and issues,
+          # but these terminal attempt IDs are deliberately not matrix entries:
+          # attempt_id: predecessor
+          # attempt_id: successor-3-key-recovery
+          # attempt_id: attempt-2-b21
+          # spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
+          # attempt_id: attempt-4-coordinated-recovery
+          # attempt_id: attempt-5-transport-v3-recovery
+          # attempt_id: attempt-6-host-policy-recovery
+          # attempt_id: attempt-7-validator-lineage-recovery
+          # attempt_id: attempt-8-runtime-binding-recovery
+          # attempt_id: attempt-9-prefetch-checkout-recovery
+          # attempt_id: attempt-10-cache-license-finalizer-recovery
+          # attempt_id: attempt-11-runtime-admission-recovery
+          # attempt_id: attempt-12-tokenizer-load-recovery
+          # attempt_id: attempt-13-runtime-binding-recovery
+          # attempt_id: attempt-14-sftconfig-recovery
+          # attempt_id: attempt-15-meta-tensor-recovery
+          # attempt_id: attempt-16-runtime-binding-recovery
+          # Terminal attempts remain preserved in their reports and issues.
+          # Poll only the two attempts whose latest protected-main report is nonterminal.
           - attempt_id: successor-2
             spec_path: jobspecs/nemo-v3-20260729-successor-2-reviewed.json
             report_path: reports/nemo-v3-successor-2-status.json
             report_title: '[nemo-v3-successor-2] governed successor generation'
             report_marker: szl-nemo-v3-governed-successor-2
             report_heading: SZL-Nemo v3 governed successor generation 2
-          - attempt_id: successor-3-key-recovery
-            spec_path: jobspecs/nemo-v3-20260730-successor-3-reviewed.json
-            report_path: reports/nemo-v3-successor-3-status.json
-            report_title: '[nemo-v3-successor-3] governed key-recovery generation'
-            report_marker: szl-nemo-v3-governed-successor-3
-            report_heading: SZL-Nemo v3 governed successor generation 3 key recovery
-          - attempt_id: attempt-2-b21
-            spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
-            report_path: reports/nemo-v3-attempt-2-b21-status.json
-            report_title: '[nemo-v3-attempt-2-b21] governed owner-dispatch attempt'
-            report_marker: szl-nemo-v3-governed-attempt-2-b21
-            report_heading: SZL-Nemo v3 governed attempt 2 for A11oy b21b8fb65400
-          - attempt_id: attempt-4-coordinated-recovery
-            spec_path: jobspecs/nemo-v3-20260730-attempt-4-reviewed.json
-            report_path: reports/nemo-v3-attempt-4-status.json
-            report_title: '[nemo-v3-attempt-4] governed coordinated recovery'
-            report_marker: szl-nemo-v3-governed-attempt-4
-            report_heading: SZL-Nemo v3 governed attempt 4 coordinated recovery
-          - attempt_id: attempt-5-transport-v3-recovery
-            spec_path: jobspecs/nemo-v3-20260730-attempt-5-reviewed.json
-            report_path: reports/nemo-v3-attempt-5-status.json
-            report_title: '[nemo-v3-attempt-5] governed transport-v3 recovery'
-            report_marker: szl-nemo-v3-governed-attempt-5
-            report_heading: SZL-Nemo v3 governed attempt 5 transport-v3 recovery
-          - attempt_id: attempt-6-host-policy-recovery
-            spec_path: jobspecs/nemo-v3-20260730-attempt-6-reviewed.json
-            report_path: reports/nemo-v3-attempt-6-status.json
-            report_title: '[nemo-v3-attempt-6] governed host-policy recovery'
-            report_marker: szl-nemo-v3-governed-attempt-6
-            report_heading: SZL-Nemo v3 governed attempt 6 host-policy recovery
-          - attempt_id: attempt-7-validator-lineage-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-7-reviewed.json
-            report_path: reports/nemo-v3-attempt-7-status.json
-            report_title: '[nemo-v3-attempt-7] governed validator-lineage recovery'
-            report_marker: szl-nemo-v3-governed-attempt-7
-            report_heading: SZL-Nemo v3 governed attempt 7 validator-lineage recovery
-          - attempt_id: attempt-8-runtime-binding-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-8-reviewed.json
-            report_path: reports/nemo-v3-attempt-8-status.json
-            report_title: '[nemo-v3-attempt-8] governed runtime-binding recovery'
-            report_marker: szl-nemo-v3-governed-attempt-8
-            report_heading: SZL-Nemo v3 governed attempt 8 runtime-binding recovery
-          - attempt_id: attempt-9-prefetch-checkout-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-9-reviewed.json
-            report_path: reports/nemo-v3-attempt-9-status.json
-            report_title: '[nemo-v3-attempt-9] governed prefetch-checkout recovery'
-            report_marker: szl-nemo-v3-governed-attempt-9
-            report_heading: SZL-Nemo v3 governed attempt 9 prefetch-checkout recovery
-          - attempt_id: attempt-10-cache-license-finalizer-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-10-reviewed.json
-            report_path: reports/nemo-v3-attempt-10-status.json
-            report_title: '[nemo-v3-attempt-10] governed cache/license/finalizer recovery'
-            report_marker: szl-nemo-v3-governed-attempt-10
-            report_heading: SZL-Nemo v3 governed attempt 10 cache/license/finalizer recovery
-          - attempt_id: attempt-11-runtime-admission-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-11-reviewed.json
-            report_path: reports/nemo-v3-attempt-11-status.json
-            report_title: '[nemo-v3-attempt-11] governed runtime-admission recovery'
-            report_marker: szl-nemo-v3-governed-attempt-11
-            report_heading: SZL-Nemo v3 governed attempt 11 runtime-admission recovery
-          - attempt_id: attempt-12-tokenizer-load-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-12-reviewed.json
-            report_path: reports/nemo-v3-attempt-12-status.json
-            report_title: '[nemo-v3-attempt-12] governed tokenizer-load recovery'
-            report_marker: szl-nemo-v3-governed-attempt-12
-            report_heading: SZL-Nemo v3 governed attempt 12 tokenizer-load recovery
-          - attempt_id: attempt-13-runtime-binding-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-13-reviewed.json
-            report_path: reports/nemo-v3-attempt-13-status.json
-            report_title: '[nemo-v3-attempt-13] governed runtime-binding recovery'
-            report_marker: szl-nemo-v3-governed-attempt-13
-            report_heading: SZL-Nemo v3 governed attempt 13 runtime-binding recovery
-          - attempt_id: attempt-14-sftconfig-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-14-reviewed.json
-            report_path: reports/nemo-v3-attempt-14-status.json
-            report_title: '[nemo-v3-attempt-14] governed SFTConfig recovery'
-            report_marker: szl-nemo-v3-governed-attempt-14
-            report_heading: SZL-Nemo v3 governed attempt 14 SFTConfig recovery
-          - attempt_id: attempt-15-meta-tensor-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-15-reviewed.json
-            report_path: reports/nemo-v3-attempt-15-status.json
-            report_title: '[nemo-v3-attempt-15] governed meta-tensor recovery'
-            report_marker: szl-nemo-v3-governed-attempt-15
-            report_heading: SZL-Nemo v3 governed attempt 15 meta-tensor recovery
-          - attempt_id: attempt-16-runtime-binding-recovery
-            spec_path: jobspecs/nemo-v3-20260731-attempt-16-reviewed.json
-            report_path: reports/nemo-v3-attempt-16-status.json
-            report_title: '[nemo-v3-attempt-16] governed runtime-binding recovery'
-            report_marker: szl-nemo-v3-governed-attempt-16
-            report_heading: SZL-Nemo v3 governed attempt 16 runtime-binding recovery
           - attempt_id: attempt-17-settled-runtime-successor
             spec_path: jobspecs/nemo-v3-20260801-attempt-17-reviewed.json
             report_path: reports/nemo-v3-attempt-17-status.json
