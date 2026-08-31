@@ -135,6 +135,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Terminal history remains discoverable in immutable reports and issues,
+          # but these terminal attempt IDs are deliberately not matrix entries:
+          # attempt_id: predecessor
+          # attempt_id: successor-3-key-recovery
+          # attempt_id: attempt-2-b21
+          # attempt_id: attempt-4-coordinated-recovery
+          # attempt_id: attempt-5-transport-v3-recovery
+          # attempt_id: attempt-6-host-policy-recovery
+          # attempt_id: attempt-7-validator-lineage-recovery
+          # attempt_id: attempt-8-runtime-binding-recovery
+          # attempt_id: attempt-9-prefetch-checkout-recovery
+          # attempt_id: attempt-10-cache-license-finalizer-recovery
+          # attempt_id: attempt-11-runtime-admission-recovery
+          # attempt_id: attempt-12-tokenizer-load-recovery
+          # attempt_id: attempt-13-runtime-binding-recovery
+          # attempt_id: attempt-14-sftconfig-recovery
+          # attempt_id: attempt-15-meta-tensor-recovery
+          # attempt_id: attempt-16-runtime-binding-recovery
           # Terminal attempts remain preserved in their reports and issues.
           # Poll only the two attempts whose latest protected-main report is nonterminal.
           - attempt_id: successor-2
