@@ -140,6 +140,7 @@ jobs:
           # attempt_id: predecessor
           # attempt_id: successor-3-key-recovery
           # attempt_id: attempt-2-b21
+          # spec_path: jobspecs/nemo-v3-20260729-attempt-2-reviewed.json
           # attempt_id: attempt-4-coordinated-recovery
           # attempt_id: attempt-5-transport-v3-recovery
           # attempt_id: attempt-6-host-policy-recovery
