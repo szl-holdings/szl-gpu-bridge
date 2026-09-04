@@ -1,0 +1,94 @@
+name: Nemo v3 protected cloud-key preflight
+
+on:
+  push:
+    branches:
+      - ops/nemo-v3-attempt-18-solo-20260904
+    paths:
+      - .github/workflows/nemo-v3-cloud-key-preflight-20260904.yml
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  prove-protected-secret:
+    name: Prove an existing protected b804 key secret without disclosure
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      KEY_PEM: ${{ secrets.SZL_QUANT_KEY_PEM || secrets.SZL_QUANT_ENGINE_PRIVATE_KEY || secrets.SZL_NEMO_ENGINE_PRIVATE_KEY || secrets.NEMO_ENGINE_PRIVATE_KEY || secrets.ENGINE_PRIVATE_KEY }}
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify protected secret against the active public pin
+        id: key
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/nemo-v3-cloud-key-preflight.json"
+          available=false
+          key_id="b8041281c81c4caa"
+          spki_sha="b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf"
+          if [ -n "${KEY_PEM:-}" ]; then
+            umask 077
+            key="$RUNNER_TEMP/nemo-v3-engine-key.pem"
+            printf '%s' "$KEY_PEM" > "$key"
+            SZL_KEY_CANDIDATE="$key" SZL_EXPECTED_KEY_ID="$key_id" SZL_EXPECTED_SPKI_SHA="$spki_sha" node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+          const privateKey = createPrivateKey(readFileSync(process.env.SZL_KEY_CANDIDATE));
+          const publicKey = createPublicKey(privateKey);
+          const spki = publicKey.export({ type: "spki", format: "der" });
+          const full = createHash("sha256").update(spki).digest("hex");
+          if (full.slice(0, 16) !== process.env.SZL_EXPECTED_KEY_ID) process.exit(31);
+          if (full !== process.env.SZL_EXPECTED_SPKI_SHA) process.exit(32);
+          const probe = Buffer.from("szl-nemo-v3-protected-cloud-key-preflight-v1");
+          if (!verify(null, probe, publicKey, sign(null, probe, privateKey))) process.exit(33);
+          NODE
+            available=true
+            shred -u "$key" 2>/dev/null || rm -f "$key"
+          fi
+          python - <<PY > "$receipt"
+          import json, os
+          print(json.dumps({
+            "schema": "szl.nemo-v3.cloud-key-preflight/v1",
+            "repository": os.environ["GITHUB_REPOSITORY"],
+            "sourceRevision": os.environ["GITHUB_SHA"],
+            "expectedKeyId": "$key_id",
+            "keyAvailable": $available,
+            "privateMaterialRecorded": False,
+          }, indent=2, sort_keys=True))
+          PY
+          echo "receipt=$receipt" >> "$GITHUB_OUTPUT"
+          echo "key_available=$available" >> "$GITHUB_OUTPUT"
+
+      - name: Upload secret-free receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nemo-v3-cloud-key-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.key.outputs.receipt }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record the fallback result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AVAILABLE: ${{ steps.key.outputs.key_available }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/comment.md <<EOF
+          ## Protected cloud-key preflight
+
+          - Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+          - Active key: \`b8041281c81c4caa\`
+          - Matching protected secret available: \`$AVAILABLE\`
+          - Private material recorded: \`false\`
+          EOF
+          gh issue comment 98 --body-file /tmp/comment.md
