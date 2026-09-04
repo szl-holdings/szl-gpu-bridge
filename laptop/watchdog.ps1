@@ -123,7 +123,7 @@ function Read-State {
         return $state
     }
     catch {
-        Write-Log -Level 'WARN' -Message ('State rejected and reset: {0}' -f $_.Exception.GetType().Name)
+        Write-Log -Level 'WARN' -Message ('State rejected and reset: {0}' -f $_.Exception.GetType().Name) | Out-Null
         return New-DefaultState
     }
 }
@@ -264,15 +264,72 @@ function Get-TaskDefinition {
     }
 }
 
+function Get-TaskContractJson {
+    param(
+        [Parameter(Mandatory = $true)]$Actions,
+        [Parameter(Mandatory = $true)]$Triggers,
+        [Parameter(Mandatory = $true)]$Principal,
+        [Parameter(Mandatory = $true)]$Settings
+    )
+    $contract = [ordered]@{
+        actions = @($Actions | ForEach-Object {
+            [ordered]@{
+                execute = [string]$_.Execute
+                arguments = [string]$_.Arguments
+                working_directory = [string]$_.WorkingDirectory
+            }
+        })
+        triggers = @($Triggers | ForEach-Object {
+            [ordered]@{
+                type = [string]$_.CimClass.CimClassName
+                repetition_interval = if ($null -eq $_.Repetition) { '' } else { [string]$_.Repetition.Interval }
+            }
+        })
+        principal = [ordered]@{
+            user_id = [string]$Principal.UserId
+            logon_type = [string]$Principal.LogonType
+            run_level = [string]$Principal.RunLevel
+        }
+        settings = [ordered]@{
+            disallow_start_on_batteries = [bool]$Settings.DisallowStartIfOnBatteries
+            stop_if_going_on_batteries = [bool]$Settings.StopIfGoingOnBatteries
+            start_when_available = [bool]$Settings.StartWhenAvailable
+            multiple_instances = [string]$Settings.MultipleInstances
+            restart_count = [int]$Settings.RestartCount
+            restart_interval = [string]$Settings.RestartInterval
+            execution_time_limit = [string]$Settings.ExecutionTimeLimit
+        }
+    }
+    return ($contract | ConvertTo-Json -Depth 8 -Compress)
+}
+
+function Test-TaskDefinitionMatches {
+    param(
+        [Parameter(Mandatory = $true)]$Task,
+        [Parameter(Mandatory = $true)]$Definition
+    )
+    $actual = Get-TaskContractJson `
+        -Actions @($Task.Actions) `
+        -Triggers @($Task.Triggers) `
+        -Principal $Task.Principal `
+        -Settings $Task.Settings
+    $expected = Get-TaskContractJson `
+        -Actions @($Definition.action) `
+        -Triggers @($Definition.triggers) `
+        -Principal $Definition.principal `
+        -Settings $Definition.settings
+    return $actual -ceq $expected
+}
+
 function Ensure-Task {
     param([Parameter(Mandatory = $true)][string]$TaskName)
     $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    $definition = Get-TaskDefinition -TaskName $TaskName
     if ($null -eq $task) {
         if ($DryRun) {
             Add-Event -Component $TaskName -Action 'register' -Status 'DRY_RUN' -Detail 'fixed task would be registered'
             return $false
         }
-        $definition = Get-TaskDefinition -TaskName $TaskName
         Register-ScheduledTask `
             -TaskName $TaskName `
             -Action $definition.action `
@@ -282,6 +339,22 @@ function Ensure-Task {
             -Description 'SZL GPU bridge bounded liveness control plane.' `
             -Force | Out-Null
         Add-Event -Component $TaskName -Action 'register' -Status 'APPLIED' -Detail 'fixed task registered from local files'
+        return $false
+    }
+    if (-not (Test-TaskDefinitionMatches -Task $task -Definition $definition)) {
+        if ($DryRun) {
+            Add-Event -Component $TaskName -Action 'reconcile' -Status 'DRY_RUN' -Detail 'fixed task definition would be reconciled'
+            return $false
+        }
+        Register-ScheduledTask `
+            -TaskName $TaskName `
+            -Action $definition.action `
+            -Trigger $definition.triggers `
+            -Principal $definition.principal `
+            -Settings $definition.settings `
+            -Description 'SZL GPU bridge bounded liveness control plane.' `
+            -Force | Out-Null
+        Add-Event -Component $TaskName -Action 'reconcile' -Status 'APPLIED' -Detail 'fixed task definition reconciled'
         return $false
     }
     if ($task.State -eq 'Disabled') {
