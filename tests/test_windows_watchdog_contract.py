@@ -29,7 +29,9 @@ class WindowsWatchdogContractTests(unittest.TestCase):
             "SZL-GPU-Bridge-Watchdog",
             "SZL-GPU-Bridge-Guardian",
         }
-        observed = set(re.findall(r"SZL-GPU-Bridge(?:-Watchdog|-Guardian)?", self.combined))
+        observed = set(
+            re.findall(r"SZL-GPU-Bridge(?:-Watchdog|-Guardian)?", self.combined)
+        )
         self.assertEqual(observed, expected)
         self.assertIn("Task is outside the fixed allowlist", self.combined)
 
@@ -47,8 +49,12 @@ class WindowsWatchdogContractTests(unittest.TestCase):
     def test_primary_daemon_retains_long_running_semantics(self) -> None:
         self.assertIn("New-TimeSpan -Hours 26", self.watchdog)
         self.assertIn("New-TimeSpan -Hours 26", self.installer)
-        self.assertIn("$global:JobInProgress", self.daemon)
-        self.assertIn("Start-Sleep -Seconds 60", self.daemon)
+        self.assertIn("daemon.ps1", self.installer)
+        self.assertIn("Test-DaemonLogFreshness", self.watchdog)
+
+    def test_enabled_task_definition_is_reconciled(self) -> None:
+        self.assertIn("Test-TaskDefinitionMatches", self.watchdog)
+        self.assertIn("fixed task definition reconciled", self.watchdog)
 
     def test_restart_budget_is_small_and_rolling(self) -> None:
         for marker in (
@@ -88,7 +94,9 @@ class WindowsWatchdogContractTests(unittest.TestCase):
             self.assertIn(marker, self.watchdog)
 
     def test_expected_recovery_cycles_do_not_trigger_scheduler_storms(self) -> None:
-        self.assertIn("$status = if ($healthy) { 'HEALTHY' } else { 'DEGRADED' }", self.watchdog)
+        self.assertIn(
+            "$status = if ($healthy) { 'HEALTHY' } else { 'DEGRADED' }", self.watchdog
+        )
         self.assertRegex(
             self.watchdog,
             r"Write-Receipt -Status \$status[\s\S]{0,700}exit 0",
@@ -126,9 +134,7 @@ class WindowsWatchdogContractTests(unittest.TestCase):
         self.assertIsNone(
             re.search(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", self.combined)
         )
-        self.assertIsNone(
-            re.search(r"\b192\.168\.\d{1,3}\.\d{1,3}\b", self.combined)
-        )
+        self.assertIsNone(re.search(r"\b192\.168\.\d{1,3}\.\d{1,3}\b", self.combined))
         self.assertIsNone(
             re.search(
                 r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b",
