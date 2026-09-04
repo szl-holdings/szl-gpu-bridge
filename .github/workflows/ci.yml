@@ -81,3 +81,80 @@ jobs:
               json.loads(path.read_text(encoding='utf-8-sig'))
               print('valid queued json:', path)
           PY
+
+  windows-watchdog-contract:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact change revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Parse watchdog and installer without executing mutations
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($relative in @(
+            'laptop\watchdog.ps1',
+            'laptop\install_watchdog.ps1',
+            'laptop\daemon.ps1'
+          )) {
+            $path = Join-Path $env:GITHUB_WORKSPACE $relative
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $path,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+            }
+          }
+
+      - name: Require bounded local authority and redundant liveness
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $watchdog = Get-Content 'laptop\watchdog.ps1' -Raw
+          $installer = Get-Content 'laptop\install_watchdog.ps1' -Raw
+          $combined = $watchdog + "`n" + $installer
+
+          foreach ($required in @(
+            'SZL-GPU-Bridge',
+            'SZL-GPU-Bridge-Watchdog',
+            'SZL-GPU-Bridge-Guardian',
+            'Global\SZLGpuBridgeWatchdog',
+            'New-TimeSpan -Minutes 5',
+            'New-TimeSpan -Minutes 15',
+            'New-TimeSpan -Hours 26',
+            '-MultipleInstances IgnoreNew',
+            '-LogonType S4U',
+            'rolling start budget exhausted',
+            'watchdog-receipt-tip.txt',
+            'szl.gpu-bridge-watchdog-receipt/v1',
+            'credential_values_read = $false',
+            'remote_commands_accepted = $false',
+            'inbound_ports_opened = $false'
+          )) {
+            if (-not $combined.Contains($required)) {
+              throw "missing contract marker: $required"
+            }
+          }
+
+          foreach ($forbidden in @(
+            'Invoke-Expression',
+            'DownloadString(',
+            'FromBase64String',
+            '-EncodedCommand',
+            'cmd.exe /c',
+            'Invoke-WebRequest',
+            'Invoke-RestMethod',
+            'Start-BitsTransfer'
+          )) {
+            if ($combined.Contains($forbidden)) {
+              throw "forbidden execution primitive present: $forbidden"
+            }
+          }
