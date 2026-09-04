@@ -1,0 +1,138 @@
+name: Nemo v3 owner-key preflight
+
+on:
+  push:
+    branches:
+      - ops/nemo-v3-attempt-18-solo-20260904
+    paths:
+      - .github/workflows/nemo-v3-owner-key-preflight-20260904.yml
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nemo-v3-owner-key-preflight-20260904
+  cancel-in-progress: false
+
+jobs:
+  prove-owner-key:
+    name: Prove active b804 key without exposing private material
+    runs-on: [self-hosted, Windows, X64, szl-owner-gpu]
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact preflight source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Locate and cryptographically prove the active owner key
+        id: key
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $receipt = Join-Path $env:RUNNER_TEMP "nemo-v3-owner-key-preflight.json"
+          $expectedKeyId = "b8041281c81c4caa"
+          $expectedSpkiSha = "b8041281c81c4caaea18112df5e8c99ea8472f0711fc796fc3072c27398af2cf"
+          $candidates = New-Object System.Collections.Generic.List[string]
+          if ($env:SZL_QUANT_KEY) { $candidates.Add($env:SZL_QUANT_KEY) }
+          @(
+            "C:\secure\engine_key.pem",
+            "C:\secure\engine_key_b8041281c81c4caa.pem",
+            "C:\secure\engine_key_rotation_20260730.pem",
+            "C:\secure\szl_quant_engine_b8041281c81c4caa.pem",
+            "C:\szl-bridge\keys\engine_key.pem"
+          ) | ForEach-Object { if (-not $candidates.Contains($_)) { $candidates.Add($_) } }
+
+          $found = $null
+          $candidateIndex = -1
+          for ($i = 0; $i -lt $candidates.Count; $i++) {
+            $candidate = $candidates[$i]
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+            $env:SZL_KEY_CANDIDATE = $candidate
+            $env:SZL_EXPECTED_KEY_ID = $expectedKeyId
+            $env:SZL_EXPECTED_SPKI_SHA = $expectedSpkiSha
+            node --input-type=module -e @'
+          import { readFileSync } from "node:fs";
+          import { createHash, createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
+          const privateKey = createPrivateKey(readFileSync(process.env.SZL_KEY_CANDIDATE));
+          const publicKey = createPublicKey(privateKey);
+          const spki = publicKey.export({ type: "spki", format: "der" });
+          const full = createHash("sha256").update(spki).digest("hex");
+          const keyId = full.slice(0, 16);
+          const probe = Buffer.from("szl-nemo-v3-owner-key-preflight-v1", "utf8");
+          if (keyId !== process.env.SZL_EXPECTED_KEY_ID) process.exit(31);
+          if (full !== process.env.SZL_EXPECTED_SPKI_SHA) process.exit(32);
+          const signature = sign(null, probe, privateKey);
+          if (!verify(null, probe, publicKey, signature)) process.exit(33);
+          '@
+            $code = $LASTEXITCODE
+            Remove-Item Env:SZL_KEY_CANDIDATE -ErrorAction SilentlyContinue
+            Remove-Item Env:SZL_EXPECTED_KEY_ID -ErrorAction SilentlyContinue
+            Remove-Item Env:SZL_EXPECTED_SPKI_SHA -ErrorAction SilentlyContinue
+            if ($code -eq 0) {
+              $found = $candidate
+              $candidateIndex = $i
+              break
+            }
+          }
+
+          $result = [ordered]@{
+            schema = "szl.nemo-v3.owner-key-preflight/v1"
+            generatedAt = [DateTime]::UtcNow.ToString("o")
+            repository = $env:GITHUB_REPOSITORY
+            sourceRevision = $env:GITHUB_SHA
+            expectedKeyId = $expectedKeyId
+            expectedSpkiSha256 = $expectedSpkiSha
+            privateMaterialRecorded = $false
+            candidateCount = $candidates.Count
+            matchingCandidateIndex = $candidateIndex
+            keyAvailable = ($null -ne $found)
+          }
+          $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $receipt -Encoding UTF8
+          "receipt=$receipt" >> $env:GITHUB_OUTPUT
+          "key_available=$($result.keyAvailable.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          if (-not $result.keyAvailable) {
+            throw "The active b804 owner private key was not found in any admitted local path."
+          }
+
+      - name: Upload secret-free preflight receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nemo-v3-owner-key-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.key.outputs.receipt }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Reconcile Nemo attempt-18 issue
+        if: always()
+        shell: powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECEIPT: ${{ steps.key.outputs.receipt }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $body = Join-Path $env:RUNNER_TEMP "nemo-v3-owner-key-preflight-comment.md"
+          if ($env:RECEIPT -and (Test-Path -LiteralPath $env:RECEIPT)) {
+            $r = Get-Content -LiteralPath $env:RECEIPT -Raw | ConvertFrom-Json
+            @(
+              "## Owner-key preflight",
+              "",
+              "- Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID",
+              "- Source revision: ``$($r.sourceRevision)``",
+              "- Expected active key: ``$($r.expectedKeyId)``",
+              "- Matching local key available: ``$($r.keyAvailable)``",
+              "- Private material recorded: ``$($r.privateMaterialRecorded)``"
+            ) | Set-Content -LiteralPath $body -Encoding UTF8
+          } else {
+            @(
+              "## Owner-key preflight",
+              "",
+              "- Run: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID",
+              "- Receipt unavailable; inspect the job failure."
+            ) | Set-Content -LiteralPath $body -Encoding UTF8
+          }
+          gh issue comment 98 --body-file $body
