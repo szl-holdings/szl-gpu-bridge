@@ -34,6 +34,7 @@ $LogPath = Join-Path $Root 'logs\watchdog.log'
 $DaemonLogPath = Join-Path $Root 'logs\daemon.log'
 $DaemonPath = Join-Path $Root 'daemon.ps1'
 $WatchdogPath = Join-Path $Root 'watchdog.ps1'
+$TaskDescription = 'SZL GPU bridge bounded liveness control plane.'
 $Now = [DateTimeOffset]::UtcNow
 $Events = New-Object System.Collections.Generic.List[object]
 
@@ -264,61 +265,179 @@ function Get-TaskDefinition {
     }
 }
 
-function Get-TaskContractJson {
+function Get-TaskDefinitionFingerprint {
     param(
         [Parameter(Mandatory = $true)]$Actions,
         [Parameter(Mandatory = $true)]$Triggers,
         [Parameter(Mandatory = $true)]$Principal,
         [Parameter(Mandatory = $true)]$Settings
     )
-    $contract = [ordered]@{
-        actions = @($Actions | ForEach-Object {
+
+    $actionRows = @(
+        $Actions | ForEach-Object {
             [ordered]@{
-                execute = [string]$_.Execute
-                arguments = [string]$_.Arguments
-                working_directory = [string]$_.WorkingDirectory
+                id = [string](Get-DynamicProperty -Object $_ -Name 'Id' -Default '')
+                execute = [string](Get-DynamicProperty -Object $_ -Name 'Execute' -Default '')
+                arguments = [string](Get-DynamicProperty -Object $_ -Name 'Arguments' -Default '')
+                working_directory = [string](Get-DynamicProperty -Object $_ -Name 'WorkingDirectory' -Default '')
             }
-        })
-        triggers = @($Triggers | ForEach-Object {
+        }
+    )
+    $triggerRows = @(
+        $Triggers | ForEach-Object {
+            $cimClass = Get-DynamicProperty -Object $_ -Name 'CimClass' -Default $null
+            $repetition = Get-DynamicProperty -Object $_ -Name 'Repetition' -Default $null
+            $startBoundary = [string](Get-DynamicProperty -Object $_ -Name 'StartBoundary' -Default '')
+            $normalizedStartBoundary = if ([string]::IsNullOrWhiteSpace($startBoundary)) {
+                ''
+            }
+            else {
+                try {
+                    $parsedStartBoundary = [DateTimeOffset]::Parse(
+                        $startBoundary,
+                        [Globalization.CultureInfo]::InvariantCulture
+                    ).ToUniversalTime()
+                    $futureTolerance = [TimeSpan]::FromMinutes(5)
+                    if (
+                        $null -ne $repetition -and
+                        $parsedStartBoundary -le [DateTimeOffset]::UtcNow.Add($futureTolerance)
+                    ) {
+                        # Repeating tasks remain equivalent after their initial boundary has
+                        # passed. The five-minute future window covers the fixed two/three-
+                        # minute registration lead without accepting a disabled far-future
+                        # schedule as healthy.
+                        '<active-repeating>'
+                    }
+                    else {
+                        $parsedStartBoundary.ToString(
+                            'o',
+                            [Globalization.CultureInfo]::InvariantCulture
+                        )
+                    }
+                }
+                catch {
+                    '<invalid>'
+                }
+            }
             [ordered]@{
-                type = [string]$_.CimClass.CimClassName
-                repetition_interval = if ($null -eq $_.Repetition) { '' } else { [string]$_.Repetition.Interval }
+                type = if ($null -eq $cimClass) { '' } else { [string]$cimClass.CimClassName }
+                id = [string](Get-DynamicProperty -Object $_ -Name 'Id' -Default '')
+                enabled = [bool](Get-DynamicProperty -Object $_ -Name 'Enabled' -Default $true)
+                start_boundary = $normalizedStartBoundary
+                end_boundary = [string](Get-DynamicProperty -Object $_ -Name 'EndBoundary' -Default '')
+                execution_time_limit = [string](Get-DynamicProperty -Object $_ -Name 'ExecutionTimeLimit' -Default '')
+                delay = [string](Get-DynamicProperty -Object $_ -Name 'Delay' -Default '')
+                random_delay = [string](Get-DynamicProperty -Object $_ -Name 'RandomDelay' -Default '')
+                repetition_interval = if ($null -eq $repetition) { '' } else {
+                    [string](Get-DynamicProperty -Object $repetition -Name 'Interval' -Default '')
+                }
+                repetition_duration = if ($null -eq $repetition) { '' } else {
+                    [string](Get-DynamicProperty -Object $repetition -Name 'Duration' -Default '')
+                }
+                repetition_stop_at_duration_end = if ($null -eq $repetition) { $false } else {
+                    [bool](Get-DynamicProperty -Object $repetition -Name 'StopAtDurationEnd' -Default $false)
+                }
             }
-        })
+        } | Sort-Object type, id, enabled, start_boundary, end_boundary, execution_time_limit, delay, random_delay, repetition_interval, repetition_duration, repetition_stop_at_duration_end
+    )
+    $requiredPrivileges = @(
+        Get-DynamicProperty -Object $Principal -Name 'RequiredPrivilege' -Default @() |
+            ForEach-Object { [string]$_ } |
+            Sort-Object
+    )
+    $idleSettings = Get-DynamicProperty -Object $Settings -Name 'IdleSettings' -Default $null
+    $networkSettings = Get-DynamicProperty -Object $Settings -Name 'NetworkSettings' -Default $null
+    $maintenanceSettings = Get-DynamicProperty -Object $Settings -Name 'MaintenanceSettings' -Default $null
+    $fingerprint = [ordered]@{
+        actions = $actionRows
+        triggers = $triggerRows
         principal = [ordered]@{
-            user_id = [string]$Principal.UserId
-            logon_type = [string]$Principal.LogonType
-            run_level = [string]$Principal.RunLevel
+            user_id = [string](Get-DynamicProperty -Object $Principal -Name 'UserId' -Default '')
+            group_id = [string](Get-DynamicProperty -Object $Principal -Name 'GroupId' -Default '')
+            logon_type = [string](Get-DynamicProperty -Object $Principal -Name 'LogonType' -Default '')
+            run_level = [string](Get-DynamicProperty -Object $Principal -Name 'RunLevel' -Default '')
+            process_token_sid_type = [string](Get-DynamicProperty -Object $Principal -Name 'ProcessTokenSidType' -Default '')
+            required_privileges = $requiredPrivileges
         }
         settings = [ordered]@{
-            disallow_start_on_batteries = [bool]$Settings.DisallowStartIfOnBatteries
-            stop_if_going_on_batteries = [bool]$Settings.StopIfGoingOnBatteries
-            start_when_available = [bool]$Settings.StartWhenAvailable
-            multiple_instances = [string]$Settings.MultipleInstances
-            restart_count = [int]$Settings.RestartCount
-            restart_interval = [string]$Settings.RestartInterval
-            execution_time_limit = [string]$Settings.ExecutionTimeLimit
+            multiple_instances = [string](Get-DynamicProperty -Object $Settings -Name 'MultipleInstances' -Default '')
+            compatibility = [string](Get-DynamicProperty -Object $Settings -Name 'Compatibility' -Default '')
+            allow_demand_start = [bool](Get-DynamicProperty -Object $Settings -Name 'AllowDemandStart' -Default $false)
+            allow_hard_terminate = [bool](Get-DynamicProperty -Object $Settings -Name 'AllowHardTerminate' -Default $false)
+            delete_expired_task_after = [string](Get-DynamicProperty -Object $Settings -Name 'DeleteExpiredTaskAfter' -Default '')
+            start_when_available = [bool](Get-DynamicProperty -Object $Settings -Name 'StartWhenAvailable' -Default $false)
+            disallow_start_if_on_batteries = [bool](Get-DynamicProperty -Object $Settings -Name 'DisallowStartIfOnBatteries' -Default $true)
+            stop_if_going_on_batteries = [bool](Get-DynamicProperty -Object $Settings -Name 'StopIfGoingOnBatteries' -Default $true)
+            enabled = [bool](Get-DynamicProperty -Object $Settings -Name 'Enabled' -Default $true)
+            restart_count = [int](Get-DynamicProperty -Object $Settings -Name 'RestartCount' -Default 0)
+            restart_interval = [string](Get-DynamicProperty -Object $Settings -Name 'RestartInterval' -Default '')
+            execution_time_limit = [string](Get-DynamicProperty -Object $Settings -Name 'ExecutionTimeLimit' -Default '')
+            hidden = [bool](Get-DynamicProperty -Object $Settings -Name 'Hidden' -Default $false)
+            priority = [int](Get-DynamicProperty -Object $Settings -Name 'Priority' -Default -1)
+            run_only_if_idle = [bool](Get-DynamicProperty -Object $Settings -Name 'RunOnlyIfIdle' -Default $false)
+            run_only_if_network_available = [bool](Get-DynamicProperty -Object $Settings -Name 'RunOnlyIfNetworkAvailable' -Default $false)
+            wake_to_run = [bool](Get-DynamicProperty -Object $Settings -Name 'WakeToRun' -Default $false)
+            disallow_start_on_remote_app_session = [bool](Get-DynamicProperty -Object $Settings -Name 'DisallowStartOnRemoteAppSession' -Default $false)
+            use_unified_scheduling_engine = [bool](Get-DynamicProperty -Object $Settings -Name 'UseUnifiedSchedulingEngine' -Default $false)
+            volatile = [bool](Get-DynamicProperty -Object $Settings -Name 'Volatile' -Default $false)
+            idle = if ($null -eq $idleSettings) { $null } else {
+                [ordered]@{
+                    duration = [string](Get-DynamicProperty -Object $idleSettings -Name 'IdleDuration' -Default '')
+                    restart_on_idle = [bool](Get-DynamicProperty -Object $idleSettings -Name 'RestartOnIdle' -Default $false)
+                    stop_on_idle_end = [bool](Get-DynamicProperty -Object $idleSettings -Name 'StopOnIdleEnd' -Default $false)
+                    wait_timeout = [string](Get-DynamicProperty -Object $idleSettings -Name 'WaitTimeout' -Default '')
+                }
+            }
+            network = if ($null -eq $networkSettings) { $null } else {
+                [ordered]@{
+                    id = [string](Get-DynamicProperty -Object $networkSettings -Name 'Id' -Default '')
+                    name = [string](Get-DynamicProperty -Object $networkSettings -Name 'Name' -Default '')
+                }
+            }
+            maintenance = if ($null -eq $maintenanceSettings) { $null } else {
+                [ordered]@{
+                    deadline = [string](Get-DynamicProperty -Object $maintenanceSettings -Name 'Deadline' -Default '')
+                    exclusive = [bool](Get-DynamicProperty -Object $maintenanceSettings -Name 'Exclusive' -Default $false)
+                    period = [string](Get-DynamicProperty -Object $maintenanceSettings -Name 'Period' -Default '')
+                }
+            }
         }
     }
-    return ($contract | ConvertTo-Json -Depth 8 -Compress)
+    return ($fingerprint | ConvertTo-Json -Depth 8 -Compress)
 }
 
-function Test-TaskDefinitionMatches {
+function Test-TaskDefinition {
     param(
         [Parameter(Mandatory = $true)]$Task,
         [Parameter(Mandatory = $true)]$Definition
     )
-    $actual = Get-TaskContractJson `
-        -Actions @($Task.Actions) `
-        -Triggers @($Task.Triggers) `
+    if ([string]$Task.Description -ne $TaskDescription) { return $false }
+    $actual = Get-TaskDefinitionFingerprint `
+        -Actions $Task.Actions `
+        -Triggers $Task.Triggers `
         -Principal $Task.Principal `
         -Settings $Task.Settings
-    $expected = Get-TaskContractJson `
+    $expected = Get-TaskDefinitionFingerprint `
         -Actions @($Definition.action) `
         -Triggers @($Definition.triggers) `
         -Principal $Definition.principal `
         -Settings $Definition.settings
     return $actual -ceq $expected
+}
+
+function Register-FixedTask {
+    param(
+        [Parameter(Mandatory = $true)][string]$TaskName,
+        [Parameter(Mandatory = $true)]$Definition
+    )
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $Definition.action `
+        -Trigger $Definition.triggers `
+        -Principal $Definition.principal `
+        -Settings $Definition.settings `
+        -Description $TaskDescription `
+        -Force | Out-Null
 }
 
 function Ensure-Task {
@@ -330,31 +449,16 @@ function Ensure-Task {
             Add-Event -Component $TaskName -Action 'register' -Status 'DRY_RUN' -Detail 'fixed task would be registered'
             return $false
         }
-        Register-ScheduledTask `
-            -TaskName $TaskName `
-            -Action $definition.action `
-            -Trigger $definition.triggers `
-            -Principal $definition.principal `
-            -Settings $definition.settings `
-            -Description 'SZL GPU bridge bounded liveness control plane.' `
-            -Force | Out-Null
+        Register-FixedTask -TaskName $TaskName -Definition $definition
         Add-Event -Component $TaskName -Action 'register' -Status 'APPLIED' -Detail 'fixed task registered from local files'
         return $false
     }
-    if (-not (Test-TaskDefinitionMatches -Task $task -Definition $definition)) {
-        if ($DryRun) {
-            Add-Event -Component $TaskName -Action 'reconcile' -Status 'DRY_RUN' -Detail 'fixed task definition would be reconciled'
-            return $false
+    if (-not (Test-TaskDefinition -Task $task -Definition $definition)) {
+        if (-not $DryRun) {
+            Register-FixedTask -TaskName $TaskName -Definition $definition
         }
-        Register-ScheduledTask `
-            -TaskName $TaskName `
-            -Action $definition.action `
-            -Trigger $definition.triggers `
-            -Principal $definition.principal `
-            -Settings $definition.settings `
-            -Description 'SZL GPU bridge bounded liveness control plane.' `
-            -Force | Out-Null
-        Add-Event -Component $TaskName -Action 'reconcile' -Status 'APPLIED' -Detail 'fixed task definition reconciled'
+        $applied = if ($DryRun) { 'DRY_RUN' } else { 'APPLIED' }
+        Add-Event -Component $TaskName -Action 'reconcile' -Status $applied -Detail 'definition drift replaced from fixed local files'
         return $false
     }
     if ($task.State -eq 'Disabled') {
