@@ -1,0 +1,17 @@
+{
+  "kind": "szl-gpu-bridge/jobspec-DRAFT",
+  "status": "DRAFT-UNREVIEWED — NOT schema-validated against schema/jobspec.v2.json (schema unread at authoring time); NOT signed; MUST NOT be consumed by the bridge until reviewed, conformed, and owner-signed",
+  "signature_state": "UNSIGNED",
+  "created": "2026-09-07",
+  "intent": "Honest retrain of the SZL-Khipu-1.5B-abstain curriculum into a versioned successor artifact; the abstain lineage repo is never overwritten",
+  "base_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "datasets": [
+    {"role": "train", "path": "FILL: pinned curriculum path", "sha256": "FILL: sha256 of the committed curriculum file"},
+    {"role": "heldout_refusals", "path": "FILL: held-out adversarial refusal set path", "sha256": "FILL: sha256"},
+    {"role": "heldout_drafts", "path": "FILL: held-out draft-conformance set path", "sha256": "FILL: sha256"}
+  ],
+  "hyperparameters": {"method": "qlora-sft", "epochs": 2, "batch_size": 4, "lr": 0.0002, "lora": {"r": 16, "alpha": 32, "dropout": 0.0}},
+  "receipts": {"training": "scripts/train_khipu_abstain.py emits training_receipt.unsigned.json; owner signs; eval receipt chains to sha256(signed training canonical)"},
+  "hardware": {"energy": "MEASURED via pynvml or honest UNAVAILABLE — never fabricated"},
+  "doctrine": "v11; Lambda = Conjecture 1 OPEN; fail-closed on any dataset sha mismatch"
+}
