@@ -1,0 +1,48 @@
+{
+  "kind": "szl-gpu-bridge/frontier-sft-v2-DRAFT",
+  "status": "DRAFT-UNREVIEWED — conformed to schema/jobspec.v2.json field set; NOT yet validated by laptop/frontier_contract.py; NOT signed; MUST NOT be consumed by the bridge until reviewed, locally validated, FILLs completed, and owner-signed",
+  "signature_state": "UNSIGNED",
+  "created": "2026-09-14",
+  "supersedes_draft": "jobspecs/drafts/khipu-abstain-retrain-2026-09-07-DRAFT-UNREVIEWED.json",
+  "jobId": "khipu-abstain-retrain-2026-09-14",
+  "createdAt": "2026-09-14T16:05:00Z",
+  "expiresAt": "2026-09-21T16:05:00Z",
+  "intent": "Honest retrain of the SZL-Khipu-1.5B-abstain curriculum into a versioned successor artifact; the abstain lineage repo is never overwritten. Closes the estate's weakest published gate (KHIPU-R2 abstain 3/6).",
+  "base": {
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "FILL: pin base revision sha at signing time"
+  },
+  "dataset": [
+    {"role": "train", "path": "FILL: abstain curriculum train path", "sha256": "FILL: sha256"},
+    {"role": "heldout_refusal", "path": "FILL: held-out adversarial refusal set path", "sha256": "FILL: sha256 — never in gradients"},
+    {"role": "heldout_drafts", "path": "FILL: held-out draft-conformance set path", "sha256": "FILL: sha256 — never in gradients"}
+  ],
+  "recipe": {
+    "method": "qlora-sft",
+    "epochs": 2,
+    "batch_size": 4,
+    "lr": 0.0002,
+    "lora": {"r": 16, "alpha": 32, "dropout": 0.0},
+    "masking": "response-only",
+    "script": "scripts/train_khipu_abstain.py"
+  },
+  "gates": {
+    "jobspec_signature": "unsigned jobspec refused — fail closed",
+    "dataset_preflight": "sha256 verified on every dataset file before training; any mismatch aborts",
+    "heldout_isolation": "held-out refusal and draft-conformance sets never enter gradients",
+    "merge_hardening": "successor merge MUST run through scripts/merge_lora_hardened.py (strict key match + zero-delta assert + merge receipt) per frontier/HF_FRONTIER_DELTA_2026-09-14.md",
+    "energy": "MEASURED via pynvml or honest UNAVAILABLE — never fabricated"
+  },
+  "outputs": {
+    "adapter": "FILL: output adapter path (versioned successor naming)",
+    "merged_checkpoint": "via scripts/merge_lora_hardened.py with merge_receipt.json",
+    "lineage_protection": "never overwrite the abstain lineage repo; publish as successor"
+  },
+  "eval": {
+    "publish_gate": "held-out abstain gate run on the exact merged artifact bytes; adapter-level or training metrics do not satisfy this gate",
+    "receipt_chain": "train_khipu_abstain.py emits training_receipt.unsigned.json; owner signs; eval receipt chains to sha256(signed training canonical)",
+    "publication_eligible": "false until the held-out eval executes after training — no fabricated k/n"
+  },
+  "hardware_target": "owner laptop (RTX 5050, 8GB VRAM); pool nodes may execute only if a11oy-qualified",
+  "doctrine": "v11; Lambda = Conjecture 1 OPEN; fail-closed on any dataset sha mismatch"
+}
