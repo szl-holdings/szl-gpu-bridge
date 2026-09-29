@@ -52,8 +52,74 @@ def render_card(source_sha: str) -> bytes:
     return card.encode("utf-8")
 
 
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def publish(*, api, downloader, operation, source_sha: str, token: str) -> dict:
+    """Commit the card on top of the observed Hub head, then read it back.
+
+    The commit is optimistic (``parent_commit``): a concurrent Hub writer makes
+    it fail instead of being overwritten. Success is only reported after the
+    created revision is resolved again and its README.md bytes equal the
+    rendered card (HF plan D4). Any mismatch raises; nothing is retried.
+    """
+    card = render_card(source_sha)
+    before = api.dataset_info(TARGET, token=token)
+    if not FULL_SHA.fullmatch(str(getattr(before, "sha", ""))):
+        raise RuntimeError("Hub predecessor revision is not an exact 40-hex SHA")
+    commit = api.create_commit(
+        repo_id=TARGET,
+        repo_type="dataset",
+        token=token,
+        parent_commit=before.sha,
+        commit_message=f"Bind receipt card to GitHub {source_sha[:12]}",
+        commit_description=(
+            "Source: https://github.com/szl-holdings/szl-gpu-bridge/commit/"
+            f"{source_sha}\nNo receipt payloads were added, changed, or deleted."
+        ),
+        operations=[
+            operation(path_in_repo="README.md", path_or_fileobj=io.BytesIO(card))
+        ],
+    )
+    revision = str(getattr(commit, "oid", ""))
+    if not FULL_SHA.fullmatch(revision):
+        raise RuntimeError("Hub did not return an exact 40-hex commit id")
+    if revision == before.sha:
+        raise RuntimeError("Hub reported no new revision for the card commit")
+    after = api.dataset_info(TARGET, revision=revision, token=token)
+    if getattr(after, "sha", None) != revision:
+        raise RuntimeError("Hub revision readback does not match the created commit")
+    remote = Path(
+        downloader(
+            repo_id=TARGET,
+            repo_type="dataset",
+            filename="README.md",
+            revision=revision,
+            token=token,
+            force_download=True,
+        )
+    ).read_bytes()
+    if remote != card:
+        raise RuntimeError(
+            "Hub README.md at the created revision differs from the rendered card"
+        )
+    return {
+        "status": "PUBLISHED_AND_READ_BACK",
+        "target": TARGET,
+        "source_revision": source_sha,
+        "previous_hf_revision": before.sha,
+        "hf_revision": revision,
+        "readback": {
+            "revision": revision,
+            "readme_bytes": len(remote),
+            "matches_rendered_card": True,
+        },
+        "receipt_payloads_mutated": False,
+    }
+
+
 def main() -> int:
-    from huggingface_hub import CommitOperationAdd, HfApi
+    from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-sha", required=True)
@@ -62,36 +128,14 @@ def main() -> int:
     if not token:
         raise RuntimeError("HF_TOKEN is required in the approved secret store")
 
-    api = HfApi(token=token)
-    before = api.dataset_info(TARGET, token=token)
-    card = render_card(args.source_sha)
-    commit = api.create_commit(
-        repo_id=TARGET,
-        repo_type="dataset",
+    result = publish(
+        api=HfApi(token=token),
+        downloader=hf_hub_download,
+        operation=CommitOperationAdd,
+        source_sha=args.source_sha,
         token=token,
-        parent_commit=before.sha,
-        commit_message=f"Bind receipt card to GitHub {args.source_sha[:12]}",
-        commit_description=(
-            "Source: https://github.com/szl-holdings/szl-gpu-bridge/commit/"
-            f"{args.source_sha}\nNo receipt payloads were added, changed, or deleted."
-        ),
-        operations=[
-            CommitOperationAdd(path_in_repo="README.md", path_or_fileobj=io.BytesIO(card))
-        ],
     )
-    print(
-        json.dumps(
-            {
-                "status": "PUBLISHED",
-                "target": TARGET,
-                "source_revision": args.source_sha,
-                "previous_hf_revision": before.sha,
-                "hf_revision": commit.oid,
-                "receipt_payloads_mutated": False,
-            },
-            sort_keys=True,
-        )
-    )
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

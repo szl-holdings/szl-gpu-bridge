@@ -16,6 +16,12 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One lock per Hub asset (HF plan D3): a push and a dispatch never write
+    # the card concurrently; a queued run is not cancelled.
+    concurrency:
+      group: hf-write/dataset/SZLHOLDINGS/szl-training-receipts
+      cancel-in-progress: false
     steps:
       - name: Checkout exact protected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
