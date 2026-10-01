@@ -121,7 +121,7 @@ class ContractTests(unittest.TestCase):
         try:
             from nacl.signing import SigningKey
         except ImportError:
-            self.skipTest("PyNaCl not installed")
+            raise unittest.SkipTest("PyNaCl not installed")
         signing_key = SigningKey.generate()
         spki = b"\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00" + bytes(
             signing_key.verify_key
