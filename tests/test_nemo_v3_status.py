@@ -23,7 +23,7 @@ class NemoV3StatusTests(unittest.TestCase):
         try:
             from nacl.signing import SigningKey
         except ImportError as exc:  # pragma: no cover - CI installs PyNaCl
-            self.skipTest(f"PyNaCl unavailable: {exc}")
+            raise unittest.SkipTest(f"PyNaCl unavailable: {exc}")
         self.SigningKey = SigningKey
         self.tmp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.tmp.name)
