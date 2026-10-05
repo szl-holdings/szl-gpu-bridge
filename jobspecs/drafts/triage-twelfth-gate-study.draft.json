@@ -9,23 +9,39 @@
     "Host-side entrypoint: scripts/run_twelfth_gate_v110.ps1 -NoPublish at the pinned szl-typesafe-triage revision; it runs five seeds, the frozen held gate, and the 42-row challenge, then emits local receipts only.",
     "The retired scripts/run_twelfth_gate.sh must never be used: its trainer and 42/42 REVIEW criterion do not match the published study.",
     "Corpus ratified HUMAN_RATIFIED 2026-10-01 16:28 EDT (manifest provenance). The 42 challenge rows are EVAL-ONLY, never trained: the 30 paraphrase gold-label results are reported but not verdict-gated; the 12 steering probes require typed REVIEW refusals.",
-    "BLOCKED SOURCE BINDING: the pinned trainer currently loads floating unsloth/Qwen3.5-0.8B, not the proposed Qwen/Qwen3.5-0.8B revision below; its train_on_responses_only fallback also continues if unavailable. No signature, dispatch, or training is authorized until protected source corrections pin and verify the loader and enforce the declared training boundary."
+    "SOURCE ADMITTED, EXECUTION BLOCKED: independently reviewed szl-typesafe-triage PR #68 was admitted by normal protected signed squash d14b18cf7c07e6ff72abf734008004c3e09022e9. Its exact tree and valid GitHub commit signature were verified. This source signature is not a queue-envelope signature or study execution receipt.",
+    "BLOCKED AUTHORIZATION: offline source tests and source-only preflight passed without a model load, download, inference, training, or GPU job. No job signature, dispatch, training, upload, #44 change, or promotion is authorized. The provider distribution approval map remains empty; existing data/owner decisions, draft revalidation before expiry, qualified hardware/model environment, and a fresh non-expired envelope from the existing owner-approved signing process remain prerequisites."
   ],
   "source": {
     "repoId": "szl-holdings/szl-typesafe-triage",
-    "revision": "6dc063dd1ca28a4fdf5ed6bebdcde7086e3caedd",
+    "revision": "d14b18cf7c07e6ff72abf734008004c3e09022e9",
+    "treeGitSha": "95e682a84720d2743cd81f7fcb01576392063fa5",
+    "status": "ADMITTED_SIGNED_SOURCE_EXECUTION_BLOCKED",
+    "pullRequest": "https://github.com/szl-holdings/szl-typesafe-triage/pull/68",
+    "commitSignature": "GITHUB_VERIFIED_VALID_SOURCE_COMMIT_ONLY",
     "entrypoint": "scripts/run_twelfth_gate_v110.ps1",
-    "entrypointGitBlob": "4125d1e6502a34a5769baef536ee52a632d7493f",
+    "entrypointGitBlob": "56d28f475b9b1f7a74c74dd1ae2d4d6b1c6f4d9b",
     "verdictScript": "scripts/twelfth_gate_v110.py",
-    "verdictScriptGitBlob": "1d0bcb37f05c7e85abcbb606978717291f9ee79e"
+    "verdictScriptGitBlob": "1d663c476cc0ade8d998766edf28c606d13d8889",
+    "contractTest": "tests/test_twelfth_gate_preflight.py",
+    "contractTestGitBlob": "b197ac0f6c76a2bde746dfb3cf98e30d56dcc20d",
+    "runtimeGitBlobs": {
+      "scripts/five_seed_eval.py": "1e98463248bd746d9a4b87e89fc1360274717ee4",
+      "scripts/train_eval_publish.py": "590408b6084bd2b48ec6cfe3d972eda6500a2d0b",
+      "scripts/triage_text.py": "bc6daf3409035c4fae49e46dba8a73bfc1d189b1",
+      "scripts/twelfth_gate_contract.py": "5f9a38df82af5851ed2269b01b4f43ce11fc44f3",
+      "scripts/study_process_guard.py": "e9076ad5a691bd38fe87e9eba0fc19113e5717e4",
+      "scripts/study_windows_job.py": "1133ba4cf49a8167738206c506619f8bc479ca22",
+      "src/szl_triage/study_evidence.py": "a86ff4a29c06bee1cae38119cb7e2c8f974d955e"
+    }
   },
   "base": {
     "repoId": "Qwen/Qwen3.5-0.8B",
     "revision": "2fc06364715b967f1860aea9cf38778875588b17",
-    "status": "PROPOSED_NOT_BOUND_TO_PINNED_TRAINER",
-    "actualTrainerLoader": "unsloth/Qwen3.5-0.8B (floating revision; BLOCKED)",
+    "status": "PINNED_IN_ADMITTED_SOURCE_NOT_DOWNLOADED_OR_RUNTIME_QUALIFIED",
+    "actualTrainerLoader": "Qwen/Qwen3.5-0.8B @ 2fc06364715b967f1860aea9cf38778875588b17 in generated study trainers",
     "licenseId": "apache-2.0",
-    "licenseAcknowledgement": "Proposed Apache-2.0 Qwen3.5-0.8B base only; the current trainer does not load this pinned revision. Adapters remain SZL-governed artifacts under the estate receipt chain.",
+    "licenseAcknowledgement": "Declared Apache-2.0 Qwen3.5-0.8B base, pinned in admitted source only. No model bytes were downloaded or inspected. Adapters remain SZL-governed artifacts under the estate receipt chain.",
     "trustRemoteCode": false
   },
   "dataset": {
@@ -37,6 +53,7 @@
     "augmentationSha256": "47f5ae0cff5c8db929063075eb36885f9bda3c69ec19a5708664c7421a3a5378",
     "challengePath": "policies/redteam_probes.verified.jsonl",
     "challengeSha256": "8746e84319d9649bdcdfb9a0b3995bb90c2e2101fab06bc91c8f8f3d3b038509",
+    "challengeWindowsCheckoutSha256": "847a176f9100858219f4b9fd823276f38800da1dd08d5fa191a6374356f3f905",
     "mergedRowsAssertion": "frozen_train_rows + 50",
     "evaluationOnly": [
       "policies/redteam_probes.verified.jsonl"
@@ -44,7 +61,18 @@
   },
   "recipe": {
     "runner": "scripts/run_twelfth_gate_v110.ps1",
-    "runnerArgs": ["-NoPublish"],
+    "runnerArgs": [
+      "-NoPublish"
+    ],
+    "sourceOnlyPreflightArgs": [
+      "-NoPublish",
+      "-PreflightOnly",
+      "-SkipGpu"
+    ],
+    "hardwarePreflightArgsAfterSourceAdmission": [
+      "-NoPublish",
+      "-PreflightOnly"
+    ],
     "seeds": [
       11,
       23,
@@ -70,7 +98,7 @@
     "gradAccum": 4,
     "learningRate": 0.0002,
     "bf16": true,
-    "trainOnResponsesOnly": "REQUIRED_BUT_NOT_ENFORCED_BY_PINNED_TRAINER",
+    "trainOnResponsesOnly": "REQUIRED_FAIL_CLOSED_IN_ADMITTED_SOURCE",
     "chatTemplate": "qwen"
   },
   "gates": {
@@ -80,8 +108,9 @@
     "proposedHostControls": {
       "maxWallclockMinutes": 180,
       "thermalGuardCelsius": 78,
-      "enforcedByPinnedRunner": false,
-      "qualification": "BLOCKED until separately implemented and verified before any execution"
+      "enforcedByAdmittedRunnerSource": true,
+      "runtimeQualified": false,
+      "qualification": "Source contract and native Windows CPU descendant termination tested offline; real selected-GPU telemetry and the production hardware/model environment remain unqualified. Linux mock tests do not substitute for native Windows or model-quality evidence."
     },
     "failClosed": true
   },
@@ -92,7 +121,7 @@
       "training receipts (loss, corpus sha, seed)",
       "TWELFTH_GATE_VERDICT.json and VERDICT_SUMMARY.txt (local verdict evidence, not a release)"
     ],
-    "publish": "DISABLED: invoke the pinned PowerShell runner only with -NoPublish; no gh pr merge --admin, tag, GitHub release, Hugging Face upload, or promotion is authorized by this draft"
+    "publish": "DISABLED_FAIL_CLOSED_IN_ADMITTED_SOURCE: -NoPublish is mandatory; active gh/git publication and Hugging Face upload paths were removed from this runner. Publication and promotion remain separate unauthorized workflows."
   },
   "eval": {
     "frozenHeld": "evidence/five-seed-study/frozen/held.jsonl",
@@ -100,12 +129,15 @@
     "allMustPass": true
   },
   "authorization": {
-    "status": "DRAFT_BLOCKED_SOURCE_BASE_TRAINING_AND_HOST_CONTROLS",
+    "status": "DRAFT_BLOCKED_PROVIDER_DATA_OWNER_EXPIRY_SIGNING_AND_HARDWARE",
     "executable": false,
     "signingAuthorized": false,
     "dispatchAuthorized": false,
     "uploadAuthorized": false,
     "requiredSignerKeyId": "b8041281c81c4caa",
-    "queueStep": "Do not sign or queue until the pinned source, -NoPublish effect boundary, current base and corpus bytes, hardware preflight, and reviewed bridge specification are separately qualified"
+    "sourceOnlyPreflightCommand": "powershell.exe -NoProfile -File scripts/run_twelfth_gate_v110.ps1 -Python .venv/Scripts/python.exe -NoPublish -PreflightOnly -SkipGpu",
+    "nextHardwarePreflightAfterSourceAdmission": "powershell.exe -NoProfile -File scripts/run_twelfth_gate_v110.ps1 -NoPublish -PreflightOnly",
+    "providerDistributionAdmission": "BLOCKED_EMPTY_APPROVED_SOURCE_DIGEST_MAP",
+    "queueStep": "Do not sign or queue this draft. The source binding is admitted, but execution is not. Obtain reviewed provider distribution source digests through the existing owner process, resolve data/owner decisions, revalidate this draft before expiresAt, qualify the hardware/model environment, and use only the existing owner-approved signer to create a fresh non-expired envelope."
   }
 }
