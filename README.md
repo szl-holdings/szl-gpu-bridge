@@ -1,5 +1,18 @@
 # szl-gpu-bridge
 
+<!-- szl:header v1 -->
+<!-- Native identity: szl-brand@4309f6fce89179331b0b3ed8c99494e76c5be256; Orbit v2 icon. -->
+<p>
+  <a href="https://github.com/szl-holdings">
+    <img src="https://raw.githubusercontent.com/szl-holdings/szl-brand/4309f6fce89179331b0b3ed8c99494e76c5be256/kit/logos/orbit-v2/suite/szl-icon-32.svg" alt="SZL Holdings — Orbit v2" width="32" height="32" />
+  </a>
+</p>
+
+**Control before action. Evidence after.**
+
+[Product](https://a-11-oy.com) · [Proof](https://a11oy.net) · [GitHub organization](https://github.com/szl-holdings)
+<!-- /szl:header -->
+
 **Doctrine-governed training bridge: cloud-signed job specs → owner GPU metal → signed receipts back. No inbound access, no secrets on the wire, fail-closed in both directions.**
 
 This repository is the controlled channel between SZL cloud sessions and the owner’s Windows/NVIDIA training host. The cloud cannot reach the laptop; the laptop polls this repository. Every executable job is DSSE-signed by the pinned SZL engine key. The laptop verifies the exact envelope bytes before reading job fields, then either executes an allowlisted local runner or records a permanent refusal.
