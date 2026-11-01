@@ -268,6 +268,8 @@ jobs:
             echo "- Status: **${status}**"
             echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
             echo "- Reviewed spec: \`${SPEC_PATH}\`"
+            echo '- Scope: this reviewed attempt only; live VM processes and independent training jobs are not observed.'
+            echo '- Receipt discovery: consult receipt_discovery below; receipt.present=false alone does not establish a completed search.'
             echo '- Queue authorization: pinned engine DSSE only'
             echo '- Receipt authorization: enrolled owner-laptop keyId only'
             echo

@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "cloud"))
@@ -153,6 +154,63 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertFalse(report["queue"]["present"])
         self.assertFalse(report["terminal"])
 
+    def test_missing_queue_does_not_search_receipts_or_observe_live_training(
+        self,
+    ) -> None:
+        for now, status in (
+            (self.now, "AWAITING_ENGINE_SIGNATURE"),
+            (
+                datetime(2026, 11, 1, tzinfo=timezone.utc),
+                "EXPIRED_AWAITING_ENGINE_SIGNATURE",
+            ),
+        ):
+            with self.subTest(status=status):
+                loader = Mock()
+                report = nemo_v3_status.evaluate(
+                    root=self.root, receipt_loader=loader, now=now
+                )
+                loader.assert_not_called()
+                self.assertEqual(report["status"], status)
+                self.assertFalse(report["terminal"])
+                self.assertEqual(
+                    report["scope"],
+                    {
+                        "subject": "SINGLE_REVIEWED_GOVERNED_ATTEMPT",
+                        "live_vm_inventory_observed": False,
+                        "independent_training_jobs_observed": False,
+                    },
+                )
+                self.assertEqual(
+                    report["receipt_discovery"],
+                    {
+                        "attempted": False,
+                        "status": "NOT_ATTEMPTED_NO_VALID_QUEUE",
+                        "scope": "SELECTED_JOB_ID_ONLY",
+                    },
+                )
+
+    def test_quarantine_policy_prevents_receipt_discovery(self) -> None:
+        self.enqueue()
+        loader = Mock()
+        with (
+            patch.object(nemo_v3_status, "quarantine_policy", return_value={}),
+            patch.object(
+                nemo_v3_status,
+                "verify_quarantine",
+                return_value=nemo_v3_status.QuarantineEvidence(True, True),
+            ),
+        ):
+            report = nemo_v3_status.evaluate(
+                root=self.root, receipt_loader=loader, now=self.now
+            )
+        loader.assert_not_called()
+        self.assertEqual(report["status"], "QUARANTINED_NEVER_DISPATCH")
+        self.assertFalse(report["receipt_discovery"]["attempted"])
+        self.assertEqual(
+            report["receipt_discovery"]["status"],
+            "NOT_ATTEMPTED_QUARANTINE_POLICY",
+        )
+
     def test_valid_queue_waits_for_gpu_receipt(self) -> None:
         self.enqueue()
         report = nemo_v3_status.evaluate(
@@ -163,6 +221,8 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertEqual(report["status"], "QUEUED_AWAITING_GPU_RECEIPT")
         self.assertTrue(report["queue"]["valid"])
         self.assertEqual(report["queue"]["engine_key_id"], self.engine_key_id)
+        self.assertTrue(report["receipt_discovery"]["attempted"])
+        self.assertEqual(report["receipt_discovery"]["status"], "NOT_FOUND")
 
     def test_keyring_managed_nonlegacy_key_requires_explicit_authorization(
         self,
@@ -200,11 +260,17 @@ class NemoV3StatusTests(unittest.TestCase):
         )
         self.assertEqual(report["status"], "INVALID_QUEUE_ENVELOPE")
         self.assertIn("wrong engine authorization", report["queue"]["error"])
+        self.assertFalse(report["receipt_discovery"]["attempted"])
+        self.assertEqual(
+            report["receipt_discovery"]["status"], "NOT_ATTEMPTED_NO_VALID_QUEUE"
+        )
 
     def test_valid_queue_without_private_receipt_token_fails_closed(self) -> None:
         self.enqueue()
         report = nemo_v3_status.evaluate(root=self.root, now=self.now)
         self.assertEqual(report["status"], "RECEIPT_DISCOVERY_ERROR")
+        self.assertTrue(report["receipt_discovery"]["attempted"])
+        self.assertEqual(report["receipt_discovery"]["status"], "ERROR")
         self.assertIn(
             "HF_TOKEN is required",
             report["receipt"]["error"],
@@ -227,6 +293,8 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertEqual(report["status"], "AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT")
         self.assertEqual(report["receipt"]["observed_key_id"], self.laptop_key_id)
         self.assertFalse(report["receipt"]["valid"])
+        self.assertTrue(report["receipt_discovery"]["attempted"])
+        self.assertEqual(report["receipt_discovery"]["status"], "FOUND")
 
     def test_pinned_all_pass_receipt_qualifies_only_for_separate_review(self) -> None:
         payload_sha = self.enqueue()
