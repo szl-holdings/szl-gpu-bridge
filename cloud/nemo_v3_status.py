@@ -550,16 +550,23 @@ def evaluate(
     loader = receipt_loader or default_receipt_loader
 
     receipt = ReceiptEvidence(False, False)
+    discovery_status = (
+        "NOT_ATTEMPTED_QUARANTINE_POLICY"
+        if policy is not None
+        else "NOT_ATTEMPTED_NO_VALID_QUEUE"
+    )
     if queue.valid and policy is None:
         try:
             loaded = loader(spec, hf_token)
         except Exception as exc:  # noqa: BLE001
+            discovery_status = "ERROR"
             receipt = ReceiptEvidence(
                 False,
                 False,
                 error=f"{type(exc).__name__}: {exc}",
             )
         else:
+            discovery_status = "FOUND" if loaded is not None else "NOT_FOUND"
             if loaded is not None:
                 receipt = verify_receipt(
                     loaded[1],
@@ -605,6 +612,11 @@ def evaluate(
         "job_id": spec["jobId"],
         "status": status,
         "terminal": terminal,
+        "scope": {
+            "subject": "SINGLE_REVIEWED_GOVERNED_ATTEMPT",
+            "live_vm_inventory_observed": False,
+            "independent_training_jobs_observed": False,
+        },
         "reviewed_spec": {
             "path": reviewed_path.relative_to(root.resolve()).as_posix(),
             "sha256": hashlib.sha256(
@@ -619,7 +631,14 @@ def evaluate(
         "queue": asdict(queue),
         "quarantine": asdict(quarantine),
         "receipt": asdict(receipt),
+        "receipt_discovery": {
+            "attempted": queue.valid and policy is None,
+            "status": discovery_status,
+            "scope": "SELECTED_JOB_ID_ONLY",
+        },
         "boundaries": [
+            "This report covers only the selected reviewed jobId; it does not observe live VM processes or independent training jobs.",
+            "receipt.present=false does not establish a completed search; consult receipt_discovery for whether discovery was attempted.",
             "This controller performs no training, signing, queue mutation, candidate upload, publication, deployment, or promotion.",
             "A plaintext reviewed jobspec is not executable; only the pinned engine key can authorize a queue envelope.",
             "A laptop receipt is not trusted until its derived keyId matches the explicitly enrolled owner-host keyId.",

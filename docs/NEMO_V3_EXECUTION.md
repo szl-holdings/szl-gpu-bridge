@@ -183,7 +183,7 @@ for trusted signing and immutable readback.
 
 ## 4. Observe the measured result
 
-The workflow `Nemo v3 Governed Attempt Status` runs every 15 minutes and updates the deterministic issue:
+The workflow `Nemo v3 Governed Attempt Status` runs hourly and updates the deterministic issue:
 
 ```text
 [nemo-v3-attempt] governed single attempt
@@ -191,11 +191,24 @@ The workflow `Nemo v3 Governed Attempt Status` runs every 15 minutes and updates
 
 A green workflow run means the status controller executed and the evidence it found was internally valid. It does **not** mean training ran or passed; the issue status remains the source of truth for the attempt lifecycle.
 
+Each report covers only its selected reviewed `jobId`. Its `scope` explicitly
+records that live VM processes and independent training jobs are not observed.
+An expired historical spec cannot establish whether another training lane is
+running, completed, or stopped.
+
+The additive `receipt_discovery` fields distinguish a skipped lookup from a
+completed lookup. Discovery is not attempted without a valid queue or when a
+quarantine policy applies. `NOT_FOUND` means the selected job's lookup completed
+without a receipt; `FOUND` means one was returned, whose trust is still described
+by `receipt.valid` and the existing status. `ERROR` means discovery failed.
+`receipt.present=false` alone never establishes that discovery was attempted.
+
 Possible honest states:
 
 | State | Meaning |
 |---|---|
 | `AWAITING_ENGINE_SIGNATURE` | Reviewed plaintext spec exists; no executable queue envelope exists. |
+| `EXPIRED_AWAITING_ENGINE_SIGNATURE` | This reviewed spec expired without a queue envelope; live VM training is not observed. |
 | `RECEIPT_DISCOVERY_ERROR` | The controller could not inspect the authoritative private receipt store; it made no receipt-absence claim and failed closed. |
 | `QUEUED_AWAITING_GPU_RECEIPT` | Engine-signed queue is valid; no terminal owner-host receipt is present. |
 | `AWAITING_LAPTOP_RECEIPT_KEY_ENROLLMENT` | Receipt signature is valid but the owner-host key ID has not been pinned. |
