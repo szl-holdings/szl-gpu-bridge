@@ -447,11 +447,20 @@ def verify_receipt(
                 )
             if state == "QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW":
                 evaluation = receipt.get("evaluation") or {}
+                expected_rows = sum(
+                    len(suite["recordIds"]) for suite in spec["dataset"]["holdouts"]
+                )
                 if (
                     evaluation.get("state") != "PASS"
+                    or expected_rows <= 0
+                    or type(evaluation.get("rows")) is not int
+                    or evaluation["rows"] != expected_rows
+                    or type(evaluation.get("passes")) is not int
+                    or evaluation["passes"] != expected_rows
+                    or type(evaluation.get("pass_rate")) not in (int, float)
                     or evaluation.get("pass_rate") != 1.0
+                    or type(evaluation.get("degenerate")) is not int
                     or evaluation.get("degenerate") != 0
-                    or evaluation.get("passes") != evaluation.get("rows")
                     or receipt.get("decision") != "SEPARATE_PROMOTION_REVIEW_REQUIRED"
                 ):
                     raise StatusError(

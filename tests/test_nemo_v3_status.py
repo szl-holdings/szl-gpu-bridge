@@ -337,6 +337,65 @@ class NemoV3StatusTests(unittest.TestCase):
         self.assertEqual(report["status"], "INVALID_TERMINAL_RECEIPT")
         self.assertIn("exact signed queue payload", report["receipt"]["error"])
 
+    def test_qualified_receipt_rejects_invalid_evaluation_counts(self) -> None:
+        payload_sha = self.enqueue()
+        invalid = [
+            {"rows": count, "passes": count}
+            for count in (0, -1, 1, 29, 31, True, 30.0, "30", None, [], {})
+        ]
+        invalid.extend({"degenerate": count} for count in (False, 0.0))
+        invalid.append({"pass_rate": True})
+        for changes in invalid:
+            with self.subTest(changes=changes):
+                signed = self.signed_receipt(
+                    state="QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW",
+                    payload_sha=payload_sha,
+                )
+                signed["receipt"]["evaluation"].update(changes)
+                body = canonicalize(signed["receipt"]).encode("utf-8")
+                signed["bodyBase64"] = base64.b64encode(body).decode()
+                signed["signatureBase64"] = base64.b64encode(
+                    self.laptop.sign(body).signature
+                ).decode()
+                report = nemo_v3_status.evaluate(
+                    root=self.root,
+                    expected_laptop_key_id=self.laptop_key_id,
+                    receipt_loader=lambda _spec, _token: (
+                        f"{self.spec['jobId']}/nemo-v3-qualified.signed.json",
+                        signed,
+                    ),
+                    now=self.now,
+                )
+                self.assertEqual(report["status"], "INVALID_TERMINAL_RECEIPT")
+                self.assertFalse(report["receipt"]["valid"])
+
+    def test_qualified_receipt_rejects_missing_evaluation_counts(self) -> None:
+        payload_sha = self.enqueue()
+        for fields in (("rows",), ("passes",), ("rows", "passes")):
+            with self.subTest(missing=fields):
+                signed = self.signed_receipt(
+                    state="QUALIFIED_FOR_SEPARATE_PROMOTION_REVIEW",
+                    payload_sha=payload_sha,
+                )
+                for field in fields:
+                    del signed["receipt"]["evaluation"][field]
+                body = canonicalize(signed["receipt"]).encode("utf-8")
+                signed["bodyBase64"] = base64.b64encode(body).decode()
+                signed["signatureBase64"] = base64.b64encode(
+                    self.laptop.sign(body).signature
+                ).decode()
+                report = nemo_v3_status.evaluate(
+                    root=self.root,
+                    expected_laptop_key_id=self.laptop_key_id,
+                    receipt_loader=lambda _spec, _token: (
+                        f"{self.spec['jobId']}/nemo-v3-qualified.signed.json",
+                        signed,
+                    ),
+                    now=self.now,
+                )
+                self.assertEqual(report["status"], "INVALID_TERMINAL_RECEIPT")
+                self.assertFalse(report["receipt"]["valid"])
+
     def test_pinned_blocked_receipt_is_an_honest_terminal_failure(self) -> None:
         self.enqueue()
         receipt = {
