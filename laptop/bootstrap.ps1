@@ -142,8 +142,11 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
 # Windows versions excluded. Exact resolved versions are frozen below and their
 # sha256 is embedded in every training receipt.
 & $Pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "pip toolchain upgrade failed" }
 & $Pip install torch --index-url https://download.pytorch.org/whl/cu124
+if ($LASTEXITCODE -ne 0) { throw "CUDA torch installation failed" }
 & $Pip install "triton-windows" "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0" xformers
+if ($LASTEXITCODE -ne 0) { throw "Windows GPU support installation failed" }
 & $Pip install `
   "unsloth==2026.7.4" `
   "huggingface_hub[cli]==1.24.0" `
@@ -152,8 +155,29 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
   "trl==0.24.0" `
   "peft==0.19.1"
 if ($LASTEXITCODE -ne 0) { throw "training dependency installation failed" }
-& $Pip freeze --all | Set-Content -Path "$Root\stack-freeze.txt" -Encoding utf8
-$StackSha = (Get-FileHash "$Root\stack-freeze.txt" -Algorithm SHA256).Hash.ToLower()
+# Keep the last valid snapshot intact until freeze and hashing both succeed.
+# Stage on the same volume so publication replaces the destination atomically.
+$StackSnapshot = Join-Path $Root "stack-freeze.txt"
+$StackStaged = Join-Path $Root ("stack-freeze-" + [guid]::NewGuid() + ".tmp")
+try {
+  & $Pip freeze --all | Set-Content -LiteralPath $StackStaged -Encoding utf8
+  if ($LASTEXITCODE -ne 0) { throw "training dependency snapshot failed" }
+  $StackSha = (Get-FileHash -LiteralPath $StackStaged -Algorithm SHA256).Hash.ToLower()
+  if (Test-Path -LiteralPath $StackSnapshot) {
+    # PowerShell binds $null to an empty string for .NET string parameters.
+    # Pass a real null backup path so successful reruns can replace the file.
+    [IO.File]::Replace(
+      $StackStaged, $StackSnapshot,
+      [System.Management.Automation.Language.NullString]::Value
+    )
+  } else {
+    [IO.File]::Move($StackStaged, $StackSnapshot)
+  }
+} finally {
+  if (Test-Path -LiteralPath $StackStaged) {
+    Remove-Item -LiteralPath $StackStaged -Force
+  }
+}
 Write-Host "training stack ready; exact package snapshot sha256 $StackSha"
 
 # hf auth: reuse the laptop's existing login (the proven upload path).

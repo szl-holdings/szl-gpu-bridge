@@ -114,6 +114,10 @@ jobs:
             }
           }
 
+      - name: Verify dependency installation fails closed
+        shell: powershell
+        run: .\tests\test_bootstrap_dependency_failures.ps1
+
       - name: Require bounded local authority and redundant liveness
         shell: powershell
         run: |
