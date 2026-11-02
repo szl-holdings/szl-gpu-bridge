@@ -142,8 +142,11 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
 # Windows versions excluded. Exact resolved versions are frozen below and their
 # sha256 is embedded in every training receipt.
 & $Pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "pip toolchain upgrade failed" }
 & $Pip install torch --index-url https://download.pytorch.org/whl/cu124
+if ($LASTEXITCODE -ne 0) { throw "CUDA torch installation failed" }
 & $Pip install "triton-windows" "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0" xformers
+if ($LASTEXITCODE -ne 0) { throw "Windows GPU support installation failed" }
 & $Pip install `
   "unsloth==2026.7.4" `
   "huggingface_hub[cli]==1.24.0" `
@@ -153,6 +156,7 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
   "peft==0.19.1"
 if ($LASTEXITCODE -ne 0) { throw "training dependency installation failed" }
 & $Pip freeze --all | Set-Content -Path "$Root\stack-freeze.txt" -Encoding utf8
+if ($LASTEXITCODE -ne 0) { throw "training dependency snapshot failed" }
 $StackSha = (Get-FileHash "$Root\stack-freeze.txt" -Algorithm SHA256).Hash.ToLower()
 Write-Host "training stack ready; exact package snapshot sha256 $StackSha"
 
