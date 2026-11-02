@@ -12,6 +12,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
@@ -70,6 +71,69 @@ def write_json(path: pathlib.Path, value: Any) -> None:
     )
 
 
+def write_new_json(path: pathlib.Path, value: Any) -> None:
+    """Publish complete JSON atomically without replacing an existing path.
+
+    Receipt intents are one-time evidence.  Writing the final path directly can
+    leave a truncated file after interruption, while ``write_text`` also lets a
+    retry replace earlier evidence.  An exclusive publication lock plus a fully
+    flushed temporary file makes the final name appear only after the complete
+    file bytes are flushed and refuses any existing path, including a symlink.
+    This does not claim that the containing-directory entry survives power loss;
+    that requires filesystem-specific directory-sync evidence.  A crash can
+    leave a stale lock, which intentionally requires operator review instead of
+    guessing whether a second intent should replace the first.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    lock = path.with_name(f".{path.name}.lock")
+    lock_created = False
+    try:
+        try:
+            lock.mkdir()
+            lock_created = True
+        except FileExistsError as exc:
+            raise RuntimeError(f"immutable JSON publication is locked: {path}") from exc
+        if os.path.lexists(path):
+            raise RuntimeError(f"immutable JSON already exists: {path}")
+
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temporary = pathlib.Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            try:
+                if os.name == "nt":
+                    # Windows rename is atomic and refuses an existing target.
+                    os.rename(temporary, path)
+                else:
+                    # POSIX rename replaces its target; an exclusive hard link
+                    # publishes the complete inode without overwrite instead.
+                    os.link(temporary, path)
+            except FileExistsError as exc:
+                raise RuntimeError(f"immutable JSON already exists: {path}") from exc
+            except OSError as exc:
+                raise RuntimeError(
+                    "filesystem cannot publish immutable JSON without overwrite: "
+                    f"{path}"
+                ) from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            temporary.unlink(missing_ok=True)
+    finally:
+        if lock_created and lock.is_dir():
+            lock.rmdir()
+
+
 def deliver_receipt(receipt: dict[str, Any], name: str, spec: dict[str, Any]) -> int:
     """Finalize normally, or emit an unsigned intent for an isolated executor."""
     transport = os.environ.get(RECEIPT_TRANSPORT_ENV, "").strip()
@@ -83,7 +147,7 @@ def deliver_receipt(receipt: dict[str, Any], name: str, spec: dict[str, Any]) ->
             "receipt": receipt,
             "transport": UNSIGNED_OUTBOX_TRANSPORT,
         }
-        write_json(
+        write_new_json(
             ROOT / "jobs" / spec["jobId"] / "receipt-outbox" / intent_name,
             intent,
         )
