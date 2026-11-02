@@ -52,6 +52,39 @@ test('v2 requires pinned license and chat-template evidence', () => {
   assert.throws(() => validateSpec(noTemplate), /expectedChatTemplateSha256/);
 });
 
+test('v2 timestamps require the shared RFC 3339 grammar', () => {
+  const invalid = [
+    '2026-07-21T00:00:00',
+    '2026-07-21Z',
+    'Tue, 21 Jul 2026 00:00:00 Z',
+    '2026-07-21T24:00:00Z',
+    '2026-02-30T00:00:00Z',
+    '2026-07-21X00:00:00+00:00',
+    '2026-07-21T00:00:00,5+00:00',
+    '2026-07-21T00:00:00+00:60',
+    '2026-07-21T00:00:00+05',
+    '2026-07-21T00:00:00+0500',
+    '2026-07-21T00:00:00+05:00:30',
+  ];
+  for (const value of invalid) {
+    const spec = v2();
+    spec.createdAt = value;
+    assert.throws(() => validateSpec(spec), /createdAt.*RFC 3339/);
+  }
+
+  const offset = v2();
+  offset.createdAt = '2026-07-21T00:00:00.123456-05:00';
+  offset.expiresAt = '2026-07-22T00:00:00+02:00';
+  assert.equal(validateSpec(offset), PAYLOAD_TYPES['unsloth-frontier-sft-v2']);
+
+  const microseconds = v2();
+  microseconds.createdAt = '2026-07-21T00:00:00.000001Z';
+  microseconds.expiresAt = '2026-07-21T00:00:00.000002Z';
+  assert.equal(validateSpec(microseconds), PAYLOAD_TYPES['unsloth-frontier-sft-v2']);
+  [microseconds.createdAt, microseconds.expiresAt] = [microseconds.expiresAt, microseconds.createdAt];
+  assert.throws(() => validateSpec(microseconds), /after createdAt/);
+});
+
 test('canonical JSON and PAE are deterministic', () => {
   const body = Buffer.from(canonicalize({ z: 1, a: ['x', true] }));
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');

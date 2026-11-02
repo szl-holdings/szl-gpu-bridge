@@ -27,6 +27,7 @@ const REPO_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const REVISION = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const JOB_ID = /^job-[0-9]{4}-[a-z0-9][a-z0-9-]{2,80}$/;
+const RFC3339_TIMESTAMP = /^(?<year>[1-9]\d{3})-(?<month>0[1-9]|1[0-2])-(?<day>0[1-9]|[12]\d|3[01])T(?<hour>[01]\d|2[0-3]):(?<minute>[0-5]\d):(?<second>[0-5]\d)(?:\.(?<fraction>\d{1,6}))?(?<zone>Z|(?<zoneSign>[+-])(?<zoneHour>[01]\d|2[0-3]):(?<zoneMinute>[0-5]\d))$/;
 const QUANTS = new Set(['q4_k_m', 'q5_k_m', 'q6_k', 'q8_0', 'f16']);
 
 export function canonicalize(value) {
@@ -63,15 +64,49 @@ function requireRevision(value, name) {
   if (typeof value !== 'string' || !REVISION.test(value)) throw new Error(`${name} must be an immutable lowercase hex revision`);
 }
 
-function validateCommon(spec) {
+function requireRfc3339Timestamp(value, name) {
+  const match = typeof value === 'string' ? RFC3339_TIMESTAMP.exec(value) : null;
+  if (!match) throw new Error(`${name} must be RFC 3339 with Z or an explicit UTC offset`);
+  const {
+    year, month, day, hour, minute, second, fraction,
+    zone, zoneSign, zoneHour, zoneMinute,
+  } = match.groups;
+  const local = new Date(Date.UTC(
+    Number(year), Number(month) - 1, Number(day),
+    Number(hour), Number(minute), Number(second),
+  ));
+  if (
+    local.getUTCFullYear() !== Number(year)
+    || local.getUTCMonth() !== Number(month) - 1
+    || local.getUTCDate() !== Number(day)
+    || local.getUTCHours() !== Number(hour)
+    || local.getUTCMinutes() !== Number(minute)
+    || local.getUTCSeconds() !== Number(second)
+  ) {
+    throw new Error(`${name} must be a valid RFC 3339 timestamp`);
+  }
+  const fractionMicroseconds = BigInt((fraction ?? '').padEnd(6, '0') || '0');
+  const offsetMinutes = zone === 'Z'
+    ? 0
+    : (zoneSign === '+' ? 1 : -1) * (Number(zoneHour) * 60 + Number(zoneMinute));
+  return (
+    BigInt(local.getTime()) * 1000n
+    + fractionMicroseconds
+    - BigInt(offsetMinutes) * 60n * 1000000n
+  );
+}
+
+function validateCommon(spec, parseTimestamp = (value) => new Date(value).getTime()) {
   requireObject(spec, 'spec');
   if (!JOB_ID.test(spec.jobId ?? '')) throw new Error('bad jobId');
   for (const key of ['base', 'dataset', 'recipe', 'gates', 'outputs', 'eval', 'expiresAt', 'createdAt']) {
     if (!(key in spec)) throw new Error(`missing ${key}`);
   }
-  const created = new Date(spec.createdAt).getTime();
-  const expires = new Date(spec.expiresAt).getTime();
-  if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= created) {
+  const created = parseTimestamp(spec.createdAt, 'createdAt');
+  const expires = parseTimestamp(spec.expiresAt, 'expiresAt');
+  const createdIsFinite = typeof created === 'bigint' || Number.isFinite(created);
+  const expiresIsFinite = typeof expires === 'bigint' || Number.isFinite(expires);
+  if (!createdIsFinite || !expiresIsFinite || expires <= created) {
     throw new Error('expiresAt must be a valid date after createdAt');
   }
   requireObject(spec.base, 'base');
@@ -92,7 +127,7 @@ function validateV1(spec) {
 }
 
 function validateV2(spec) {
-  validateCommon(spec);
+  validateCommon(spec, requireRfc3339Timestamp);
   if (spec.kind !== 'unsloth-frontier-sft-v2') throw new Error('unknown v2 kind');
   if (typeof spec.base.licenseId !== 'string' || !spec.base.licenseId.trim()) throw new Error('base.licenseId required');
   if (typeof spec.dataset.licenseId !== 'string' || !spec.dataset.licenseId.trim()) throw new Error('dataset.licenseId required');
