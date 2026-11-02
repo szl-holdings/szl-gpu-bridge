@@ -164,7 +164,12 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "training dependency snapshot failed" }
   $StackSha = (Get-FileHash -LiteralPath $StackStaged -Algorithm SHA256).Hash.ToLower()
   if (Test-Path -LiteralPath $StackSnapshot) {
-    [IO.File]::Replace($StackStaged, $StackSnapshot, $null)
+    # PowerShell binds $null to an empty string for .NET string parameters.
+    # Pass a real null backup path so successful reruns can replace the file.
+    [IO.File]::Replace(
+      $StackStaged, $StackSnapshot,
+      [System.Management.Automation.Language.NullString]::Value
+    )
   } else {
     [IO.File]::Move($StackStaged, $StackSnapshot)
   }

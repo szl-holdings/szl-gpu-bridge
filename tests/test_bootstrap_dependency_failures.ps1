@@ -37,6 +37,7 @@ function Test-InstallCase(
   $script:failureAt = $FailureAt
   $script:partialFreeze = $PartialFreeze
   $script:nativeCalls = @()
+  $caseLabel = "dependency call $FailureAt (existing snapshot=$HasSnapshot; partial freeze=$PartialFreeze)"
   $Root = Join-Path ([IO.Path]::GetTempPath()) ("szl-bootstrap-test-" + [guid]::NewGuid())
   $Pip = "Invoke-BootstrapPipFixture"
   New-Item -ItemType Directory -Path $Root | Out-Null
@@ -57,7 +58,7 @@ function Test-InstallCase(
     }
     $expectedFailure = $FailureAt -ge 0
     if ($failed -ne $expectedFailure) {
-      throw "dependency call $FailureAt failure was not preserved"
+      throw "$caseLabel failure was not preserved: $failureMessage"
     }
     $expectedMessages = @(
       "pip toolchain upgrade failed",
@@ -67,7 +68,7 @@ function Test-InstallCase(
       "training dependency snapshot failed"
     )
     if ($expectedFailure -and ($failureMessage -ne $expectedMessages[$FailureAt])) {
-      throw "dependency call $FailureAt raised an unexpected failure: $failureMessage"
+      throw "$caseLabel raised an unexpected failure: $failureMessage"
     }
     $expectedCalls = 5
     if ($expectedFailure) { $expectedCalls = $FailureAt + 1 }
