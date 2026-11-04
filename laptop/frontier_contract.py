@@ -39,6 +39,11 @@ _REVISION = re.compile(r"^[0-9a-f]{40,64}$")
 _ENGINE_KEY_ID = re.compile(r"^[0-9a-f]{16}$")
 _PIN_FILE = re.compile(r"^engine_pubkey(?:_[0-9a-f]{16})?\.json$")
 _SAFE_RELATIVE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_./-]*$")
+_RFC3339_TIMESTAMP = re.compile(
+    r"^[1-9]\d{3}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])"
+    r"T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?"
+    r"(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$"
+)
 _ALLOWED_QUANTS = {"q4_k_m", "q5_k_m", "q6_k", "q8_0", "f16"}
 
 
@@ -227,12 +232,15 @@ def _required_object(
 
 
 def _iso8601(value: Any, field: str) -> datetime:
-    if not isinstance(value, str):
-        raise ContractError(f"{field} must be an ISO-8601 string")
+    if not isinstance(value, str) or not _RFC3339_TIMESTAMP.fullmatch(value):
+        raise ContractError(
+            f"{field} must be RFC 3339 with Z or an explicit UTC offset"
+        )
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as exc:
-        raise ContractError(f"{field} is not valid ISO-8601: {value!r}") from exc
+        raise ContractError(f"{field} is not valid RFC 3339: {value!r}") from exc
+    return parsed
 
 
 def _repo_id(value: Any, field: str) -> str:

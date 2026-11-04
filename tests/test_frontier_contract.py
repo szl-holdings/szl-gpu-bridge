@@ -117,6 +117,40 @@ class ContractTests(unittest.TestCase):
         spec = valid_spec()
         self.assertIs(validate_v2_spec(spec), spec)
 
+    def test_timestamps_require_the_shared_rfc3339_grammar(self):
+        invalid = (
+            "2026-07-21T00:00:00",
+            "2026-07-21Z",
+            "Tue, 21 Jul 2026 00:00:00 Z",
+            "2026-07-21T24:00:00Z",
+            "2026-02-30T00:00:00Z",
+            "2026-07-21X00:00:00+00:00",
+            "2026-07-21T00:00:00,5+00:00",
+            "2026-07-21T00:00:00+00:60",
+            "2026-07-21T00:00:00+05",
+            "2026-07-21T00:00:00+0500",
+            "2026-07-21T00:00:00+05:00:30",
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                spec = valid_spec()
+                spec["createdAt"] = value
+                with self.assertRaisesRegex(ContractError, r"createdAt.*RFC 3339"):
+                    validate_v2_spec(spec)
+
+    def test_explicit_time_zone_offsets_are_accepted(self):
+        spec = valid_spec()
+        spec["createdAt"] = "2026-07-21T00:00:00.123456-05:00"
+        spec["expiresAt"] = "2026-07-22T00:00:00+02:00"
+        self.assertIs(validate_v2_spec(spec), spec)
+
+        spec["createdAt"] = "2026-07-21T00:00:00.000001Z"
+        spec["expiresAt"] = "2026-07-21T00:00:00.000002Z"
+        self.assertIs(validate_v2_spec(spec), spec)
+        spec["createdAt"], spec["expiresAt"] = spec["expiresAt"], spec["createdAt"]
+        with self.assertRaisesRegex(ContractError, "later than createdAt"):
+            validate_v2_spec(spec)
+
     def test_dsse_exact_bytes_verify_and_tamper_rejects(self):
         try:
             from nacl.signing import SigningKey
