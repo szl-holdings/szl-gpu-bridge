@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl-gpu-bridge"
+version = "0.1.0"
+description = "Doctrine-governed training bridge: DSSE-signed job specs → owner GPU metal → signed receipts back. Fail-closed both directions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Stephen Lutar", email = "stephen@szlholdings.com" }]
+dependencies = ["PyNaCl==1.6.2", "accelerate==1.15.0", "cryptography==50.0.1", "datasets==5.0.1", "huggingface-hub==1.19.0", "peft==0.21.0", "nvidia-ml-py==13.615.71", "torch>=2.4", "transformers==5.17.0", "trl==1.14.0"]
+
+[project.urls]
+Homepage = "https://huggingface.co/datasets/SZLHOLDINGS/szl-quant-sft-v1"
+Repository = "https://github.com/szl-holdings/szl-gpu-bridge"
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+# Formatter/linter defaults are intentionally NOT overridden: ci.yml runs `ruff format --check`
+# against the existing code, which is formatted with ruff defaults (line-length 88).
+extend-exclude = ["build", "dist", ".venv", "node_modules"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"

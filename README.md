@@ -368,3 +368,5 @@ If Hub authentication or `llama-cli` is unavailable, affected jobs do not silent
 | `docs/RESEARCH_MEMO.md` | leader study and adaptation record |
 
 Apache-2.0. Adapted public patterns are attributed in `NOTICE`; copyleft subtrees are not vendored into this repository.
+
+Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
