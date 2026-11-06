@@ -1,0 +1,8 @@
+# Verification-only dependencies for the "Nemo v3 Governed Attempt Status"
+# controller (.github/workflows/nemo-v3-attempt-status.yml). Exact top-level
+# pins; the hashed lock is requirements/ci/nemo-status.txt. Regenerate with:
+#   uv pip compile --generate-hashes --python-version 3.12 \
+#     --python-platform x86_64-unknown-linux-gnu \
+#     requirements/ci/nemo-status.in -o requirements/ci/nemo-status.txt
+PyNaCl==1.6.2
+huggingface_hub==1.19.0

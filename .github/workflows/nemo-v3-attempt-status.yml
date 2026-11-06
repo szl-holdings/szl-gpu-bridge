@@ -115,7 +115,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: nemo-v3-governed-attempt-status
@@ -131,6 +130,11 @@ jobs:
     name: Verify reviewed spec, signed queue, and terminal receipt
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # issues: write is scoped to this job: it edits, opens, closes, or reopens
+    # the single status issue for its attempt.
+    permissions:
+      contents: read
+      issues: write
     strategy:
       fail-fast: false
       matrix:
@@ -188,11 +192,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install verification-only dependencies
+        # Hash-locked: requirements/ci/nemo-status.in -> nemo-status.txt (uv pip compile --generate-hashes).
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check \
-            'PyNaCl==1.6.2' \
-            'huggingface_hub==1.19.0'
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements/ci/nemo-status.txt
 
       - name: Compile and run fail-closed contract tests
         run: |
