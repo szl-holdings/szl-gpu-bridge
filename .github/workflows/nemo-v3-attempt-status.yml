@@ -290,11 +290,14 @@ jobs:
               --title "$REPORT_TITLE" --body-file /tmp/nemo-v3-status.md)"
             issue="${issue_url##*/}"
           fi
+          # gh exits 0 with "already closed/open" when the issue is already in
+          # the target state, so any non-zero exit here is a real API failure
+          # and must fail the run instead of leaving the issue state stale.
           if [ "$terminal" = 'true' ]; then
             gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --reason completed \
-              --comment "The single governed attempt reached terminal state ${status}. This is not a release or deployment claim." || true
+              --comment "The single governed attempt reached terminal state ${status}. This is not a release or deployment claim."
           else
-            gh issue reopen "$issue" --repo "$GITHUB_REPOSITORY" || true
+            gh issue reopen "$issue" --repo "$GITHUB_REPOSITORY"
           fi
 
       - name: Enforce evidence integrity
