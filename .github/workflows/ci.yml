@@ -116,6 +116,22 @@ jobs:
         shell: powershell
         run: .\tests\test_bootstrap_dependency_failures.ps1
 
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # The two behavioral watchdog tests need Windows PowerShell 5.1 and are
+      # skipped on the Linux job, so they must execute here. A skip on this
+      # Windows runner is treated as a failure, never as a pass.
+      - name: Run Windows-only watchdog behavioral tests
+        shell: pwsh
+        run: |
+          $output = python -m unittest discover -s tests -p 'test_windows_watchdog_contract.py' -v 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Write-Output $output
+          if ($code -ne 0) { throw "watchdog contract tests failed with exit code $code" }
+          if ($output -match '(?m)\bskipped\b') { throw 'a Windows-only watchdog test was skipped on the Windows runner' }
+
       - name: Require bounded local authority and redundant liveness
         shell: powershell
         run: |
