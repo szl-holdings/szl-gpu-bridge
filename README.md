@@ -361,7 +361,7 @@ with the hash-locked verifier toolchain, plus Node.js for the signer tests.
 
 ```bash
 VENV="${TMPDIR:-/tmp}/szl-gpu-bridge-venv"
-uv venv "$VENV" --python 3.12
+uv venv --clear "$VENV" --python 3.12
 uv pip install --python "$VENV/bin/python" --require-hashes -r requirements/ci/contract.txt
 "$VENV/bin/python" -m py_compile laptop/*.py tests/*.py
 "$VENV/bin/ruff" format --check laptop tests
