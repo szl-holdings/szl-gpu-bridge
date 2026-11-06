@@ -5,4 +5,4 @@
 #     --python-platform x86_64-unknown-linux-gnu \
 #     requirements/ci/nemo-status.in -o requirements/ci/nemo-status.txt
 PyNaCl==1.6.2
-huggingface_hub==1.19.0
+huggingface_hub==2.4.0
