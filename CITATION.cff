@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from this file.
+type: software
+title: szl-holdings/szl-gpu-bridge — Doctrine-governed training bridge
+version: 0.1.0
+date-released: '2026-11-05'
+license: Apache-2.0
+url: https://huggingface.co/datasets/SZLHOLDINGS/szl-quant-sft-v1
+repository-code: https://github.com/szl-holdings/szl-gpu-bridge
+authors:
+- family-names: Lutar
+  given-names: Stephen P.
+  name-suffix: Jr.
+  orcid: https://orcid.org/0009-0001-0110-4173
+  affiliation: SZL Holdings
+keywords:
+- ml-infrastructure
+- szl-holdings
+- python
+- dsse
+- training
+- receipts
+- governed-ai
