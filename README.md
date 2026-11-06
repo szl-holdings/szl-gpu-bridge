@@ -261,14 +261,23 @@ cloud/verify-receipt.mjs ◄─────────────────�
   `de8e70374257f6df4baeeb7d7ce629cc9d8a8adeb0236be638e5eb239eb3c7b8`;
   its signer-canonical payload SHA-256 is
   `3aa118904933b0c5020cd21da1fc42531545a96f758d08ece3151e246255503c`.
-  No attempt-17 queue envelope exists in this phase: the status is
-  `AWAITING_ENGINE_SIGNATURE`, not dispatched or operational.
+  No attempt-17 queue envelope exists. Its reviewed `expiresAt`
+  (`2026-08-15T17:05:00Z`) passed without an engine signature, so the hourly
+  status controller now reports `EXPIRED_AWAITING_ENGINE_SIGNATURE`
+  (non-terminal; tracked in issue #93). Nothing was dispatched and nothing is
+  operational.
   The cloud trusts the separately announced laptop receipt key. An
   unverifiable claim is treated as no claim.
 - **Remote-code isolation:** a signed job with `trustRemoteCode=true` cannot use the
   ordinary host lane. Authenticated prefetch, networkless GPU execution, and trusted
   signing/upload are separate processes; the execution sandbox receives neither a
   credential nor a signing key.
+- **Watchdog install lane:** `.github/workflows/windows-watchdog-install.yml` is
+  the only workflow in this repository that targets an owner
+  `[self-hosted, Windows, X64]` runner. No runner has picked up any of its five
+  runs to date (2026-09-04 through 2026-10-13); each was cancelled at GitHub's
+  24-hour queue limit, so no machine-executed owner-node watchdog proof exists
+  yet. The polling bridge does not depend on that runner.
 
 ## Frontier training contract v2
 
@@ -344,27 +353,92 @@ If Hub authentication or `llama-cli` is unavailable, affected jobs do not silent
 - Existing v1 historical claims remain labeled according to their original receipt contract.
 - Advisory research infrastructure; not financial advice.
 
+## Verify locally
+
+The contract suite needs no GPU, no Hugging Face credential, and no access to
+the owner host. These commands mirror `.github/workflows/ci.yml`: Python 3.12
+with the hash-locked verifier toolchain, plus Node.js for the signer tests.
+
+```bash
+VENV="${TMPDIR:-/tmp}/szl-gpu-bridge-venv"
+uv venv "$VENV" --python 3.12
+uv pip install --python "$VENV/bin/python" --require-hashes -r requirements/ci/contract.txt
+"$VENV/bin/python" -m py_compile laptop/*.py tests/*.py
+"$VENV/bin/ruff" format --check laptop tests
+"$VENV/bin/ruff" check laptop tests
+"$VENV/bin/python" -m unittest discover -s tests -v
+node --test tests/test_cloud_contract.mjs tests/test_cloud_nemo_v3.mjs tests/test_materialize_frontier_spec.mjs
+```
+
+The virtual environment and reports stay outside the checkout on purpose: the
+owner-host launcher treats any untracked, non-ignored file in an envelope
+checkout as dirty.
+
+Five Python tests skip off-host by design, each with a stated reason: three
+probe the pinned immutable GPU image and run only when the owner host sets
+`SZL_PINNED_IMAGE_PROBE`, `SZL_PINNED_META_PROBE`, or
+`SZL_PINNED_CONVERSATION_PROBE` to `1`; two exercise watchdog functions in
+Windows PowerShell 5.1. CI runs that Windows pair on `windows-2022` and fails
+if they skip there. Passing CI is contract evidence only, not a GPU run.
+
+To evaluate one reviewed attempt the way the hourly status controller does (it
+performs no training, signing, queue mutation, or publication; it writes only
+the report file):
+
+```bash
+"$VENV/bin/python" cloud/nemo_v3_status.py \
+  --spec jobspecs/nemo-v3-20260801-attempt-17-reviewed.json \
+  --report "${TMPDIR:-/tmp}/attempt-17-status.json"
+```
+
+## Links
+
+- Source of truth: [`szl-holdings/szl-gpu-bridge`](https://github.com/szl-holdings/szl-gpu-bridge)
+- Receipt store (private): [`SZLHOLDINGS/szl-training-receipts`](https://huggingface.co/datasets/SZLHOLDINGS/szl-training-receipts).
+  Its card is rendered from `hf/szl-training-receipts/README.md` and published,
+  bound to the exact source commit, by `.github/workflows/hf-training-receipts-card.yml`.
+- v1 training input: [`SZLHOLDINGS/szl-quant-sft-v1`](https://huggingface.co/datasets/SZLHOLDINGS/szl-quant-sft-v1),
+  pinned by revision in `queue/pending/job-0001-szl-quant-1p5b.json`.
+
 ## Repository map
 
 | path | responsibility |
 |---|---|
 | `schema/jobspec.v1.json` | legacy signed SFT contract |
-| `schema/jobspec.v2.json` | governed frontier training/release contract |
+| `schema/jobspec.v2.json` | governed frontier training/release contract; its release law is enforced by `laptop/frontier_contract.py` |
+| `schema/nemo-v3-jobspec.v1.json` | single-attempt governed Nemo v3 contract |
 | `cloud/materialize-frontier-spec.mjs` | resolve exact Hub inputs, licenses, template, and dataset digest |
 | `cloud/sign-job.mjs` | validate and DSSE-sign v1/v2 specs |
+| `cloud/sign-nemo-v3-job.mjs` | validate and DSSE-sign one reviewed Nemo v3 job into `queue/pending/` |
 | `cloud/verify-receipt.mjs` | independently verify signed receipt chains |
+| `cloud/nemo_v3_status.py` | read-only status controller for one reviewed Nemo v3 attempt |
+| `cloud/sync_training_receipts_card.py` | render, publish, and read back the receipt-store dataset card |
 | `laptop/bootstrap.ps1` | install, pin, compile, and register the polling service |
 | `laptop/daemon.ps1` | single-flight poll and ledger loop |
 | `laptop/dispatcher.py` | verify envelope, validate contract, select allowlisted runner |
 | `laptop/runjob.py` | legacy v1 runner |
 | `laptop/runjob_frontier.py` | v2 train/evaluate/export/reload/publish runner |
-| `laptop/prefetch_nemo_v3.py` | verify and cache exact Nemo inputs without executing repository code |
-| `laptop/run_nemo_v3_isolated.ps1` | launch the digest-pinned, networkless, keyless GPU sandbox |
-| `laptop/finalize_nemo_v3_receipt.py` | validate, sign, upload, and immutably read back one fresh receipt intent |
+| `laptop/frontier_job.py` | execution helpers for the v2 runner |
 | `laptop/frontier_contract.py` | pure verify-first contract enforcement |
 | `laptop/frontier_runtime.py` | evidence, dataset, artifact, and model-card helpers |
-| `docs/FRONTIER_TRAINING_V2.md` | v2 architecture and release law |
+| `laptop/nemo_v3_contract.py` | dependency-free verify-first Nemo v3 contract |
+| `laptop/prefetch_nemo_v3.py` | verify and cache exact Nemo inputs without executing repository code |
+| `laptop/run_nemo_v3_isolated.ps1` | launch the digest-pinned, networkless, keyless GPU sandbox |
+| `laptop/runjob_nemo_v3.py` | execute one signed Nemo v3 attempt inside the sandbox |
+| `laptop/finalize_nemo_v3_receipt.py` | validate, sign, upload, and immutably read back one fresh receipt intent |
+| `laptop/Dockerfile.nemo-v3`, `laptop/build_nemo_v3_image.ps1` | digest-pinned training image and its CUDA-smoked local build receipt |
+| `laptop/watchdog.ps1`, `laptop/install_watchdog.ps1` | bounded three-task liveness watchdog and its installer |
+| `jobspecs/` | reviewed plaintext specs (not executable) and unreviewed drafts |
+| `queue/` | engine-signed envelopes (`pending/`), `NEVER_DISPATCH` records (`quarantine/`), hash-pinned run evidence (`evidence/`) |
+| `keys/` | public engine keyring and pins (no private keys) |
+| `hf/szl-training-receipts/README.md` | source of the receipt-store dataset card |
+| `scripts/train_khipu_abstain.py` | proposal-grade Khipu abstain retrain script (owner metal only) |
+| `requirements/ci/` | hash-locked CI verifier toolchains |
+| `docs/NEMO_V3_EXECUTION.md` | Nemo v3 runbook and per-attempt record |
+| `docs/NEMO_V3_GOVERNED_JOB.md` | fixed boundaries of the governed Nemo v3 job |
+| `docs/WINDOWS_WATCHDOG.md` | watchdog design, installation, and availability boundary |
 | `docs/SECURITY_MODEL.md` | threat model |
 | `docs/RESEARCH_MEMO.md` | leader study and adaptation record |
+| `docs/training-candidates-2026-09-07.md` | unsigned training-candidate proposal (nothing executes) |
 
 Apache-2.0. Adapted public patterns are attributed in `NOTICE`; copyleft subtrees are not vendored into this repository.
