@@ -952,3 +952,9 @@ This phase contains no attempt-17 queue envelope, runner, dispatch event,
 receipt, upload, deployment, or promotion. Its honest status is
 `AWAITING_ENGINE_SIGNATURE`; signing is a separate exclusive-create protected
 phase.
+
+Status as observed on 2026-11-06: the reviewed `expiresAt`
+(`2026-08-15T17:05:00Z`) passed with no attempt-17 queue envelope, so
+`cloud/nemo_v3_status.py` now reports `EXPIRED_AWAITING_ENGINE_SIGNATURE`
+(non-terminal; tracked in issue #93). The paragraph above is preserved as the
+record of that phase.

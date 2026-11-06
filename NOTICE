@@ -12,7 +12,10 @@ projects, with gratitude and attribution:
 - Hugging Face kernels / kernel-builder (https://github.com/huggingface/kernels,
   Apache-2.0): kernel repo layout and provenance-metadata conventions.
 - GitHub Actions self-hosted runner docs: service-survives-reboot and
-  idempotent-job-id lessons (mechanism itself not used — no runner here).
+  idempotent-job-id lessons. The polling bridge itself does not use a runner;
+  only the separate watchdog-install workflow
+  (.github/workflows/windows-watchdog-install.yml) targets an owner
+  self-hosted Windows runner.
 - sigstore/model-transparency (Apache-2.0): prior art studied for artifact
   signing; SZL's receipt chain is an independent implementation.
 

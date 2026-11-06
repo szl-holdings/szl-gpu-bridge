@@ -14,3 +14,18 @@ updates:
       github_actions:
         patterns:
           - "*"
+  # Hash-locked CI verifier toolchains (requirements/ci/*.in -> *.txt).
+  - package-ecosystem: "pip"
+    directory: "/requirements/ci"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "America/New_York"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
+    groups:
+      ci_python:
+        patterns:
+          - "*"
