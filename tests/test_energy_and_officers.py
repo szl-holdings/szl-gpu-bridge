@@ -1,21 +1,24 @@
-#!/usr/bin/env python3
-"""Offline tests for the energy meter and officer fixes. No GPU required."""
+"""Offline tests for the energy meter and officer fixes. No GPU required.
+
+Runnable standalone (``python3 tests/test_energy_and_officers.py``) and by
+CI (``python -m unittest discover -s tests``): importing this module has no
+side effects.
+"""
+
+import hashlib
+import hmac
 import importlib.util
-import json
-import os
 import sys
 import tempfile
+import time
 import types
+import unittest
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-sys.path.insert(0, str(ROOT / "scripts"))
-
-from energy_meter import EnergyMeter, self_test  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 
-def load_module(name, path):
+def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -23,116 +26,171 @@ def load_module(name, path):
     return mod
 
 
-gardener = load_module("gardener_app", ROOT / "hf-spaces" / "estate-gardener" / "app.py")
-auditor = load_module("auditor_app", ROOT / "hf-spaces" / "eternal-auditor" / "app.py")
+ENERGY_METER = ROOT / "scripts" / "energy_meter.py"
+GARDENER_APP = ROOT / "hf-spaces" / "estate-gardener" / "app.py"
+AUDITOR_APP = ROOT / "hf-spaces" / "eternal-auditor" / "app.py"
 
-PASS = FAIL = 0
-def check(name, cond):
-    global PASS, FAIL
-    if cond:
-        PASS += 1
-        print(f"  PASS {name}")
-    else:
-        FAIL += 1
-        print(f"  FAIL {name}")
 
-# ---------- energy_meter: dead meter reports UNAVAILABLE, never zero ----------
-print("== energy_meter: no GPU ==")
-r = self_test()
-check("self-test passes", r["self_test"] == "PASS")
-check("no GPU -> UNAVAILABLE", r["energy_state"] == "UNAVAILABLE")
-check("no GPU -> null joules (not zero)", r["energy_joules"] is None)
-check("failure reason recorded", r["samples_err"] >= 0 and r["energy_mode"] is None)
+def make_fake_nvml(energy_values=None, power_watts=None, total_energy_broken=False):
+    fake = types.ModuleType("pynvml")
 
-# ---------- energy_meter: fake NVML, total-energy mode ----------
-print("== energy_meter: fake total-energy NVML ==")
-fake = types.ModuleType("pynvml")
-calls = {"energy": [1000.0, 2000.0, 3500.0]}  # mJ: probe, start, stop
-def nvmlInit(): pass
-def nvmlDeviceGetHandleByIndex(i): return ("handle", i)
-def nvmlDeviceGetTotalEnergyConsumption(h): return calls["energy"].pop(0) if calls["energy"] else 2500.0
-def nvmlDeviceGetPowerUsage(h): raise RuntimeError("should not be called in total-energy mode")
-fake.nvmlInit, fake.nvmlDeviceGetHandleByIndex = nvmlInit, nvmlDeviceGetHandleByIndex
-fake.nvmlDeviceGetTotalEnergyConsumption = nvmlDeviceGetTotalEnergyConsumption
-fake.nvmlDeviceGetPowerUsage = nvmlDeviceGetPowerUsage
-sys.modules["pynvml"] = fake
-m = EnergyMeter(); m.start(); r = m.stop()
-check("mode total-energy", r["energy_mode"] == "total-energy")
-check("measured 1.5 J", r["energy_joules"] == 1.5)
-check("state MEASURED", r["energy_state"] == "MEASURED")
-check("samples ok", r["samples_ok"] >= 2 and r["samples_err"] == 0)
+    def nvmlInit():
+        pass
 
-# ---------- energy_meter: classic binding without total-energy -> power fallback ----------
-print("== energy_meter: power-integral fallback ==")
-fake2 = types.ModuleType("pynvml")
-fake2.nvmlInit = nvmlInit
-fake2.nvmlDeviceGetHandleByIndex = nvmlDeviceGetHandleByIndex
-def boom(h): raise AttributeError("no such symbol")
-fake2.nvmlDeviceGetTotalEnergyConsumption = boom
-watts = {"w": 300.0}
-def get_power(h): return watts["w"]
-fake2.nvmlDeviceGetPowerUsage = get_power
-sys.modules["pynvml"] = fake2
-import time as _time
-m2 = EnergyMeter(); m2.start()
-for _ in range(5):
-    _time.sleep(0.02)
-    m2.tick()
-r2 = m2.stop()
-check("mode power-integral", r2["energy_mode"] == "power-integral")
-check("measured > 0 J", r2["energy_joules"] is not None and r2["energy_joules"] > 0)
-check("state MEASURED", r2["energy_state"] == "MEASURED")
+    def nvmlDeviceGetHandleByIndex(i):
+        return ("handle", i)
 
-# ---------- energy_meter: meter dies mid-run -> UNAVAILABLE, never zero ----------
-print("== energy_meter: dead mid-run ==")
-fake3 = types.ModuleType("pynvml")
-fake3.nvmlInit = nvmlInit
-fake3.nvmlDeviceGetHandleByIndex = nvmlDeviceGetHandleByIndex
-fake3.nvmlDeviceGetTotalEnergyConsumption = boom
-def dead(h): raise RuntimeError("NVML not initialized")
-fake3.nvmlDeviceGetPowerUsage = dead
-sys.modules["pynvml"] = fake3
-m3 = EnergyMeter(); m3.start(); m3.tick(); r3 = m3.stop()
-check("dead meter -> UNAVAILABLE", r3["energy_state"] == "UNAVAILABLE")
-check("dead meter -> null joules", r3["energy_joules"] is None)
-check("errors recorded", len(r3["errors"]) > 0 and r3["samples_err"] > 0)
+    fake.nvmlInit = nvmlInit
+    fake.nvmlDeviceGetHandleByIndex = nvmlDeviceGetHandleByIndex
+    if total_energy_broken:
 
-del sys.modules["pynvml"]
+        def broken(h):
+            raise AttributeError("no such symbol")
 
-# ---------- gardener: append-only, content-preserving ----------
-print("== gardener: append-only ==")
-with tempfile.TemporaryDirectory() as td:
-    os.environ["GARDENER_STATE"] = os.path.join(td, "state.json")
-    gardener = load_module("gardener_app", ROOT / "hf-spaces" / "estate-gardener" / "app.py")
-    original = "# My Dataset\n\nCurated by Dr. Sara Illion, CC-BY-4.0 requested.\nReal content here."
-    receipt, new = gardener.garden_readme("test/ds", original, has_license_tag=False)
-    check("action APPEND", receipt["action"] == "APPEND")
-    check("original preserved byte-for-byte", new.startswith(original))
-    check("nothing removed (superset)", len(new) > len(original))
-    check("idempotent: tagged README skipped",
-          gardener.append_license_block(original, True)[1] == "SKIP_ALREADY_TAGGED")
-    receipt2, _ = gardener.garden_readme("test/ds", new, has_license_tag=True)
-    check("second pass skips", receipt2["action"] == "SKIP_ALREADY_TAGGED")
-    empty_r, empty_a = gardener.append_license_block("", False)
-    check("empty README gets block without loss", empty_a == "WRITE_EMPTY" and empty_r.strip())
+        fake.nvmlDeviceGetTotalEnergyConsumption = broken
+    elif energy_values is not None:
+        queue = list(energy_values)
 
-# ---------- auditor: full signatures + chain persistence ----------
-print("== auditor: full signatures + chain ==")
-with tempfile.TemporaryDirectory() as td:
-    os.environ["AUDITOR_STATE"] = os.path.join(td, "audit-state.json")
-    auditor = load_module("auditor_app", ROOT / "hf-spaces" / "eternal-auditor" / "app.py")
-    r1 = auditor.run_cycle([{"target": "x", "check": "y", "result": "PASS"}], secret="s3cret")
-    check("signature is full 64-hex", len(r1["signature"]) == 64 and r1["signature_length"] == 64)
-    check("genesis has no prev", r1["prev_receipt_sha256"] is None)
-    auditor = load_module("auditor_app", ROOT / "hf-spaces" / "eternal-auditor" / "app.py")  # restart: state must persist
-    r2 = auditor.run_cycle([{"target": "x", "check": "y", "result": "PASS"}], secret="s3cret")
-    check("cycle continues after restart", r2["cycle"] == 2)
-    check("chain links to previous", r2["prev_receipt_sha256"] == r1["body_sha256"])
-    check("chain marked CONTINUOUS", r2["chain_state"] == "CONTINUOUS")
-    # verify signature reproducibility
-    import hmac, hashlib
-    expect = hmac.new(b"s3cret", r2["body_sha256"].encode(), hashlib.sha256).hexdigest()
-    check("signature verifies", expect == r2["signature"])
+        def get_energy(h):
+            return queue.pop(0) if queue else energy_values[-1]
 
-print(f"\n{PASS} passed, {FAIL} failed")
-sys.exit(1 if FAIL else 0)
+        fake.nvmlDeviceGetTotalEnergyConsumption = get_energy
+    if power_watts is not None:
+        state = {"w": power_watts}
+
+        def get_power(h):
+            return state["w"]
+
+        fake.nvmlDeviceGetPowerUsage = get_power
+    return fake
+
+
+class EnergyMeterTests(unittest.TestCase):
+    em = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls.em = load_module("energy_meter_under_test", ENERGY_METER)
+
+    def setUp(self):
+        sys.modules.pop("pynvml", None)
+
+    def tearDown(self):
+        sys.modules.pop("pynvml", None)
+
+    def test_no_gpu_reports_unavailable_never_zero(self):
+        r = self.em.self_test()
+        self.assertEqual(r["self_test"], "PASS")
+        self.assertEqual(r["energy_state"], "UNAVAILABLE")
+        self.assertIsNone(r["energy_joules"])
+        self.assertIsNone(r["energy_mode"])
+
+    def test_total_energy_mode_measures_joules(self):
+        # mJ: probe, start, stop -> 2000, 3500 => 1.5 J
+        sys.modules["pynvml"] = make_fake_nvml(energy_values=[1000.0, 2000.0, 3500.0])
+        m = self.em.EnergyMeter()
+        m.start()
+        r = m.stop()
+        self.assertEqual(r["energy_mode"], "total-energy")
+        self.assertEqual(r["energy_joules"], 1.5)
+        self.assertEqual(r["energy_state"], "MEASURED")
+        self.assertEqual(r["samples_err"], 0)
+
+    def test_power_integral_fallback(self):
+        sys.modules["pynvml"] = make_fake_nvml(
+            power_watts=300.0, total_energy_broken=True
+        )
+        m = self.em.EnergyMeter()
+        m.start()
+        for _ in range(5):
+            time.sleep(0.02)
+            m.tick()
+        r = m.stop()
+        self.assertEqual(r["energy_mode"], "power-integral")
+        self.assertIsNotNone(r["energy_joules"])
+        self.assertGreater(r["energy_joules"], 0)
+        self.assertEqual(r["energy_state"], "MEASURED")
+
+    def test_dead_meter_mid_run_is_unavailable_not_zero(self):
+        def dead(h):
+            raise RuntimeError("NVML not initialized")
+
+        fake = make_fake_nvml(total_energy_broken=True)
+        fake.nvmlDeviceGetPowerUsage = dead
+        sys.modules["pynvml"] = fake
+        m = self.em.EnergyMeter()
+        m.start()
+        m.tick()
+        r = m.stop()
+        self.assertEqual(r["energy_state"], "UNAVAILABLE")
+        self.assertIsNone(r["energy_joules"])
+        self.assertGreater(r["samples_err"], 0)
+        self.assertTrue(r["errors"])
+
+
+class GardenerTests(unittest.TestCase):
+    def _gardener(self, tmpdir):
+        import os
+
+        os.environ["GARDENER_STATE"] = str(Path(tmpdir) / "state.json")
+        return load_module(f"gardener_app_{id(tmpdir)}", GARDENER_APP)
+
+    def test_append_only_preserves_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            g = self._gardener(td)
+            original = (
+                "# My Dataset\n\nCurated by Dr. Sara Illion, CC-BY-4.0 requested.\n"
+                "Real content here."
+            )
+            receipt, new = g.garden_readme("test/ds", original, has_license_tag=False)
+            self.assertEqual(receipt["action"], "APPEND")
+            self.assertTrue(new.startswith(original))
+            self.assertGreater(len(new), len(original))
+            self.assertTrue(receipt["preserved_prefix"])
+
+    def test_tagged_readme_is_skipped(self):
+        with tempfile.TemporaryDirectory() as td:
+            g = self._gardener(td)
+            original = "# My Dataset\n\ncontent\n"
+            _, action = g.append_license_block(original, True)
+            self.assertEqual(action, "SKIP_ALREADY_TAGGED")
+            receipt, _ = g.garden_readme("test/ds2", original, has_license_tag=True)
+            self.assertEqual(receipt["action"], "SKIP_ALREADY_TAGGED")
+
+    def test_empty_readme_gets_block_without_loss(self):
+        with tempfile.TemporaryDirectory() as td:
+            g = self._gardener(td)
+            new, action = g.append_license_block("", False)
+            self.assertEqual(action, "WRITE_EMPTY")
+            self.assertTrue(new.strip())
+
+
+class AuditorTests(unittest.TestCase):
+    def _auditor(self, tmpdir):
+        import os
+
+        os.environ["AUDITOR_STATE"] = str(Path(tmpdir) / "audit-state.json")
+        return load_module(f"auditor_app_{id(tmpdir)}", AUDITOR_APP)
+
+    def test_full_signature_and_chain_persistence(self):
+        with tempfile.TemporaryDirectory() as td:
+            a = self._auditor(td)
+            finding = [{"target": "x", "check": "y", "result": "PASS"}]
+            r1 = a.run_cycle(finding, secret="s3cret")
+            self.assertEqual(len(r1["signature"]), 64)
+            self.assertEqual(r1["signature_length"], 64)
+            self.assertIsNone(r1["prev_receipt_sha256"])
+            # simulate restart: reload module, state must persist
+            a2 = self._auditor(td)
+            r2 = a2.run_cycle(finding, secret="s3cret")
+            self.assertEqual(r2["cycle"], 2)
+            self.assertEqual(r2["prev_receipt_sha256"], r1["body_sha256"])
+            self.assertEqual(r2["chain_state"], "CONTINUOUS")
+            expect = hmac.new(
+                b"s3cret", r2["body_sha256"].encode(), hashlib.sha256
+            ).hexdigest()
+            self.assertEqual(r2["signature"], expect)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
