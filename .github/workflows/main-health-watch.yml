@@ -1,0 +1,107 @@
+name: Main health watch
+
+# Watches the watchers: daily, check the latest workflow conclusions on the
+# core repos' main branches via the public API. Any non-success conclusion
+# on a repo's most recent run files/updates one labeled issue — so a red
+# main is surfaced the day it happens, not when a human remembers.
+# READ-ONLY: no writes to other repos, no deploys, no merges.
+
+on:
+  schedule:
+    - cron: "43 5 * * *" # daily 05:43 UTC, after the wiring witness
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: main-health-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check latest main-branch workflow conclusions (public API)
+        id: health
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          repos = [
+            "szl-gpu-bridge", "szl-frontier", "szl-forge", "szl-mesh",
+            "szl-router", "killinchu", "szl-second-brain", "szl-papers",
+            "a11oy", "a11oy-net", "szl-hf-frontier", "hatun-mcp",
+            "szl-trust", "platform", "anatomy", "szl-invariants",
+          ]
+          failures = {}
+          for repo in repos:
+              url = (f"https://api.github.com/repos/szl-holdings/{repo}"
+                     "/actions/runs?branch=main&per_page=8&exclude_pull_requests=true")
+              req = urllib.request.Request(url, headers={
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "szl-main-health-watch",
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      runs = json.load(r).get("workflow_runs", [])
+              except Exception as exc:
+                  failures[repo] = [f"UNREACHABLE({type(exc).__name__})"]
+                  continue
+              bad = sorted({f"{w['name']}: {w['conclusion']}"
+                            for w in runs
+                            if w.get("conclusion") not in
+                            ("success", "skipped", None, "")})
+              # only report if the LATEST run of a workflow is bad
+              latest = {}
+              for w in runs:
+                  name = w["name"]
+                  if name not in latest:
+                      latest[name] = w.get("conclusion")
+              bad_latest = sorted(f"{n}: {c}" for n, c in latest.items()
+                                  if c not in ("success", "skipped", None, ""))
+              if bad_latest:
+                  failures[repo] = bad_latest
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("has_failures=" + ("true" if failures else "false") + "\n")
+              out.write("report<<EOF\n" + json.dumps(failures, indent=2) + "\nEOF\n")
+          print(json.dumps(failures, indent=2) if failures else "ALL GREEN")
+          PY
+
+      - name: File or update the main-health issue (never silent)
+        if: ${{ steps.health.outputs.has_failures == 'true' }}
+        uses: actions/github-script@60a0d83039c74a4aee543508d3ff97478248e1dc # v7.0.1
+        with:
+          script: |
+            const title = "Main health watch: red workflows detected";
+            const report = ${{ steps.health.outputs.report }};
+            const body = [
+              "## Main-branch workflow failures (latest runs)",
+              "",
+              "```json",
+              report,
+              "```",
+              "",
+              "Dispatch rule: each red workflow gets a root-cause diagnosis",
+              "(logs require repo admin) and a fix branch within 24h, or an",
+              "explicit owner-gated hold with the reason on record.",
+            ].join("\n");
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "main-health",
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["main-health", "automated"],
+              });
+            }
