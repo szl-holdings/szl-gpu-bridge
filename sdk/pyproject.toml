@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl"
+version = "0.1.0"
+description = "The receipts layer for governed AI: khipu signing, the Kamachikuna constitution, provenance badges, and the two-axis Truth Router."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SZL Holdings", email = "stephen@szlholdings.com" }]
+keywords = ["ai", "governance", "provenance", "receipts", "honesty", "khipu", "kamachikuna"]
+
+[project.urls]
+Homepage = "https://szlholdings.com/"
+Source = "https://github.com/szl-holdings/szl-gpu-bridge"
+Sponsors = "https://szlholdings.com/sponsors.html"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["szl*"]
