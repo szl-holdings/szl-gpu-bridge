@@ -21,12 +21,12 @@ case "$SRC" in
   *.gguf)
     # llama.cpp server (the szl-serve honest path)
     command -v llama-server >/dev/null || { echo "llama-server not installed — see szl-serve recipe"; exit 2; }
-    SCREEN_CMD="llama-server -m $SRC --host 127.0.0.1 --port 8080"
+    SCREEN_CMD="llama-server -m $SRC --host 0.0.0.0 --port 8080"
     ;;
   *)
     # HF checkpoint → vLLM (frontier-bench measures it)
     command -v python3 >/dev/null || exit 2
-    SCREEN_CMD="python3 -m vllm.entrypoints.openai.api_server --model $SRC --port 8080"
+    SCREEN_CMD="python3 -m vllm.entrypoints.openai.api_server --model $SRC --host 0.0.0.0 --port 8080"
     ;;
 esac
 
