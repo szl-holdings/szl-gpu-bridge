@@ -1,32 +1,44 @@
 #!/usr/bin/env python3
 """mesh_daemon.py — the daisy-chain that makes N nodes one computer.
 
-MODE=worker (default): registers with the brain, heartbeats, accepts
-dispatched jobs, executes them, pushes results to the chain.
+  worker    registers, heartbeats, and runs the jobs signed for it
+  brain     tracks which workers are alive
+  dispatch  signs one job for one node and queues it
 
-MODE=brain (on .145): tracks all workers, dispatches jobs from the queue,
-collects results, curates the curriculum.
+The bus is the receipts chain, a public HF dataset: anyone can read it and many
+can write to it, so nothing on it is an instruction by itself. A worker runs a
+job only when every line holds:
 
-The coordination bus is the receipts chain (HF dataset) — every node can
-read it, every node can write to it, and it's the single source of truth.
-No node-to-node SSH required for coordination (results flow via the chain;
-large artifacts via the optional rsync lane).
+  signed       HMAC-SHA256 over {id, issued_at, kind, node} with MESH_JOB_KEY
+  for me       job.node is this host
+  allowlisted  job.kind names a fixed argv in ALLOW; a job carries no command
+  fresh        issued within MAX_AGE_S
+  once         its id is not yet in this node's ledger
+
+Anything else is REJECTED and never executed. Without MESH_JOB_KEY (32+ bytes,
+env only) a worker still heartbeats but runs nothing.
 
 Usage:
-  python3 mesh_daemon.py --mode worker --brain 216.81.248.145:8080
+  python3 mesh_daemon.py --mode worker
   python3 mesh_daemon.py --mode brain
+  python3 mesh_daemon.py --mode dispatch --node <hostname> --kind gpu-state
 """
 from __future__ import annotations
 
 import argparse
+import calendar
 import hashlib
+import hmac
+import itertools
 import json
 import os
+import re
+import secrets
 import socket
 import subprocess
 import sys
-import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -35,9 +47,24 @@ NODE_ID = socket.gethostname()
 HF = "https://huggingface.co"
 MESH_DIR = Path(os.environ.get("MESH_HOME", str(Path.home() / "szl-mesh")))
 HEARTBEAT_S = 60
-JOB_POLL_S = 30
+MAX_AGE_S = 900
+JOB_TIMEOUT_S = 600
+MIN_KEY_BYTES = 32
+JOB_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+GPU_QUERY = ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+             "--format=csv,noheader"]
+
+# Everything a job can make a worker do. A job picks a key; it never supplies the
+# argv. Adding a line here is a reviewed code change.
+ALLOW = {
+    "gpu-state": GPU_QUERY,
+    "disk-state": ["df", "-h", "/"],
+    "node-sync": ["bash", str(Path(__file__).with_name("node_sync.sh"))],
+}
 
 
+# ============ THE CHAIN ============
 def chain_read(path: str, timeout=20):
     req = urllib.request.Request(f"{HF}/datasets/{DS}/resolve/main/{path}",
                                  headers={"User-Agent": "szl-mesh/1.0"})
@@ -50,11 +77,16 @@ def chain_write(api, path: str, data: dict):
                     path_in_repo=path, repo_id=DS, repo_type="dataset")
 
 
+def receipt(kind, data):
+    r = {"kind": kind, "node": NODE_ID, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **data}
+    r["sha256"] = hashlib.sha256(json.dumps(r, sort_keys=True).encode()).hexdigest()
+    return r
+
+
 def gpu_state():
     """MEASURED or UNAVAILABLE — never zero, never fabricated."""
     try:
-        r = subprocess.run(["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total",
-                            "--format=csv,noheader"], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(GPU_QUERY, capture_output=True, text=True, timeout=10)
         if r.returncode == 0:
             parts = r.stdout.strip().split(", ")
             return {"gpu": parts[0], "util_pct": parts[1], "mem_used": parts[2],
@@ -64,72 +96,164 @@ def gpu_state():
     return {"state": "UNAVAILABLE"}
 
 
-def receipt(kind, data):
-    r = {"kind": kind, "node": NODE_ID, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **data}
-    r["sha256"] = hashlib.sha256(json.dumps(r, sort_keys=True).encode()).hexdigest()
-    return r
+def age_s(ts: str, now: float) -> int:
+    """Seconds since a chain timestamp, which is UTC whatever this host's timezone."""
+    return int(now - calendar.timegm(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")))
 
 
-# ============ WORKER MODE ============
-def worker_loop(api, brain_url):
-    """Register → heartbeat → poll for jobs → execute → report."""
-    MESH_DIR.mkdir(parents=True, exist_ok=True)
-    reg = receipt("szl.mesh-register/v1", {
-        "brain": brain_url, "gpu": gpu_state(),
-        "roles": os.environ.get("MESH_ROLES", "train,serve,eval").split(",")})
-    chain_write(api, f"mesh/workers/{NODE_ID}/register.json", reg)
-    print(f"registered with brain {brain_url}", flush=True)
-
-    hb_count = 0
-    while True:
-        hb_count += 1
-        hb = receipt("szl.mesh-heartbeat/v1", {
-            "cycle": hb_count, "gpu": gpu_state(),
-            "uptime_s": int(time.time() - START),
-            "jobs_done": JOB_COUNT[0]})
-        chain_write(api, f"mesh/workers/{NODE_ID}/heartbeat.json", hb)
-
-        # poll for dispatched jobs
-        try:
-            job = chain_read(f"mesh/queue/{NODE_ID}/next-job.json")
-            if job and job.get("status") == "DISPATCHED":
-                print(f"JOB RECEIVED: {job.get('kind')} {job.get('name')}", flush=True)
-                result = execute_job(job)
-                chain_write(api, f"mesh/results/{NODE_ID}/{job['id']}.json", result)
-                JOB_COUNT[0] += 1
-        except Exception:
-            pass  # no job queued — normal
-
-        time.sleep(HEARTBEAT_S)
+# ============ JOB ADMISSION ============
+def sign(job: dict, key: bytes) -> str:
+    body = json.dumps({f: job[f] for f in ("id", "issued_at", "kind", "node")},
+                      sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(key, body, hashlib.sha256).hexdigest()
 
 
-def execute_job(job):
-    """Run a dispatched job. Boot receipt first, honest states."""
-    boot = receipt("szl.mesh-job-boot/v1", {"job": job["id"], "kind": job.get("kind")})
+def rejection(job, key: bytes, node: str, now: float, done) -> str | None:
+    """Why this job must not run, or None if it may. Pure: no I/O, no side effects."""
+    if len(key) < MIN_KEY_BYTES:
+        return "NO_KEY"
+    if not (isinstance(job, dict)
+            and all(isinstance(job.get(f), str) for f in ("id", "node", "kind", "sig"))
+            and type(job.get("issued_at")) is int
+            and JOB_ID.fullmatch(job["id"])):
+        return "MALFORMED"
+    if not hmac.compare_digest(sign(job, key).encode(), job["sig"].encode()):
+        return "BAD_SIGNATURE"
+    if job["node"] != node:
+        return "WRONG_NODE"
+    if job["kind"] not in ALLOW:
+        return "UNKNOWN_KIND"
+    if abs(now - job["issued_at"]) > MAX_AGE_S:
+        return "STALE"
+    if job["id"] in done:
+        return "REPLAY"
+    return None
+
+
+class Ledger:
+    """Ids of jobs already admitted, kept on disk so a restart cannot replay them."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.ids = set(json.loads(self.path.read_text())) if self.path.exists() else set()
+
+    def __contains__(self, job_id):
+        return job_id in self.ids
+
+    def add(self, job_id):
+        self.ids.add(job_id)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(sorted(self.ids)))
+        os.replace(tmp, self.path)
+
+
+def execute_job(job, *, key: bytes = b"", node: str | None = None, now: float | None = None, done=None):
+    """Admit the job, then run its allowlisted argv. Never a shell, never the job's own text."""
+    done = set() if done is None else done
+    why = rejection(job, key, node or NODE_ID, time.time() if now is None else now, done)
+    if why:
+        return receipt("szl.mesh-job-result/v1", {"state": "REJECTED", "reason": why})
+    done.add(job["id"])  # before running: at most once, even if this process dies mid-job
+    boot = receipt("szl.mesh-job-boot/v1", {"job": job["id"], "kind": job["kind"]})
     t0 = time.time()
-    stdout, rc = "", -1
     try:
-        r = subprocess.run(job.get("command", "echo no-op").split(), shell=True,
-                           capture_output=True, text=True, timeout=job.get("timeout_s", 3600))
+        r = subprocess.run(ALLOW[job["kind"]], capture_output=True, text=True, timeout=JOB_TIMEOUT_S)
         stdout, rc = r.stdout[:2000], r.returncode
     except subprocess.TimeoutExpired:
-        rc = -2
-    except Exception as e:
+        stdout, rc = "", -2
+    except OSError as e:
         stdout, rc = str(e)[:500], -3
     return receipt("szl.mesh-job-result/v1", {
-        "job": job["id"], "kind": job.get("kind"), "rc": rc,
-        "stdout": stdout, "wall_s": round(time.time() - t0, 1),
-        "state": "MEASURED" if rc == 0 else "FAILED", "boot": boot["sha256"]})
+        "job": job["id"], "kind": job["kind"], "rc": rc, "stdout": stdout,
+        "wall_s": round(time.time() - t0, 1),
+        "state": "COMPLETED" if rc == 0 else "FAILED", "boot": boot["sha256"]})
 
 
-# ============ BRAIN MODE ============
+def dispatch(api, node: str, kind: str, key: bytes, now: float | None = None) -> dict:
+    """Sign one allowlisted job for one node and put it on that node's queue."""
+    if kind not in ALLOW:
+        raise ValueError(f"not an allowlisted job kind: {kind}")
+    if len(key) < MIN_KEY_BYTES:
+        raise ValueError(f"MESH_JOB_KEY must be at least {MIN_KEY_BYTES} bytes")
+    job = {"id": secrets.token_hex(8), "node": node, "kind": kind,
+           "issued_at": int(time.time() if now is None else now)}
+    job["sig"] = sign(job, key)
+    chain_write(api, f"mesh/queue/{node}/next-job.json", job)
+    return job
+
+
+# ============ WORKER ============
+def claim_node(path):
+    """Hold this node's worker lock, or None if another worker already does.
+
+    Two workers on one node would each run every job."""
+    import fcntl
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def poll(api, key: bytes, done, seen, stats: dict, read=chain_read):
+    """Look at this node's queue once. Returns the digest of what was there."""
+    try:
+        job = read(f"mesh/queue/{NODE_ID}/next-job.json")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return seen  # nothing queued
+        raise
+    digest = hashlib.sha256(json.dumps(job, sort_keys=True).encode()).hexdigest()
+    if digest == seen:
+        return seen  # this exact file was already handled
+    result = execute_job(job, key=key, done=done)
+    if result["state"] == "REJECTED":
+        stats["rejected"] += 1
+        print(f"job REJECTED: {result['reason']}", flush=True)
+    else:
+        stats["done"] += 1
+        chain_write(api, f"mesh/results/{NODE_ID}/{job['id']}.json", result)
+        print(f"job {job['id']} ({job['kind']}): {result['state']}", flush=True)
+    return digest
+
+
+def worker_loop(api, brain_url: str, key: bytes) -> int:
+    """Register, then heartbeat and poll the queue until stopped."""
+    lock = claim_node(MESH_DIR / "worker.lock")  # held for the life of the process
+    if lock is None:
+        print("FAIL-CLOSED: another mesh worker already runs on this node", file=sys.stderr)
+        return 3
+    if len(key) < MIN_KEY_BYTES:
+        print("job execution DISABLED: MESH_JOB_KEY not set — heartbeats only", flush=True)
+    done, seen, stats, started = Ledger(MESH_DIR / "done.json"), None, {"done": 0, "rejected": 0}, time.time()
+    chain_write(api, f"mesh/workers/{NODE_ID}/register.json", receipt("szl.mesh-register/v1", {
+        "brain": brain_url, "gpu": gpu_state(),
+        "roles": os.environ.get("MESH_ROLES", "train,serve,eval").split(",")}))
+    print(f"registered with brain {brain_url}", flush=True)
+    for cycle in itertools.count(1):
+        try:
+            chain_write(api, f"mesh/workers/{NODE_ID}/heartbeat.json", receipt("szl.mesh-heartbeat/v1", {
+                "cycle": cycle, "gpu": gpu_state(), "uptime_s": int(time.time() - started),
+                "jobs_done": stats["done"], "jobs_rejected": stats["rejected"]}))
+            seen = poll(api, key, done, seen, stats)
+        except Exception as e:  # one bad cycle must not take the node off the mesh
+            print(f"cycle {cycle} error: {type(e).__name__}: {e}", flush=True)
+        time.sleep(HEARTBEAT_S)
+    return 0
+
+
+# ============ BRAIN ============
 def brain_loop(api):
-    """Track workers, dispatch jobs from the queue, curate."""
+    """Track which workers are alive and publish the roster."""
     MESH_DIR.mkdir(parents=True, exist_ok=True)
     print(f"brain mode: coordinating via {DS}", flush=True)
     workers = {}
     while True:
-        # scan worker heartbeats
         try:
             tree = json.loads(urllib.request.urlopen(
                 urllib.request.Request(f"{HF}/api/datasets/{DS}/tree/main/mesh/workers?recursive=true",
@@ -139,8 +263,8 @@ def brain_loop(api):
                     wid = f["path"].split("/")[2]
                     try:
                         hb = chain_read(f["path"])
-                        age = time.time() - time.mktime(time.strptime(hb["ts"][:19], "%Y-%m-%dT%H:%M:%S"))
-                        workers[wid] = {"age_s": int(age), "gpu": hb.get("gpu"),
+                        age = age_s(hb["ts"], time.time())
+                        workers[wid] = {"age_s": age, "gpu": hb.get("gpu"),
                                         "alive": age < HEARTBEAT_S * 3}
                     except Exception:
                         pass
@@ -152,32 +276,40 @@ def brain_loop(api):
             "alive_count": sum(1 for v in workers.values() if v["alive"]),
             "total_known": len(workers)})
         chain_write(api, "mesh/brain/state.json", state)
-        print(f"brain: {state['data']['alive_count'] if 'data' in state else '?'} alive", flush=True)
+        print(f"brain: {state['alive_count']} of {state['total_known']} alive", flush=True)
         time.sleep(HEARTBEAT_S)
 
 
-START = time.time()
-JOB_COUNT = [0]
-
-
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["worker", "brain"], default="worker")
+    ap = argparse.ArgumentParser(description="SZL mesh daemon")
+    ap.add_argument("--mode", choices=["worker", "brain", "dispatch"], default="worker")
     ap.add_argument("--brain", default="216.81.248.145:8080")
+    ap.add_argument("--node", help="dispatch: the worker's hostname")
+    ap.add_argument("--kind", choices=sorted(ALLOW), help="dispatch: which allowlisted job")
     args = ap.parse_args()
+    if args.mode == "dispatch" and not (args.node and args.kind):
+        ap.error("--mode dispatch needs --node and --kind")
 
     tok = os.environ.get("HF_TOKEN", "")
     if not tok:
         print("FAIL-CLOSED: HF_TOKEN required (env only)", file=sys.stderr)
         return 2
+    key = os.environ.get("MESH_JOB_KEY", "").encode()
+    if args.mode == "dispatch" and len(key) < MIN_KEY_BYTES:
+        print(f"FAIL-CLOSED: MESH_JOB_KEY required ({MIN_KEY_BYTES}+ bytes, env only)", file=sys.stderr)
+        return 2
     from huggingface_hub import HfApi
     api = HfApi(token=tok)
 
     if args.mode == "brain":
-        brain_loop(api)
-    else:
-        worker_loop(api, args.brain)
+        return brain_loop(api)
+    if args.mode == "dispatch":
+        job = dispatch(api, args.node, args.kind, key)
+        print(f"queued {job['kind']} for {job['node']} as {job['id']}")
+        return 0
+    return worker_loop(api, args.brain, key)
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
