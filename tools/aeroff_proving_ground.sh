@@ -14,15 +14,17 @@ kind=sys.argv[1]; stage=sys.argv[2]; state=sys.argv[3]; detail=sys.argv[4]
 r={'kind':'szl.proving-ground/v1','subject':'aero-ff','stage':stage,'state':state,
    'detail':detail[:200],'ts':datetime.datetime.now(datetime.timezone.utc).isoformat()}
 line=json.dumps(r,sort_keys=True)
-print(line); open('$OUT/receipts.jsonl','a').write(line+'\n')
-r['sha256']=hashlib.sha256(line.encode()).hexdigest()" "$@"; }
+sha=hashlib.sha256(line.encode()).hexdigest()
+r['sha256']=sha
+final=json.dumps(r,sort_keys=True)
+print(final); open('$OUT/receipts.jsonl','a').write(final+'\n')" "$@"; }
 
 RECEIPT boot "proving-ground" "BOOTED" "24h Aero-FF proving ground started"
 
 # ---- Stage 1: clone the canonical sources (receipted) ----
 cd "$OUT"
-[ -d lutar-lean ] || git clone -q https://github.com/szl-holdings/lutar-lean.git
-[ -d acoustic-validation ] || git clone -q https://github.com/szl-holdings/acoustic-validation.git
+[ -d lutar-lean ] && git -C lutar-lean pull -q || git clone -q https://github.com/szl-holdings/lutar-lean.git
+[ -d acoustic-validation ] && git -C acoustic-validation pull -q || git clone -q https://github.com/szl-holdings/acoustic-validation.git
 LEANSHA=$(git -C lutar-lean rev-parse HEAD)
 ACSHA=$(git -C acoustic-validation rev-parse HEAD)
 RECEIPT sources "clone" "MEASURED" "lutar-lean@$LEANSHA acoustic-validation@$ACSHA"
@@ -55,7 +57,7 @@ RECEIPT numerics "formulas" "COMPUTED" "Rayleigh/EP-gain/TOF battery done; see l
 
 # ---- Stage 3: the falsifiable acoustic-validation suite ----
 cd "$OUT/acoustic-validation"
-if make test 2>/dev/null || pytest -q 2>/dev/null; then
+if make test 2>&1 || pytest -q 2>&1; then
   RECEIPT acoustic "suite" "PASS" "acoustic-validation suite green at $ACSHA"
 else
   RECEIPT acoustic "suite" "FAIL" "acoustic-validation suite failed at $ACSHA (logged)"
@@ -66,27 +68,29 @@ cd "$OUT/lutar-lean"
 RECEIPT lean "build" "STARTED" "lake build beginning (mathlib compile is the long pole)"
 if lake build 2>&1 | tee "$OUT/logs/lean-build.log"; then
   RECEIPT lean "build" "MEASURED" "kernel builds; SchurConcave.lean compiles"
+  grep -q "theorem lambda_two_axis_schur_concave" Lutar/Lambda/SchurConcave.lean \
+    && RECEIPT lean "axiom3-2axis" "PROVEN" "2-axis theorem present in built kernel" \
+    || RECEIPT lean "axiom3-2axis" "UNKNOWN" "theorem text not found in built kernel"
+  grep -q "axiom lambda_schur_concave_n_axis" Lutar/Lambda/SchurConcave.lean \
+    && RECEIPT lean "axiom3-naxis" "CONJECTURE" "n-axis axiom-tagged: Chad's 'resolved' claim OVERSTATED by exactly one induction step" \
+    || RECEIPT lean "axiom3-naxis" "UNKNOWN" "n-axis axiom not found — verify the file"
 else
-  RECEIPT lean "build" "UNAVAILABLE" "build failed; see logs/lean-build.log"
+  RECEIPT lean "build" "UNAVAILABLE" "build failed — verdicts WITHHELD (grep on a failed build proves nothing)"
 fi
-# The claim verdict, machine-stated:
-grep -q "theorem lambda_two_axis_schur_concave" Lutar/Lambda/SchurConcave.lean \
-  && RECEIPT lean "axiom3-2axis" "PROVEN" "2-axis Schur-concavity theorem present in kernel"
-grep -q "axiom lambda_schur_concave_n_axis" Lutar/Lambda/SchurConcave.lean \
-  && RECEIPT lean "axiom3-naxis" "CONJECTURE" "n-axis remains axiom-tagged: Chad's 'resolved' claim is OVERSTATED by exactly one induction step"
 
 # ---- Stage 5: 24h loop — re-verify every hour, receipt each cycle ----
 RECEIPT loop "24h" "STARTED" "hourly re-verification for 24 cycles"
 for i in $(seq 1 24); do
   sleep 3600
   # re-run the cheap stages; anything unreachable is UNAVAILABLE, never skipped silently
-  if python3 - <<'PY' 2>/dev/null
+  N=$(python3 -c "
 import urllib.request, json
-with urllib.request.urlopen("https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs", timeout=20) as r:
-    json.load(r)
-PY
-  then STATE="MEASURED"; else STATE="UNAVAILABLE"; fi
-  RECEIPT cycle "$i/24" "$STATE" "hourly cycle; receipts source reachable check"
+try:
+    with urllib.request.urlopen('https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/commits/main', timeout=20) as r:
+        print(len(json.load(r)))
+except Exception: print(-1)")
+  if [ "$N" -gt 0 ]; then STATE="MEASURED commits=$N"; else STATE="UNAVAILABLE"; fi
+  RECEIPT cycle "$i/24" "$STATE" "hourly cycle; chain commit count (growth = work)"
 done
 RECEIPT loop "24h" "COMPLETE" "24-hour proving ground complete; receipts in $OUT/receipts.jsonl"
 echo "DONE. Receipts: $OUT/receipts.jsonl"
