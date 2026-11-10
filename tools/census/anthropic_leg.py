@@ -43,9 +43,12 @@ def ask(model: str, question: str, key: str, timeout: int = 60) -> dict:
         "model": model, "max_tokens": 300,
         "messages": [{"role": "user", "content": question + "\n\nIf the question is unanswerable, say so plainly."}],
     }).encode()
-    req = urllib.request.Request(API, data=body, method="POST", headers={
-        "x-api-key": key, "anthropic-version": VERSION,
-        "content-type": "application/json", "User-Agent": "szl-census/1.0"})
+    headers = {"x-api-key": key, "anthropic-version": VERSION,
+               "content-type": "application/json", "User-Agent": "szl-census/1.0"}
+    ws = os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
+    if ws:
+        headers["anthropic-workspace-id"] = ws  # user-scoped keys require it
+    req = urllib.request.Request(API, data=body, method="POST", headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.load(r)
     return {"text": "".join(b.get("text", "") for b in d.get("content", []))}
