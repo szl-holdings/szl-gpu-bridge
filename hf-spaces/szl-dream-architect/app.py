@@ -148,6 +148,9 @@ def loop():
             rec["khipu_signature"] = key.sign(rec["row_sha256"].encode()).hex()  # FULL length
             state["prev_sha256"] = rec["row_sha256"]
             state["chain_state"] = "CONTINUOUS"
+            hist = state.setdefault("history", [])
+            hist.append({k: rec.get(k) for k in ("cycle", "timestamp_utc", "row_sha256", "khipu_signature", "chain_state", "findings")})
+            del hist[:-24]
             save_state(state)
             api.upload_file(
                 path_or_fileobj=json.dumps(rec, indent=2).encode(),
@@ -171,11 +174,24 @@ def healthz():
 
 
 threading.Thread(target=loop, daemon=True).start()
-os.makedirs("/app/static", exist_ok=True)
-with open("/app/static/index.html", "w") as f:
-    f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>")
-    f.write("<h1 style='color:#5ce8de'>Dream Architect v2</h1>")
-    f.write("<p>Reads the estate's open questions, retrieves live research signals, ")
-    f.write("and proposes labeled hypotheses with prior art, a test, and a rejection criterion.</p>")
-    f.write("<p>Every cycle = a signed receipt. A dream is a proposal, never an act.</p></body></html>")
-app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
+_STATIC = os.environ.get("OFFICER_STATIC", "/app/static")
+os.makedirs(_STATIC, exist_ok=True)
+
+@app.get("/api/live")
+def live():
+    return {"ok": True, "service": ROLE, "cycle": state.get("count", 0),
+            "chain_state": state.get("chain_state"),
+            "prev_receipt_sha256": state.get("prev_sha256"),
+            "history_count": len(state.get("history", [])), "cycle_seconds": CYCLE}
+
+@app.get("/api/history")
+def history():
+    return {"service": ROLE, "receipts": list(reversed(state.get("history", [])))}
+
+_INDEX = os.path.join(_STATIC, "index.html")
+if not os.path.exists(_INDEX):
+    with open(_INDEX, "w") as f:
+        f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px'>"
+                "<h1 style='color:#a78bfa'>Dream Architect v2</h1>"
+                "<p>Console assets not shipped — serving fallback.</p></body></html>")
+app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")

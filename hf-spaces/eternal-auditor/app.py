@@ -80,6 +80,15 @@ def save_state(st):
     STATE.with_suffix(".tmp").write_text(json.dumps(st, indent=2))
     STATE.with_suffix(".tmp").replace(STATE)
 
+def remember(st, receipt):
+    """Keep the last 24 receipts in state — the proof gallery."""
+    hist = st.setdefault("history", [])
+    slim = {k: receipt.get(k) for k in
+            ("cycle", "ts", "body_sha256", "signature", "chain_state", "findings")}
+    hist.append(slim)
+    del hist[:-24]
+    save_state(st)
+
 
 def get(url, timeout=20):
     req = urllib.request.Request(url, headers={"User-Agent": "szl-auditor/2.0"})
@@ -133,6 +142,7 @@ def loop():
             state["prev"] = body_sha
             state["chain_state"] = "CONTINUOUS"
             save_state(state)
+            remember(state, receipt)
             if TOK:
                 api.upload_file(path_or_fileobj=json.dumps(receipt, indent=2).encode(),
                     path_in_repo=f"officers/{ROLE}-{body_sha[:12]}.json",
@@ -161,9 +171,23 @@ if _HAS_FASTAPI:
         threading.Thread(target=loop, daemon=True).start()
     _STATIC = os.environ.get("OFFICER_STATIC", os.path.join(os.path.dirname(__file__), "static"))
     os.makedirs(_STATIC, exist_ok=True)
-    with open(os.path.join(_STATIC, "index.html"), "w") as f:
-        f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
-                "<h1 style='color:#5ce8de'>Eternal Auditor v2</h1>"
-                "<p>Full-length signatures. Persisted chain state. Restarts marked, never silent.</p>"
-                "<p>Hourly cycles, each receipted and published to the chain.</p></body></html>")
+
+    @app.get("/api/live")
+    def live():
+        return {"ok": True, "service": ROLE, "cycle": state.get("cycle", 0),
+                "chain_state": state.get("chain_state"),
+                "prev_receipt_sha256": state.get("prev"),
+                "history_count": len(state.get("history", [])),
+                "cycle_seconds": CYCLE}
+
+    @app.get("/api/history")
+    def history():
+        return {"service": ROLE, "receipts": list(reversed(state.get("history", [])))}
+
+    _INDEX = os.path.join(_STATIC, "index.html")
+    if not os.path.exists(_INDEX):
+        with open(_INDEX, "w") as f:
+            f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px'>"
+                    "<h1 style='color:#5ce8de'>Eternal Auditor v2</h1>"
+                    "<p>Console assets not shipped — serving fallback.</p></body></html>")
     app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")

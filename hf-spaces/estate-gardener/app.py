@@ -134,6 +134,9 @@ def loop():
             line = json.dumps(receipt, sort_keys=True)
             receipt["row_sha256"] = hashlib.sha256(line.encode()).hexdigest()
             state["proposals"][str(state["cycle"])] = receipt["row_sha256"]
+            hist = state.setdefault("history", [])
+            hist.append({k: receipt.get(k) for k in ("cycle", "ts", "row_sha256", "datasets_scanned", "proposals_made")})
+            del hist[:-24]
             save_state(state)
             if TOK:
                 api.upload_file(path_or_fileobj=json.dumps(receipt, indent=2).encode(),
@@ -163,9 +166,21 @@ if _HAS_FASTAPI:
         threading.Thread(target=loop, daemon=True).start()
     _STATIC = os.environ.get("OFFICER_STATIC", os.path.join(os.path.dirname(__file__), "static"))
     os.makedirs(_STATIC, exist_ok=True)
-    with open(os.path.join(_STATIC, "index.html"), "w") as f:
-        f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
-                "<h1 style='color:#5ce8de'>Estate Gardener v2</h1>"
-                "<p>Append-only license care. Proposals are verified supersets; writes are owner-gated.</p>"
-                "<p>Every cycle = a receipt. A proposal is not a change.</p></body></html>")
+
+    @app.get("/api/live")
+    def live():
+        return {"ok": True, "service": ROLE, "cycle": state.get("cycle", 0),
+                "proposals_recorded": len(state.get("proposals", {})),
+                "history_count": len(state.get("history", [])), "cycle_seconds": CYCLE}
+
+    @app.get("/api/history")
+    def history():
+        return {"service": ROLE, "receipts": list(reversed(state.get("history", [])))}
+
+    _INDEX = os.path.join(_STATIC, "index.html")
+    if not os.path.exists(_INDEX):
+        with open(_INDEX, "w") as f:
+            f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px'>"
+                    "<h1 style='color:#5ce8de'>Estate Gardener v2</h1>"
+                    "<p>Console assets not shipped — serving fallback.</p></body></html>")
     app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")
