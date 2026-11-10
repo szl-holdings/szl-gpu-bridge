@@ -59,7 +59,7 @@ LEAN_PROVEN = [
 ]
 
 AMENDMENTS = {
-    1: "EU AI Act Article 11: synthetic content marking",
+    1: "EU AI Act Article 50: machine-readable marking and labelling of synthetic content (applies from 2 Aug 2026)",
     2: "Prime Principle: never hurt a human",
     3: "Five Prime Principles adopted",
 }

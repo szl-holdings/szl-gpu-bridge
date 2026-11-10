@@ -6,7 +6,7 @@ doctrine (laws, operational definitions, prime principles, amendments,
 doctrine version):
 
 ```
-sha256: 6ae28f7e90d2124035409b9d3efe1bb0c65f3368ad99f2a77ee1ad0e87566117
+sha256: 280e23d484b3ac01732278b690da934ac9edc058d4033e42b90e855492c62125
 ```
 
 `sdk/tests/test_doctrine_stone.py` recomputes this hash on every test run.
