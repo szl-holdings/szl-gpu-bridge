@@ -167,7 +167,7 @@ for cycle in range(1, MAX_CYCLES+1):
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
         target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], task_type="CAUSAL_LM")
     cfg = SFTConfig(output_dir=os.path.expanduser("~/szl-workspace/ckpt/c%d")%cycle, max_length=2048,
-        per_device_train_batch_size=4, gradient_accumulation_steps=8,
+        per_device_train_batch_size=1, gradient_accumulation_steps=32,
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
         logging_steps=50, save_strategy="no", bf16=True, optim="adamw_torch", gradient_checkpointing=False,
         num_train_epochs=epochs, report_to=[], packing=False, seed=SEED+cycle)
