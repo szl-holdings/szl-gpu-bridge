@@ -56,7 +56,8 @@ def route(task_kind: str, models: list[Model]) -> Model | None:
 
     def sort_key(m: Model):
         energy = m.energy_per_mtok_joules()
-        # unmeasured energy sorts AFTER measured-high: unknown ≠ cheap
-        return (m.cost_per_mtok(), 0 if energy is None else 1, energy or 0.0)
+        # measured energy (even zero) sorts BEFORE unknown: known > unknown
+        # a model that PROVED zero joules is more honest than one that didn't measure
+        return (m.cost_per_mtok(), 1 if energy is None else 0, energy if energy is not None else float("inf"))
 
     return min(priced, key=sort_key)

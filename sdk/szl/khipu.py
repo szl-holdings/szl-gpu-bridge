@@ -57,8 +57,19 @@ def mint(
 def check(receipt: dict[str, Any], secret: str) -> bool:
     """Verify one receipt's integrity and origin. Proves the receipt is
     intact and signed by the holder of `secret` — never that the claim
-    inside is accurate."""
+    inside is accurate. An unsigned or empty receipt NEVER verifies."""
     if not isinstance(receipt, dict):
+        return False
+    if not receipt.get("ts"):  # missing timestamp = unverifiable
+        return False
+    import datetime
+    try:
+        dt = datetime.datetime.fromisoformat(str(receipt["ts"]).replace("Z", "+00:00"))
+        if dt.tzinfo is None:  # timezone-free = unverifiable
+            return False
+        if dt > datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5):
+            return False  # future timestamp = unverifiable
+    except (ValueError, TypeError):
         return False
     body = {k: v for k, v in receipt.items() if k not in ("body_sha256", "signature")}
     if body.get("kind") != KIND:

@@ -28,8 +28,11 @@ class ProvenanceClaim:
     def state(self, secret: str | None = None) -> str:
         if self.training_receipt is None:
             return "CARD_ONLY" if self.source_sha else "UNTRAINED"
-        if secret is not None and not khipu.check(self.training_receipt, secret):
-            return "UNAVAILABLE"  # receipt present but unverifiable
+        # NO SECRET = CANNOT VERIFY = NEVER MEASURED (Law 6: fail closed)
+        if secret is None:
+            return "UNAVAILABLE"
+        if not khipu.check(self.training_receipt, secret):
+            return "UNAVAILABLE"  # unverifiable receipt = UNAVAILABLE, never MEASURED
         if not self.source_sha or not self.datasets:
             return "UNAVAILABLE"
         return "MEASURED"

@@ -111,6 +111,9 @@ class ProvenanceTests(unittest.TestCase):
         badge = c.badge(secret)
         self.assertTrue(khipu.check(badge, secret))
         self.assertEqual(badge["claim"]["state"], "MEASURED")
+        # unsigned inspection must NEVER be MEASURED (Law 6)
+        unsigned = c.badge(secret=None)
+        self.assertEqual(unsigned["state"], "UNAVAILABLE")
 
 
 class RouterTests(unittest.TestCase):
@@ -133,6 +136,46 @@ class RouterTests(unittest.TestCase):
         m = router.Model("m", "UNMEASURED", None, None, None, None)
         self.assertIsNone(m.honesty_score())
         self.assertIsNone(m.cost_per_mtok())
+
+
+class TightenedSecurityTests(unittest.TestCase):
+    """Codex review findings: empty receipts, missing timestamps, future timestamps."""
+
+    def test_empty_receipt_never_verifies(self):
+        r = {}  # empty receipt — must fail
+        self.assertFalse(khipu.check(r, secret="s"))
+
+    def test_unsigned_receipt_never_measured(self):
+        c = provenance.ProvenanceClaim(model_id="m", source_sha="a" * 40,
+                                        training_receipt={"kind": "szl.training-receipt/v1"},
+                                        datasets={"train": "b" * 64})
+        # no secret = UNAVAILABLE, never MEASURED
+        self.assertEqual(c.state(None), "UNAVAILABLE")
+
+    def test_missing_timestamp_never_verifies(self):
+        r = khipu.mint({"claim": "x"}, secret="s")
+        del r["ts"]  # remove the timestamp
+        self.assertFalse(khipu.check(r, secret="s"))
+
+    def test_future_timestamp_never_verifies(self):
+        import datetime
+        future = (datetime.datetime.now(datetime.timezone.utc)
+                  + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r = khipu.mint({"claim": "x"}, secret="s", ts=future)
+        self.assertFalse(khipu.check(r, secret="s"))
+
+    def test_measured_zero_energy_beats_unknown(self):
+        models = [
+            router.Model("unknown-energy", "MEASURED", 0.9, None, None, 1.0),
+            router.Model("measured-zero", "MEASURED", 0.9, None, 0.0, 1.0),
+        ]
+        pick = router.route("eval", models)
+        self.assertEqual(pick.model_id, "measured-zero")  # known zero > unknown
+
+    def test_timezone_free_timestamp_never_verifies(self):
+        r = khipu.mint({"claim": "x"}, secret="s")
+        r["ts"] = "2026-11-10T07:00:00"  # no timezone
+        self.assertFalse(khipu.check(r, secret="s"))
 
 
 if __name__ == "__main__":
