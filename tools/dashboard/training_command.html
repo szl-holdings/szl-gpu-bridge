@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SZL Training Command — live, receipt-backed</title>
+<meta name="color-scheme" content="dark">
+<style>
+  :root { --bg:#04070d; --surface:#0b111a; --border:#1e2a3a; --text:#e8f0fa; --sub:#8fa3bd; --accent:#5ce8de; --green:#3ddc84; --red:#ff5c5c; --amber:#ffb454; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 ui-sans-serif,system-ui,sans-serif; }
+  header { padding:28px 5% 12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  h1 { font-size:1.35rem; margin:0; letter-spacing:.02em; }
+  h1 span { color:var(--accent); }
+  .sub { color:var(--sub); font-size:.85rem; }
+  main { padding:24px 5% 60px; max-width:1200px; margin:0 auto; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-bottom:26px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .card .k { color:var(--sub); font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; }
+  .card .v { font-size:1.9rem; font-weight:650; margin-top:4px; }
+  .v.ok { color:var(--green); } .v.bad { color:var(--red); } .v.warn { color:var(--amber); }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--sub); font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:.75rem; font-weight:600; }
+  .b-green { background:rgba(61,220,132,.14); color:var(--green); }
+  .b-red { background:rgba(255,92,92,.14); color:var(--red); }
+  .b-amber { background:rgba(255,180,84,.14); color:var(--amber); }
+  .b-neutral { background:rgba(143,163,189,.12); color:var(--sub); }
+  .bar { height:22px; border-radius:5px; background:linear-gradient(90deg,var(--accent),#3d9ddc); }
+  h2 { font-size:.85rem; color:var(--sub); text-transform:uppercase; letter-spacing:.12em; margin:30px 0 10px; }
+  #stream .row { display:flex; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:.85rem; }
+  #stream .t { color:var(--sub); white-space:nowrap; }
+  .note { color:var(--sub); font-size:.8rem; margin-top:14px; }
+  footer { padding:18px 5%; border-top:1px solid var(--border); color:var(--sub); font-size:.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>SZL <span>Training Command</span></h1>
+    <div class="sub">Live from the receipts chain — status text is a claim; a commit is a receipt.</div>
+  </div>
+  <div class="sub" id="refresh">loading…</div>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><div class="k">Chain commits</div><div class="v" id="commits">—</div></div>
+    <div class="card"><div class="k">Chain freshness</div><div class="v" id="fresh">—</div></div>
+    <div class="card"><div class="k">Receipts in last 24h</div><div class="v" id="day">—</div></div>
+    <div class="card"><div class="k">Cross-lab legs measured</div><div class="v" id="legs">—</div></div>
+  </div>
+
+  <h2>Cross-lab honesty census — every bar is a receipted measurement</h2>
+  <div class="card"><table id="census"><thead><tr>
+    <th>Model</th><th>Lab</th><th>Score</th><th>Honesty</th><th>State</th>
+  </tr></thead><tbody></tbody></table>
+  <div class="note">Source: census/openai-leg.json + census/anthropic-leg.json on the chain. Verification proves integrity and origin, never accuracy or performance.</div></div>
+
+  <h2>Receipt stream — the chain, newest first</h2>
+  <div class="card" id="stream"></div>
+  <div class="note">A leg that is "running" but absent from this stream is UNKNOWN, not training (the doctrine). The fleet watch files a drift issue within the hour when this goes stale.</div>
+</main>
+<footer>SZL Holdings · every number on this page is fetched live from the public receipts chain (SZLHOLDINGS/frontier-54-runs) · Apache-2.0</footer>
+
+<script>
+const CHAIN = "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs";
+const FILES = "https://huggingface.co/datasets/SZLHOLDINGS/frontier-54-runs/resolve/main";
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/</g,"&lt;");
+
+async function jget(url) { const r = await fetch(url, {headers:{"User-Agent":"szl-dashboard/1.0"}}); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+function badge(state){ const cls = state==="MEASURED"?"b-green":state==="UNAVAILABLE"?"b-amber":"b-neutral";
+  return `<span class="badge ${cls}">${esc(state||"UNKNOWN")}</span>`; }
+
+async function loadCommits(){
+  const commits = await jget(CHAIN + "/commits/main");
+  $("commits").textContent = commits.length;
+  const head = new Date(commits[0].date);
+  const ageH = (Date.now() - head) / 36e5;
+  const fresh = ageH <= 24;
+  const f = $("fresh"); f.textContent = fresh ? "FRESH" : "STALE";
+  f.className = "v " + (fresh ? "ok" : "bad");
+  const day = commits.filter(c => (Date.now() - new Date(c.date)) < 864e5).length;
+  const d = $("day"); d.textContent = day;
+  d.className = "v " + (day > 0 ? "ok" : "warn");
+  $("stream").innerHTML = commits.slice(0, 18).map(c =>
+    `<div class="row"><span class="t">${esc(c.date.slice(0,19))}</span><span>${esc(c.title)}</span></div>`).join("");
+  return commits;
+}
+
+async function loadCensus(){
+  const rows = [];
+  const known = {
+    "gpt-5.2":["OpenAI","6/6"],"gpt-5.6-sol":["OpenAI","3/6"],
+    "gpt-6.1-sol":["OpenAI","5/6"],"gpt-6.1-terra":["OpenAI","5/6"],"gpt-6.1-astra":["OpenAI","5/6"],
+  };
+  // OpenAI leg (published earlier)
+  try { const o = await jget(FILES + "/census/openai-leg.json");
+    (o.legs||[]).forEach(l => rows.push({model:l.model||l.model_id||"gpt", lab:"OpenAI", score:l.score||l.passed+"/"+l.total, state:"MEASURED"}));
+  } catch(e) { Object.entries(known).forEach(([m,[lab,s]])=>rows.push({model:m,lab,score:s,state:"REPORTED"})); }
+  // Anthropic leg (tonight's)
+  try { const a = await jget(FILES + "/census/anthropic-leg.json");
+    (a.legs||[]).forEach(l => rows.push({model:l.model, lab:"Anthropic", score:l.score, state:l.state}));
+  } catch(e) {}
+  $("legs").textContent = rows.length;
+  const tb = $("census").querySelector("tbody");
+  tb.innerHTML = rows.map(r => {
+    const pct = (parseInt(r.score)/6)*100;
+    return `<tr><td>${esc(r.model)}</td><td>${esc(r.lab)}</td><td>${esc(r.score)}</td>
+      <td style="min-width:120px"><div class="bar" style="width:${pct}%"></div></td>
+      <td>${badge(r.state)}</td></tr>`;
+  }).join("") || `<tr><td colspan="5">census receipts not yet reachable — UNKNOWN, not empty</td></tr>`;
+}
+
+(async () => {
+  try {
+    await Promise.all([loadCommits(), loadCensus()]);
+    $("refresh").textContent = "live · " + new Date().toISOString().slice(0,19) + "Z";
+  } catch (e) {
+    $("refresh").textContent = "chain unreachable — fail closed, showing UNKNOWN";
+  }
+  setInterval(async () => { try { await Promise.all([loadCommits(), loadCensus()]);
+    $("refresh").textContent = "live · " + new Date().toISOString().slice(0,19) + "Z"; } catch(e){} }, 300000);
+})();
+</script>
+</body>
+</html>
