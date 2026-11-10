@@ -43,4 +43,4 @@ jobs:
         run: |
           ls -la sdk/dist/ || true
           ls -la dist/ || true
-          uv publish sdk/dist/*.whl sdk/dist/*.tar.gz
+          uv publish --trusted-publishing always sdk/dist/*.whl sdk/dist/*.tar.gz
