@@ -38,7 +38,6 @@ jobs:
         run: |
           pip install dist/szl-*.whl 2>/dev/null || pip install sdk/dist/szl-*.whl
           python -c "from szl import kamachikuna; assert kamachikuna.gate('x', True)[1] == 'ALLOWED'; print('wheel OK')"
-      - name: Publish to PyPI (trusted publishing — no token)
-        uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b # v1.14.3
-        with:
-          packages-dir: sdk/dist
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Publish to PyPI (trusted publishing — no token, uv OIDC)
+        run: uv publish sdk/dist
