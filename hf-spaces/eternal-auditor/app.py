@@ -116,7 +116,7 @@ def audit_cycle():
         full = get("https://huggingface.co/api/spaces/" + s["id"])
         if full and (full.get("runtime") or {}).get("stage") == "RUNNING":
             running += 1
-    findings.append({"check": "spaces_running_sample", "sampled": min(len(spaces, 40), len(spaces)) if spaces else 0,
+    findings.append({"check": "spaces_running_sample", "sampled": min(len(spaces), 40) if spaces else 0,
                      "running": running,
                      "verdict": "MEASURED" if spaces else "UNAVAILABLE"})
     return findings
