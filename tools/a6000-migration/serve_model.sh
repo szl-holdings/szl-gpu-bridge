@@ -1,43 +1,50 @@
 #!/usr/bin/env bash
-# serve_model.sh — deploy one estate model natively on an A6000 node.
-#
-# Usage:  bash serve_model.sh <model-name> [gguf-path-or-hf-repo]
-# The Massed way: no containers, no restart_policy masquerade —
-# boot receipt FIRST, screen session, health endpoint, mesh heartbeat.
+# Start a GGUF or HF serving process with literal arguments and bounded health
+# checks. A successful /health response is readiness, not model-quality proof.
 set -euo pipefail
-MODEL="$1"; SRC="${2:-}"
-OUT="$HOME/szl-serve/$MODEL"; mkdir -p "$OUT"
-
-# 1. BOOT RECEIPT FIRST — prove the intent before anything else
-python3 -c "
-import json, datetime
-r = {'kind': 'szl.serve-boot-receipt/v1', 'model': '$MODEL', 'source': '$SRC',
-     'ts': datetime.datetime.now(datetime.timezone.utc).isoformat()}
-open('$OUT/boot-receipt.json', 'w').write(json.dumps(r, sort_keys=True))
-print(json.dumps(r, sort_keys=True))"
-
-# 2. Pick the serving stack by artifact type
+MODEL="${1:-}"; SRC="${2:-}"
+[[ "$MODEL" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || { echo 'invalid model name' >&2; exit 2; }
+[ -n "$SRC" ] || { echo 'a GGUF path or HF repository is required' >&2; exit 2; }
+for command in screen python3 curl; do
+  command -v "$command" >/dev/null || { echo "$command is not installed" >&2; exit 2; }
+done
+session_exists() {
+  screen -ls | awk -v n="serve-$MODEL" '$1 ~ /^[0-9]+\./ {sub(/^[0-9]+\./,"",$1); if ($1==n) found=1} END {exit !found}'
+}
+session_exists && { echo "session already exists: serve-$MODEL" >&2; exit 2; }
+# An already-listening service must not be mistaken for the newly launched one.
+python3 - <<'PY'
+import socket
+with socket.socket() as sock:
+    sock.bind(('0.0.0.0', 8080))
+PY
+OUT="$HOME/szl-serve/$MODEL"; mkdir -p -- "$OUT"
 case "$SRC" in
   *.gguf)
-    # llama.cpp server (the szl-serve honest path)
-    command -v llama-server >/dev/null || { echo "llama-server not installed — see szl-serve recipe"; exit 2; }
-    SCREEN_CMD="llama-server -m $SRC --host 0.0.0.0 --port 8080"
+    [ -f "$SRC" ] || { echo 'GGUF file does not exist' >&2; exit 2; }
+    command -v llama-server >/dev/null || { echo 'llama-server is not installed' >&2; exit 2; }
+    COMMAND=(llama-server -m "$SRC" --host 0.0.0.0 --port 8080)
     ;;
-  *)
-    # HF checkpoint → vLLM (frontier-bench measures it)
-    command -v python3 >/dev/null || exit 2
-    SCREEN_CMD="python3 -m vllm.entrypoints.openai.api_server --model $SRC --host 0.0.0.0 --port 8080"
-    ;;
+  *) COMMAND=(python3 -m vllm.entrypoints.openai.api_server --model "$SRC" --host 0.0.0.0 --port 8080) ;;
 esac
-
-# 3. Screen session: survives disconnect; logs to disk
-screen -dmS "serve-$MODEL" bash -c "$SCREEN_CMD >> $OUT/serve.log 2>&1"
-sleep 5
-if screen -ls | grep -q "serve-$MODEL"; then
-  echo "SERVING: $MODEL (screen serve-$MODEL, logs $OUT/serve.log)"
-  echo "boot receipt: $OUT/boot-receipt.json"
-  echo "health: curl -s localhost:8080/health"
-  echo "liveness truth: the mesh agent's hourly heartbeat — a dead server shows dead"
-else
-  echo "FAILED TO START — check $OUT/serve.log"; exit 3
-fi
+python3 - "$MODEL" "$SRC" "$OUT/boot-receipt.json" <<'PY'
+import datetime, json, sys
+receipt = {'kind': 'szl.serve-boot-receipt/v1', 'model': sys.argv[1],
+           'source': sys.argv[2], 'status': 'LAUNCH_REQUESTED',
+           'ts': datetime.datetime.now(datetime.timezone.utc).isoformat()}
+with open(sys.argv[3], 'w') as out:
+    json.dump(receipt, out, sort_keys=True)
+PY
+screen -dmS "serve-$MODEL" bash -c 'log=$1; shift; exec "$@" >> "$log" 2>&1' bash "$OUT/serve.log" "${COMMAND[@]}"
+for attempt in {1..30}; do
+  if ! session_exists; then
+    echo "FAILED TO START; check $OUT/serve.log" >&2; exit 3
+  fi
+  if curl --fail --silent --max-time 2 http://127.0.0.1:8080/health >/dev/null; then
+    echo "READY: $MODEL; /health passed. Model quality and throughput remain unverified."
+    exit 0
+  fi
+  sleep 1
+done
+echo "READINESS UNVERIFIED: $MODEL; startup exceeded the health window. Session retained; log: $OUT/serve.log" >&2
+exit 4

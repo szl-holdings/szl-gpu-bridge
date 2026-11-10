@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# SZL A6000 benchmark leg — identical pinned workload to the 4090 leg + regional carbon join
+# SZL benchmark leg — workload revisions still require explicit qualification
 set -e
 export HF_HOME=$HOME/hf_cache PIP_BREAK_SYSTEM_PACKAGES=1
 pip install -q transformers datasets peft trl accelerate huggingface_hub safetensors pynvml
 export HF_TOKEN="$HF_TOKEN_INJECT"
+export PYTHONPATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../laptop" && pwd)${PYTHONPATH:+:$PYTHONPATH}"
 python3 - <<'BENCH'
 import os, time, json, hashlib, threading, torch
 import pynvml
+from benchmark_power import PowerSampler
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer, SFTConfig
@@ -16,15 +18,9 @@ TOK = os.environ["HF_TOKEN"]; api = HfApi(token=TOK)
 SEED = 20261109; MAX_STEPS = 2000
 torch.manual_seed(SEED)
 gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-pynvml.nvmlInit(); handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-_joules=[0.0]; _watts=[]; _stop=[False]
-def sampler():
-    last=time.time()
-    while not _stop[0]:
-        try: w = pynvml.nvmlDeviceGetPowerUsage(handle)/1000.0
-        except Exception: _err[0]+=1; last=time.time(); time.sleep(1.0); continue
-        now=time.time(); _joules[0]+=w*(now-last); last=now; _watts.append(w); time.sleep(1.0)
-threading.Thread(target=sampler,daemon=True).start()
+pynvml.nvmlInit()
+handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+energy_sampler = PowerSampler(lambda: pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0)
 t0=time.time()
 tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-1.7B")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-1.7B", torch_dtype=torch.bfloat16, device_map="auto")
@@ -44,14 +40,17 @@ cfg = SFTConfig(output_dir=os.path.expanduser("~/ckpt"), max_length=2048,
     logging_steps=50, save_strategy="no", bf16=True, optim="adamw_torch",
     max_steps=MAX_STEPS, report_to=[], packing=True, seed=SEED)
 trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
-t_train=time.time(); trainer.train(); train_s=time.time()-t_train
-_stop[0]=True; time.sleep(1.2)
-joules=_joules[0]; avg_w=sum(_watts)/len(_watts) if _watts else 0
+energy_sampler.start()
+t_train = time.monotonic()
+try:
+    trainer.train()
+finally:
+    energy_sampler.stop()
+    pynvml.nvmlShutdown()
+train_s = time.monotonic() - t_train
 tokens_est = 32*2048*trainer.state.global_step
 logs=trainer.state.log_history
 loss_curve=[{"step":l.get("step"),"loss":l.get("loss")} for l in logs if "loss" in l]
-KWH=joules/3.6e6
-CARBON=0.385  # US grid avg; regional join upgrade when node region confirmed
 receipt = {"schema":"szl.gpu-mesh-benchmark/v1","gpu":gpu,
   "vram_gb": round(torch.cuda.get_device_properties(0).total_memory/1e9,1) if torch.cuda.is_available() else 0,
   "workload":{"model":"Qwen/Qwen3-1.7B","method":"LoRA r32 a64 bf16 packing","max_steps":MAX_STEPS,
@@ -59,11 +58,7 @@ receipt = {"schema":"szl.gpu-mesh-benchmark/v1","gpu":gpu,
               "corpus":"SZLHOLDINGS/abstention-doctrine-sft-v1 (2000 examples, seed 20261109)"},
   "throughput":{"steps_per_sec":round(trainer.state.global_step/train_s,4),
                 "sec_per_step":round(train_s/trainer.state.global_step,4),"wall_seconds":round(train_s,1)},
-  "energy":{"joules_measured":round(joules,1),"method":"NVML power.draw integrated at 1Hz (pynvml)",
-            "avg_watts":round(avg_w,1),"kwh":round(KWH,6),
-            "joules_per_token":round(joules/max(tokens_est,1),4),"tokens_estimated":tokens_est,
-            "carbon_note":"MEASURED joules x US grid average (EPA eGRID 0.385 kgCO2/kWh); regional join pending region confirmation",
-            "co2_kg_estimated_us_average":round(KWH*CARBON,6)},
+  "energy": energy_sampler.report(tokens_est),
   "loss":{"first":loss_curve[0]["loss"] if loss_curve else None,"last":loss_curve[-1]["loss"] if loss_curve else None},
   "provider":"SaladCloud RTX 5090 (Blackwell)","torch":torch.__version__,
   "started_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(t0))}
@@ -72,5 +67,5 @@ receipt["receipt_sha256"]=hashlib.sha256(blob.encode()).hexdigest()
 api.upload_file(path_or_fileobj=json.dumps(receipt,indent=2).encode(),
                 path_in_repo="benchmark/5090-leg.json",
                 repo_id="SZLHOLDINGS/frontier-54-runs", repo_type="dataset")
-print("BENCH_A6000_DONE", json.dumps(receipt["throughput"]), json.dumps(receipt["energy"]))
+print("BENCH_5090_DONE", json.dumps(receipt["throughput"]), json.dumps(receipt["energy"]))
 BENCH
