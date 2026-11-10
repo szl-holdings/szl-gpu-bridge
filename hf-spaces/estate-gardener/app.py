@@ -150,10 +150,11 @@ state = load_state()
 app = FastAPI() if _HAS_FASTAPI else None
 
 
-@app.get("/healthz")
-def healthz():
-    return {"ok": True, "service": ROLE, "cycle": state["cycle"],
-            "proposals_recorded": len(state.get("proposals", {}))}
+if _HAS_FASTAPI:
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True, "service": ROLE, "cycle": state["cycle"],
+                "proposals_recorded": len(state.get("proposals", {}))}
 
 
 if _HAS_FASTAPI:
