@@ -40,4 +40,7 @@ jobs:
           python -c "from szl import kamachikuna; assert kamachikuna.gate('x', True)[1] == 'ALLOWED'; print('wheel OK')"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Publish to PyPI (trusted publishing — no token, uv OIDC)
-        run: uv publish sdk/dist
+        run: |
+          ls -la sdk/dist/ || true
+          ls -la dist/ || true
+          uv publish sdk/dist
