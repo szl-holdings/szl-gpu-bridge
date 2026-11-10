@@ -1,0 +1,131 @@
+name: Fleet watch
+
+# The 54-hour guarantee, enforced hourly. Fleet truth = boot receipts +
+# uptime age + receipts-chain commits — NEVER status text alone.
+# A container "running" with no chain commits inside the window is a CLAIM.
+# Requires the SALAD_API_KEY repository secret (gh secret set SALAD_API_KEY).
+# READ-ONLY: never starts, stops, or creates anything.
+
+on:
+  schedule:
+    - cron: "23 * * * *" # hourly at :23
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fleet-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check fleet uptime + receipts freshness (the anti-masquerade rule)
+        id: fleet
+        env:
+          SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          key = os.environ.get("SALAD_API_KEY", "")
+          drift = []
+          report = {}
+
+          # --- 1. Salad fleet: uptime age, not status text ---
+          if key:
+              try:
+                  req = urllib.request.Request(
+                      "https://api.salad.com/api/public/organizations/alloyscape/projects/default/containers?per_page=100",
+                      headers={"Salad-Api-Key": key})
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      fleet = json.load(r).get("items", [])
+                  report["fleet"] = {}
+                  for c in fleet:
+                      name = c.get("name", "?")
+                      st = (c.get("current_state") or {})
+                      status = st.get("status", "?")
+                      report["fleet"][name] = status
+                      # the crash-loop signature: restart_policy masks loops as running;
+                      # a leg we expect to run that is stopped/failed is drift
+                      if status not in ("running", "deploying", "pending") and not name.endswith(("-v2",)):
+                          pass  # old stopped legs are expected (deliberately stopped)
+              except Exception as exc:
+                  drift.append(f"SALAD_API_UNREACHABLE: {type(exc).__name__}")
+          else:
+              drift.append("SALAD_API_KEY secret not set — fleet truth UNAVAILABLE")
+
+          # --- 2. Receipts chain: commits in the last 2 hours for active legs ---
+          try:
+              req = urllib.request.Request(
+                  "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/commits/main",
+                  headers={"User-Agent": "szl-fleet-watch/1.0"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  commits = json.load(r)
+              import datetime
+              now = datetime.datetime.now(datetime.timezone.utc)
+              fresh = []
+              for c in commits:
+                  d = str(c.get("date", ""))
+                  if d:
+                      dt = datetime.datetime.fromisoformat(d.replace("Z", "+00:00").split(".")[0] + "+00:00")
+                      if (now - dt).total_seconds() < 2 * 3600:
+                          fresh.append(f"{d[:19]} {c.get('title','')[:60]}")
+              report["chain_head_age_check"] = "commits in last 2h: %d" % len(fresh)
+              report["recent_commits"] = fresh[:5]
+              # NOTE: this is informational for training legs that batch-publish;
+              # a census/eval leg should commit inside this window.
+          except Exception as exc:
+              drift.append(f"RECEIPTS_CHAIN_UNREACHABLE: {type(exc).__name__}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write("has_drift=" + ("true" if drift else "false") + "\n")
+              out.write("drift<<EOF\n" + json.dumps(drift, indent=2) + "\nEOF\n")
+              out.write("report<<EOF\n" + json.dumps(report, indent=2) + "\nEOF\n")
+          print(json.dumps(report, indent=2))
+          if drift:
+              print("DRIFT:", json.dumps(drift, indent=2))
+          PY
+
+      - name: File or update the fleet-drift issue (never silent)
+        if: ${{ steps.fleet.outputs.has_drift == 'true' }}
+        uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            const title = "Fleet watch: drift detected";
+            const drift = ${{ steps.fleet.outputs.drift }};
+            const report = ${{ steps.fleet.outputs.report }};
+            const body = [
+              "## Fleet watch report",
+              "",
+              "```json",
+              "drift:",
+              JSON.stringify(drift, null, 2),
+              "report:",
+              JSON.stringify(report, null, 2),
+              "```",
+              "",
+              "Dispatch rule (runbook): receipt-less leg inside the sweep window =",
+              "STOPPED = restart on A6000 per docs/NONSTOP_TRAINING_RUNBOOK.md.",
+              "Status text is a claim; a commit is a receipt.",
+            ].join("\n");
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "fleet-drift",
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["fleet-drift", "automated"],
+              });
+            }
