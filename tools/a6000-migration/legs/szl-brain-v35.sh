@@ -155,7 +155,8 @@ for cycle in range(1, MAX_CYCLES+1):
     parts=[]
     for name in ["SZLHOLDINGS/a11oy-code-sft-v1","SZLHOLDINGS/abstention-doctrine-sft-v1","SZLHOLDINGS/ancient-math-reasoning-sft-v1","SZLHOLDINGS/verticals-sft-v1"]:
         try:
-            d = load_dataset(name, split="train").map(fmt, remove_columns=None)
+            d = load_dataset(name, split="train")
+            d = d.map(fmt, remove_columns=d.column_names)
             parts.append(d); print("loaded", name, len(d))
         except Exception as e: print("skip", name, str(e)[:80])
     if synth:
