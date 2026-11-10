@@ -24,6 +24,7 @@ print(json.dumps(r, sort_keys=True))"
 # one screen session per leg; logs appended; survives disconnect
 screen -dmS "$LEG" bash -c "
   export HF_TOKEN JOB=$LEG HF_HOME=$OUT/hf PIP_BREAK_SYSTEM_PACKAGES=1
+  export HF_TOKEN_INJECT="$HF_TOKEN" HUGGINGFACE_HUB_TOKEN="$HF_TOKEN"
   bash legs/${LEG}.sh >> $OUT/leg.log 2>&1"
 sleep 3
 screen -ls | grep "$LEG" && echo "LEG $LEG LAUNCHED — boot receipt at $OUT/boot-receipt.json" \

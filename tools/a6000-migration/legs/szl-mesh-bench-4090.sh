@@ -24,7 +24,7 @@ def sampler():
     last = time.time()
     while not _stop[0]:
         try:
-            w = pynvml.nvmlDeviceGetPower(handle) / 1000.0  # W
+            w = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # W
         except Exception:
             w = 0.0
         now = time.time()

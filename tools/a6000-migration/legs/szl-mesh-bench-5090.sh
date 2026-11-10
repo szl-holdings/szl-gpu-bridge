@@ -21,8 +21,8 @@ _joules=[0.0]; _watts=[]; _stop=[False]
 def sampler():
     last=time.time()
     while not _stop[0]:
-        try: w = pynvml.nvmlDeviceGetPower(handle)/1000.0
-        except Exception: w=0.0
+        try: w = pynvml.nvmlDeviceGetPowerUsage(handle)/1000.0
+        except Exception: _err[0]+=1; last=time.time(); time.sleep(1.0); continue
         now=time.time(); _joules[0]+=w*(now-last); last=now; _watts.append(w); time.sleep(1.0)
 threading.Thread(target=sampler,daemon=True).start()
 t0=time.time()

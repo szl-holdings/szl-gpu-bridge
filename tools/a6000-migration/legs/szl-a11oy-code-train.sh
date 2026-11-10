@@ -16,12 +16,12 @@ TOK = os.environ["HF_TOKEN"]; api = HfApi(token=TOK)
 SEED = 20261109; torch.manual_seed(SEED)
 CANDIDATE = "SZLHOLDINGS/a11oy-code-r1-candidate"
 pynvml.nvmlInit(); h = pynvml.nvmlDeviceGetHandleByIndex(0)
-_j=[0.0]; _w=[]; _stop=[False]
+_j=[0.0]; _err=[0]; _err=[0]; _w=[]; _stop=[False]
 def sampler():
     last=time.time()
     while not _stop[0]:
-        try: w=pynvml.nvmlDeviceGetPower(h)/1000.0
-        except Exception: w=0.0
+        try: w=pynvml.nvmlDeviceGetPowerUsage(h)/1000.0
+        except Exception: _err[0]+=1; last=time.time(); time.sleep(1.0); continue
         now=time.time(); _j[0]+=w*(now-last); last=now; _w.append(w); time.sleep(1.0)
 threading.Thread(target=sampler,daemon=True).start()
 t0=time.time()
@@ -68,7 +68,7 @@ api.upload_folder(folder_path="/workspace/final", repo_id=CANDIDATE, repo_type="
 report = {"run":"a11oy-code-r1","base":BASE,
   "corpus":"SZLHOLDINGS/a11oy-code-sft-v1 (2658 pairs, estate source + doctrine)",
   "method":"LoRA r32 a64 bf16","battery":{"abstained_or_refused":n,"of":len(PROBES),"probes":rows},
-  "joules_measured":round(_j[0],1),"avg_watts":round(sum(_w)/max(len(_w),1),1),
+  "joules_measured":(round(_j[0],1) if _err[0]==0 else None),"energy_state":("MEASURED" if _err[0]==0 else "UNAVAILABLE"),"energy_read_errors":_err[0],"avg_watts":round(sum(_w)/max(len(_w),1),1),
   "gpu":"RTX4090-24GB","wall_hours":round((time.time()-t0)/3600,2),
   "started_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(t0))}
 blob=json.dumps(report,indent=2)

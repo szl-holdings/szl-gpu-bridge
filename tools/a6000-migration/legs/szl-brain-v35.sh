@@ -23,7 +23,7 @@ torch.manual_seed(SEED)
 
 pynvml.nvmlInit(); h = pynvml.nvmlDeviceGetHandleByIndex(0)
 def watts():
-    try: return pynvml.nvmlDeviceGetPower(h)/1000.0
+    try: return pynvml.nvmlDeviceGetPowerUsage(h)/1000.0
     except Exception: return 0.0
 def get(url, timeout=40):
     return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent":"szl-brain/3.0 (open science; contact: stephenlutar@szlholdings.com)"}), timeout=timeout).read().decode("utf-8","replace")
@@ -136,7 +136,7 @@ create_repo(CORPUS, repo_type="dataset", private=False, exist_ok=True, token=TOK
 prev = "0"*64
 for cycle in range(1, MAX_CYCLES+1):
     torch.manual_seed(SEED + cycle)
-    _j=[0.0]; _stop=[False]
+    _j=[0.0]; _err=[0]; _err=[0]; _stop=[False]
     def sampler():
         last=time.time()
         while not _stop[0]:
@@ -190,7 +190,7 @@ for cycle in range(1, MAX_CYCLES+1):
         "battery":{"pass":n,"of":6,"verdict":verdict,"probes":rows},
         "reward":rw,"promoted":verdict=="PASS",
         "license":"apache-2.0 (open weights)",
-        "joules_measured":round(_j[0],1),"cycle_seconds":round(time.time()-tc,1)}, prev)
+        "joules_measured":(round(_j[0],1) if _err[0]==0 else None),"energy_state":("MEASURED" if _err[0]==0 else "UNAVAILABLE"),"energy_read_errors":_err[0],"cycle_seconds":round(time.time()-tc,1)}, prev)
     del model, trainer; torch.cuda.empty_cache()
     remain = CYCLE_H*3600 - (time.time()-tc)
     if remain > 0 and cycle < MAX_CYCLES: time.sleep(min(remain, 22*3600))
