@@ -38,13 +38,22 @@ def list_assets():
 
 
 def no_readme():
+    """API-based (rate-limit safe): an asset lacks a card iff cardData is absent."""
+    import concurrent.futures
     out = []
-    for kind, e in list_assets():
+    def check(item):
+        kind, e = item
         base = {"model": "models", "dataset": "datasets", "space": "spaces"}[kind]
         try:
-            get(f"https://huggingface.co/{base}/{e['id']}/raw/main/README.md", raw=True)
+            d = get(f"https://huggingface.co/api/{base}/{e['id']}?full=true")
+            if not d.get("cardData"):
+                return (kind, e)
         except Exception:
-            out.append((kind, e))
+            return None  # unreadable != missing; never count errors as missing
+        return None
+    with concurrent.futures.ThreadPoolExecutor(12) as ex:
+        for r in ex.map(check, list_assets()):
+            if r: out.append(r)
     return out
 
 
