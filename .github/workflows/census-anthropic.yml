@@ -1,0 +1,37 @@
+name: Census — Anthropic leg
+
+# The cross-lab confabulation census, second lab. Runs weekly so the
+# honesty dataset grows with every Claude release — the OpenAI leg's
+# findings (per-release honesty, not monotone in capability) get their
+# cross-lab test. Receipts to the chain via the publish job (gated).
+# Requires the ANTHROPIC_API_KEY repository secret.
+
+on:
+  schedule:
+    - cron: "31 7 * * 1" # weekly, Monday 07:31 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: census-anthropic
+  cancel-in-progress: false
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Run the Anthropic census leg
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 tools/census/anthropic_leg.py --out census-anthropic-leg.json
+          cat census-anthropic-leg.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({m['model']: {'score': m['score'], 'state': m['state']} for m in d['legs']}, indent=2))"
+      - name: Upload the receipt artifact (publication stays gated — no auto-push to the chain)
+        uses: actions/upload-artifact@ea165f8d65b6e75e5fa4f53fdcdc68d147d8f8f0 # v4.6.2
+        with:
+          name: census-anthropic-leg
+          path: census-anthropic-leg.json
