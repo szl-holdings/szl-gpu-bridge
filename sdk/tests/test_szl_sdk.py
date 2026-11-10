@@ -180,3 +180,62 @@ class TightenedSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class OpenShellPolicyTests(unittest.TestCase):
+    """Kamachikuna as OpenShell-reviewable policy-as-code."""
+
+    def setUp(self):
+        from szl import openshell
+        self.os_ = openshell
+
+    def test_policy_document_is_deterministic_and_hashed(self):
+        d1 = self.os_.policy_document()
+        d2 = self.os_.policy_document()
+        self.assertEqual(d1, d2)  # version-controllable: byte-stable
+        self.assertEqual(d1["spec"]["default"], "deny")  # Law 6
+        self.assertEqual(len(d1["spec"]["rules"]), 10)
+        self.assertTrue(all("sha256" in d1["metadata"] for _ in [1]))
+
+    def test_laws_single_sourced(self):
+        doc = self.os_.policy_document()
+        texts = [r["text"] for r in doc["spec"]["rules"]]
+        from szl import kamachikuna
+        self.assertEqual(sorted(texts), sorted(kamachikuna.LAWS.values()))
+
+    def test_lean_proven_flags_are_true_only_for_proven_laws(self):
+        doc = self.os_.policy_document()
+        proven = [r["id"] for r in doc["spec"]["rules"] if r["lean_proven"]]
+        # laws 1,4,5,7,9 have Lean-proven theorems
+        self.assertEqual(proven, ["kamachikuna.law%d" % n for n in (1, 4, 5, 7, 9)])
+
+    def test_gate_fails_closed(self):
+        d = self.os_.admission_gate("train.launch", verified=False)
+        self.assertEqual(d["decision"], "BLOCKED")
+        self.assertIn(6, d["laws"])
+        self.assertIn("fail closed", d["reason"])
+
+    def test_allow_requires_receipt(self):
+        # verified but no receipt -> Law 7 blocks the claim
+        d = self.os_.admission_gate("train.launch", verified=True, receipt=None)
+        self.assertEqual(d["decision"], "BLOCKED")
+        self.assertIn(7, d["laws"])
+        # with a receipt -> allowed
+        d2 = self.os_.admission_gate("train.launch", verified=True,
+                                     receipt={"sha256": "ab" * 32})
+        self.assertEqual(d2["decision"], "ALLOWED")
+        self.assertEqual(d2["receiptSha256"], "ab" * 32)
+
+    def test_irreversible_actions_are_human_only(self):
+        d = self.os_.admission_gate("payment.execute", verified=True,
+                                    receipt={"sha256": "cd" * 32})
+        self.assertEqual(d["decision"], "BLOCKED")  # Law 7: human-only
+        self.assertIn(7, d["laws"])
+        self.assertIn("human-only", d["reason"])
+
+    def test_audit_event_is_ocsf_shaped(self):
+        d = self.os_.admission_gate("train.launch", verified=False)
+        ev = self.os_.audit_event(d)
+        self.assertEqual(ev["class"], "application_activity")
+        self.assertFalse(ev["authorized"])
+        self.assertEqual(ev["metadata"]["doctrine"], "v11")
