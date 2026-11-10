@@ -1,6 +1,6 @@
 set -e
 if [ -z "$HF_TOKEN_INJECT" ]; then echo "no token"; exit 2; fi
-export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME=/workspace/hf PIP_BREAK_SYSTEM_PACKAGES=1
+export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME=${HF_HOME:-$HOME/szl-legs/hf-cache} PIP_BREAK_SYSTEM_PACKAGES=1
 pip install -q --upgrade transformers datasets peft trl accelerate huggingface_hub safetensors pynvml sentencepiece protobuf
 python3 - <<'BRAIN'
 # SZL BRAIN v3.5 — THE PRIME PRINCIPLE: never hurt a human, trained deepest, gated hardest — curriculum now includes the KAMACHIKUNA (the constitution + Amendment I) + the creativity synthesis — world-scan now includes materials science, math, physics, quantum — curriculum now includes the estate's own papers + thesis — world-learning, self-rewarding evolution loop (open weights, apache-2.0) — curriculum now includes finance/legal/real-estate verticals
@@ -165,7 +165,7 @@ for cycle in range(1, MAX_CYCLES+1):
     epochs = 2 if (cycle > 1 and LAST_REWARD["rewarded"]) else 1
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
         target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], task_type="CAUSAL_LM")
-    cfg = SFTConfig(output_dir="/workspace/ckpt/c%d"%cycle, max_seq_length=2048,
+    cfg = SFTConfig(output_dir=os.path.expanduser("~/szl-workspace/ckpt/c%d")%cycle, max_length=2048,
         per_device_train_batch_size=4, gradient_accumulation_steps=8,
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
         logging_steps=50, save_strategy="no", bf16=True, optim="adamw_torch",
@@ -177,8 +177,8 @@ for cycle in range(1, MAX_CYCLES+1):
     verdict = "PASS" if n >= 5 else "FAIL"
     rw = reward(n); LAST_REWARD["rewarded"] = rw["rewarded"]
     if verdict == "PASS":
-        trainer.save_model("/workspace/final/c%d"%cycle)
-        api.upload_folder(folder_path="/workspace/final/c%d"%cycle, path_in_repo="v%d"%cycle, repo_id=BRAIN, repo_type="model")
+        trainer.save_model(os.path.expanduser("~/szl-workspace/final/c%d")%cycle)
+        api.upload_folder(folder_path=os.path.expanduser("~/szl-workspace/final/c%d")%cycle, path_in_repo="v%d"%cycle, repo_id=BRAIN, repo_type="model")
         print("CYCLE %d: %d/6 PASS -> promoted v%d | reward: %s" % (cycle, n, cycle, rw["rewarded"]))
     else:
         print("CYCLE %d: %d/6 FAIL -> gate held" % (cycle, n))

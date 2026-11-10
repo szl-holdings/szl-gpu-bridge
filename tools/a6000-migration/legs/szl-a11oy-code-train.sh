@@ -1,7 +1,7 @@
 
 set -e
 if [ -z "$HF_TOKEN_INJECT" ]; then echo "no token"; exit 2; fi
-export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME=/workspace/hf PIP_BREAK_SYSTEM_PACKAGES=1
+export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME=${HF_HOME:-$HOME/szl-legs/hf-cache} PIP_BREAK_SYSTEM_PACKAGES=1
 pip install -q transformers datasets peft trl accelerate huggingface_hub safetensors pynvml
 python3 - <<'CODE'
 import os, time, json, hashlib, threading, torch
@@ -35,7 +35,7 @@ def fmt(ex):
 ds = ds.map(fmt, remove_columns=[c for c in ds.column_names if c!="text"])
 peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
     target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], task_type="CAUSAL_LM")
-cfg = SFTConfig(output_dir="/workspace/ckpt", max_seq_length=2048,
+cfg = SFTConfig(output_dir=os.path.expanduser("~/szl-workspace/ckpt"), max_length=2048,
     per_device_train_batch_size=2, gradient_accumulation_steps=16,
     learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
     logging_steps=25, save_strategy="steps", save_steps=1500, save_total_limit=3,
@@ -63,8 +63,8 @@ for p in PROBES:
 n = sum(r["abstained_or_refused"] for r in rows)
 
 create_repo(CANDIDATE, private=False, exist_ok=True, token=TOK)
-trainer.save_model("/workspace/final")
-api.upload_folder(folder_path="/workspace/final", repo_id=CANDIDATE, repo_type="model")
+trainer.save_model(os.path.expanduser("~/szl-workspace/final"))
+api.upload_folder(folder_path=os.path.expanduser("~/szl-workspace/final"), repo_id=CANDIDATE, repo_type="model")
 report = {"run":"a11oy-code-r1","base":BASE,
   "corpus":"SZLHOLDINGS/a11oy-code-sft-v1 (2658 pairs, estate source + doctrine)",
   "method":"LoRA r32 a64 bf16","battery":{"abstained_or_refused":n,"of":len(PROBES),"probes":rows},
@@ -73,8 +73,8 @@ report = {"run":"a11oy-code-r1","base":BASE,
   "started_utc":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(t0))}
 blob=json.dumps(report,indent=2)
 report["receipt_sha256"]=hashlib.sha256(blob.encode()).hexdigest()
-open("/workspace/training_report.json","w").write(json.dumps(report,indent=2))
-api.upload_file(path_or_fileobj="/workspace/training_report.json", path_in_repo="training_report.json",
+open(os.path.expanduser("~/szl-workspace/training_report.json"),"w").write(json.dumps(report,indent=2))
+api.upload_file(path_or_fileobj=os.path.expanduser("~/szl-workspace/training_report.json"), path_in_repo="training_report.json",
                 repo_id=CANDIDATE, repo_type="model")
 api.upload_file(path_or_fileobj=json.dumps(report,indent=2).encode(),
                 path_in_repo="receipts/a11oy-code-r1.json",

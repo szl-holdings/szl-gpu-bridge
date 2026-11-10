@@ -1,6 +1,6 @@
 
 set -e
-export HF_HOME=/workspace/hf PIP_BREAK_SYSTEM_PACKAGES=1
+export HF_HOME=${HF_HOME:-$HOME/szl-legs/hf-cache} PIP_BREAK_SYSTEM_PACKAGES=1
 pip install -q transformers datasets peft trl accelerate huggingface_hub safetensors pynvml
 python3 - <<'BENCH'
 import os, time, json, hashlib, threading, subprocess, torch
@@ -46,7 +46,7 @@ ds = ds.map(fmt, remove_columns=[c for c in ds.column_names if c != "text"])
 
 peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
     target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], task_type="CAUSAL_LM")
-cfg = SFTConfig(output_dir="/workspace/ckpt", max_seq_length=2048,
+cfg = SFTConfig(output_dir=os.path.expanduser("~/szl-workspace/ckpt"), max_length=2048,
     per_device_train_batch_size=4, gradient_accumulation_steps=8,
     learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
     logging_steps=50, save_strategy="no", bf16=True, optim="adamw_torch",
