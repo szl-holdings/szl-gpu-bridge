@@ -11,12 +11,21 @@ previous receipt's sha256 and published to the chain.
 import hashlib, hmac, json, os, time, threading, urllib.request
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from huggingface_hub import HfApi
+try:
+    from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
+    _HAS_FASTAPI = True
+except ImportError:  # stdlib-only envs (CI contract tests): logic without server
+    _HAS_FASTAPI = False
+try:
+    from huggingface_hub import HfApi
+    _HAS_HF = True
+except ImportError:
+    _HAS_HF = False
+    HfApi = None
 
 TOK = os.environ.get("HF_TOKEN", "")
-api = HfApi(token=TOK)
+api = HfApi(token=TOK) if _HAS_HF else None
 DS = "SZLHOLDINGS/frontier-54-runs"
 ROLE = "eternal-auditor"
 CYCLE = 3600  # hourly
@@ -33,6 +42,29 @@ def sha256_hex(s): return hashlib.sha256(s.encode()).hexdigest()
 def sign(body_sha, secret):
     return hmac.new(secret.encode(), body_sha.encode(), hashlib.sha256).hexdigest()
 
+
+
+
+# ---- Backward-compatible interface (the tests + SDK contract) ----
+def run_cycle(findings, secret):
+    """Full signatures, chained to the persisted prev, saved state."""
+    global state
+    state["cycle"] = state.get("cycle", 0) + 1
+    restarted = state.get("chain_state") == "GENESIS" and state["cycle"] > 1
+    body = {"kind": "szl.auditor-receipt/v2", "officer": ROLE,
+            "cycle": state["cycle"],
+            "chain_state": "BROKEN-RESTARTED" if restarted else "CONTINUOUS",
+            "prev_receipt_sha256": state["prev"],
+            "findings": findings,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    body_sha = sha256_hex(canonical(body))
+    signature = sign(body_sha, secret)  # FULL 64-hex
+    receipt = {**body, "body_sha256": body_sha, "signature": signature,
+               "signature_length": len(signature)}
+    state["prev"] = body_sha
+    state["chain_state"] = "CONTINUOUS"
+    save_state(state)
+    return receipt
 
 def load_state():
     if STATE.exists():
@@ -113,7 +145,7 @@ def loop():
 
 
 state = load_state()
-app = FastAPI()
+app = FastAPI() if _HAS_FASTAPI else None
 
 
 @app.get("/healthz")
@@ -122,11 +154,15 @@ def healthz():
             "chain_state": state.get("chain_state")}
 
 
-threading.Thread(target=loop, daemon=True).start()
-os.makedirs("/app/static", exist_ok=True)
-with open("/app/static/index.html", "w") as f:
-    f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
-            "<h1 style='color:#5ce8de'>Eternal Auditor v2</h1>"
-            "<p>Full-length signatures. Persisted chain state. Restarts marked, never silent.</p>"
-            "<p>Hourly cycles, each receipted and published to the chain.</p></body></html>")
-app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
+if _HAS_FASTAPI:
+    @app.on_event("startup")
+    def _start_loop():
+        threading.Thread(target=loop, daemon=True).start()
+    _STATIC = os.environ.get("OFFICER_STATIC", os.path.join(os.path.dirname(__file__), "static"))
+    os.makedirs(_STATIC, exist_ok=True)
+    with open(os.path.join(_STATIC, "index.html"), "w") as f:
+        f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
+                "<h1 style='color:#5ce8de'>Eternal Auditor v2</h1>"
+                "<p>Full-length signatures. Persisted chain state. Restarts marked, never silent.</p>"
+                "<p>Hourly cycles, each receipted and published to the chain.</p></body></html>")
+    app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")

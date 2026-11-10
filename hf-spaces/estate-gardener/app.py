@@ -12,12 +12,21 @@ before/after sha256. The actual write stays OWNER-GATED (Law 6/7).
 import hashlib, json, os, time, threading, urllib.request
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from huggingface_hub import HfApi
+try:
+    from fastapi import FastAPI
+    from fastapi.staticfiles import StaticFiles
+    _HAS_FASTAPI = True
+except ImportError:  # stdlib-only envs (CI contract tests): logic without server
+    _HAS_FASTAPI = False
+try:
+    from huggingface_hub import HfApi
+    _HAS_HF = True
+except ImportError:
+    _HAS_HF = False
+    HfApi = None
 
 TOK = os.environ.get("HF_TOKEN", "")
-api = HfApi(token=TOK)
+api = HfApi(token=TOK) if _HAS_HF else None
 DS = "SZLHOLDINGS/frontier-54-runs"
 ROLE = "estate-gardener"
 CYCLE = 86400
@@ -28,6 +37,29 @@ LICENSE_BLOCK = ("\n\n---\n*License: Apache-2.0. Copyright 2026 SZL Holdings · 
 
 def sha256_text(s): return hashlib.sha256(s.encode()).hexdigest()
 
+
+
+
+# ---- Backward-compatible interface (the tests + SDK contract) ----
+def append_license_block(readme, has_license_tag):
+    """v2 semantics: APPEND-ONLY, verified superset, or skip. Never replace."""
+    if has_license_tag:
+        return readme, "SKIP_ALREADY_TAGGED"
+    if not readme.strip():
+        return LICENSE_BLOCK.strip() + "\n", "WRITE_EMPTY"
+    new = readme.rstrip("\n") + LICENSE_BLOCK
+    if not new.startswith(readme.rstrip("\n")):
+        return readme, "REFUSED_NOT_A_PREFIX"
+    return new, "APPEND"
+
+
+def garden_readme(name, readme, has_license_tag=False, dry_run=True):
+    """v2: proposes, never writes. Receipt with before/after sha256."""
+    before = sha256_text(readme)
+    new, action = append_license_block(readme, has_license_tag)
+    return {"target": name, "action": action, "dry_run": dry_run,
+            "before_sha256": before, "after_sha256": sha256_text(new),
+            "preserved_prefix": new.startswith(readme.rstrip("\n"))}, new
 
 def load_state():
     if STATE.exists():
@@ -115,7 +147,7 @@ def loop():
 
 
 state = load_state()
-app = FastAPI()
+app = FastAPI() if _HAS_FASTAPI else None
 
 
 @app.get("/healthz")
@@ -124,11 +156,15 @@ def healthz():
             "proposals_recorded": len(state.get("proposals", {}))}
 
 
-threading.Thread(target=loop, daemon=True).start()
-os.makedirs("/app/static", exist_ok=True)
-with open("/app/static/index.html", "w") as f:
-    f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
-            "<h1 style='color:#5ce8de'>Estate Gardener v2</h1>"
-            "<p>Append-only license care. Proposals are verified supersets; writes are owner-gated.</p>"
-            "<p>Every cycle = a receipt. A proposal is not a change.</p></body></html>")
-app.mount("/", StaticFiles(directory="/app/static", html=True), name="static")
+if _HAS_FASTAPI:
+    @app.on_event("startup")
+    def _start_loop():
+        threading.Thread(target=loop, daemon=True).start()
+    _STATIC = os.environ.get("OFFICER_STATIC", os.path.join(os.path.dirname(__file__), "static"))
+    os.makedirs(_STATIC, exist_ok=True)
+    with open(os.path.join(_STATIC, "index.html"), "w") as f:
+        f.write("<html><body style='background:#04070d;color:#e8f0fa;font:15px system-ui;padding:40px;text-align:center'>"
+                "<h1 style='color:#5ce8de'>Estate Gardener v2</h1>"
+                "<p>Append-only license care. Proposals are verified supersets; writes are owner-gated.</p>"
+                "<p>Every cycle = a receipt. A proposal is not a change.</p></body></html>")
+    app.mount("/", StaticFiles(directory=_STATIC, html=True), name="static")
