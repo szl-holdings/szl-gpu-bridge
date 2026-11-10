@@ -8,9 +8,8 @@ import json
 import os
 import sys
 import tempfile
-import unittest
 from pathlib import Path
-from unittest import mock
+from unittest import TestCase, main, mock
 
 APP = Path(__file__).resolve().parents[1] / "hf-spaces/eternal-auditor/app.py"
 TEST_KEY = b"offline-history-test-fixture"
@@ -44,7 +43,7 @@ def fixture(cycle=1, prev=None, **extra):
     }
 
 
-class AuditorHistoryTests(unittest.TestCase):
+class AuditorHistoryTests(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -237,4 +236,4 @@ class AuditorHistoryTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
