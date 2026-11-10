@@ -137,14 +137,21 @@ function verdictClass(v){return v==='PASS'||v==='MEASURED'?'ok':v==='FAIL'?'bad'
       const d=document.createElement('div');d.className='snap';
       const finds=(r.findings||[]).map(f=>
         `<div class="find"><i class="${verdictClass(f.verdict)}">${f.verdict||'—'}</i><b>${f.check}${f.value!==undefined?' = '+f.value:''}</b></div>`).join('');
-      d.innerHTML=`<div class="cyc">CYCLE ${r.cycle}</div><div class="ts">${r.ts} · ${r.chain_state}</div>
+      d.innerHTML=`<div class="cyc">CYCLE ${r.cycle} <span class="vbadge" style="color:var(--warn)">CHECKING…</span></div><div class="ts">${r.ts} · ${r.chain_state}</div>
         <div class="sha">sha ${r.body_sha256?r.body_sha256.slice(0,24)+'…':'—'}</div>
-        <div class="sig">sig ${r.signature?r.signature.slice(0,32)+'…':'—'}</div>
+        <div class="sig">sig ${r.signature?r.signature.slice(0,32)+'…':'—'} <i style="opacity:.6;font-style:normal">(display only)</i></div>
         <div class="finds">${finds||'<div class="find"><i>—</i><b>no findings recorded</b></div>'}</div>`;
       d.onclick=()=>{d.style.borderColor=d.style.borderColor?'':'rgba(92,232,222,.7)';
         d.querySelector('.sha').textContent='sha '+(r.body_sha256||'—');
         d.querySelector('.sig').textContent='sig '+(r.signature||'—');};
       g.appendChild(d);
+      // verify each receipt server-side; never show an unverified sig as proof
+      fetch('/api/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({receipt:r)})
+        .then(v=>v.json()).then(v=>{
+          const b=d.querySelector('.vbadge');
+          if(v.verified){b.textContent='VERIFIED';b.style.color='var(--ok)';}
+          else{b.textContent='UNVERIFIED';b.style.color='var(--bad)';}
+        }).catch(()=>{const b=d.querySelector('.vbadge');b.textContent='UNVERIFIED';b.style.color='var(--bad)';});
     }
     // latest findings to the status panel
     const last=H.receipts[0];
