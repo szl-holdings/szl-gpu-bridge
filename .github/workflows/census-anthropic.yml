@@ -10,6 +10,10 @@ on:
   schedule:
     - cron: "31 7 * * 1" # weekly, Monday 07:31 UTC
   workflow_dispatch: {}
+  push:
+    paths:
+      - "tools/census/**"
+      - ".github/workflows/census-anthropic.yml"
 
 permissions:
   contents: read
