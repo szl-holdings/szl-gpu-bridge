@@ -25,7 +25,7 @@ REGISTRY = {
     "docs_autonomy": "https://github.com/szl-holdings/szl-gpu-bridge/blob/main/docs/AUTONOMY_LADDER.md",
     "docs_curriculum": "https://github.com/szl-holdings/szl-gpu-bridge/blob/main/docs/OUROBOROS_CURRICULUM.md",
     "docs_runbook": "https://github.com/szl-holdings/szl-gpu-bridge/blob/main/docs/NONSTOP_TRAINING_RUNBOOK.md",
-    "dashboard": "https://szlholdings-si.hf.space",
+    "dashboard": "https://szlholdings-szlholdings-si.hf.space",
     "anatomy": "https://szlholdings-anatomy.hf.space",
     "nexus": "https://szlholdings-nexus.hf.space",
 }
