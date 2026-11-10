@@ -39,7 +39,7 @@ peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
     target_modules=["q_proj","k_proj","v_proj","o_proj","gate_proj","up_proj","down_proj"], task_type="CAUSAL_LM")
 cfg = SFTConfig(output_dir=os.path.expanduser("~/ckpt"), max_length=2048,
     per_device_train_batch_size=4, gradient_accumulation_steps=8,
-    learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
+    learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
     logging_steps=50, save_strategy="no", bf16=True, optim="adamw_torch",
     max_steps=MAX_STEPS, report_to=[], packing=True, seed=SEED)
 trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
