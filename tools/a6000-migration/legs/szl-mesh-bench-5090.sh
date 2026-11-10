@@ -28,7 +28,8 @@ threading.Thread(target=sampler,daemon=True).start()
 t0=time.time()
 tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-1.7B")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-1.7B", torch_dtype=torch.bfloat16, device_map="auto")
-ds = load_dataset("SZLHOLDINGS/abstention-doctrine-sft-v1", split="train").shuffle(seed=SEED).select(range(2000))
+ds = load_dataset("SZLHOLDINGS/abstention-doctrine-sft-v1", split="train").shuffle(seed=SEED)
+ds = ds.select(range(min(2000, len(ds))))
 def fmt(ex):
     if "text" in ex: return {"text": ex["text"]}
     if "messages" in ex: return {"text": tok.apply_chat_template(ex["messages"], tokenize=False)}
