@@ -131,9 +131,7 @@ class GardenerEvidenceTests(unittest.TestCase):
             with patch.object(self.g.urllib.request, "urlopen") as fetch:
                 receipt = self.g.garden_cycle({"cycle": 1})
         fetch.assert_not_called()
-        self.assertTrue(
-            all(p["state"] == "UNAVAILABLE" for p in receipt["proposals"])
-        )
+        self.assertTrue(all(p["state"] == "UNAVAILABLE" for p in receipt["proposals"]))
 
 
 if __name__ == "__main__":
