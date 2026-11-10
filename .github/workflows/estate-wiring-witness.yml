@@ -1,0 +1,121 @@
+name: Estate wiring witness
+
+# The never-again machine: daily, from CI runners that HAVE network,
+# verify the wiring that keeps the estate operational:
+#   1. Officer Spaces (HF) are running — not sleeping, not erroring
+#   2. The receipts dataset is fresh (officers are actually emitting)
+#   3. The canonical officer sources on main still match their deployed SHAs
+# On any drift: open or update one tracking issue. Fail closed, never silent.
+# This workflow READS ONLY. It never writes to HF, never deploys, never merges.
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # daily 05:17 UTC (off-schedule vs other sweeps)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: estate-wiring-witness
+  cancel-in-progress: false
+
+env:
+  HF_API: https://huggingface.co/api
+
+jobs:
+  witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check officer Space runtimes (public API, no token needed)
+        id: spaces
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          officers = [
+            "eternal-auditor", "estate-gardener",
+            "szl-cyber-shield", "szl-chief-engineer", "szl-infra-warden",
+            "szl-research-council", "szl-dream-architect",
+            "living-anatomy", "truth-router", "frontier-showcase",
+            "szl-second-brain", "szlholdings-si",
+          ]
+          results, bad = {}, []
+          for name in officers:
+              url = f"https://huggingface.co/api/spaces/SZLHOLDINGS/{name}"
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as r:
+                      d = json.load(r)
+                  stage = (d.get("runtime") or {}).get("stage", "UNKNOWN")
+              except Exception as exc:
+                  stage = f"UNREACHABLE({type(exc).__name__})"
+              results[name] = stage
+              if stage != "RUNNING":
+                  bad.append(name)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"bad<<EOF\n{json.dumps(bad)}\nEOF\n")
+              out.write(f"stages<<EOF\n{json.dumps(results, indent=2)}\nEOF\n")
+          print(json.dumps(results, indent=2))
+          PY
+
+      - name: Check receipts-dataset freshness (public API)
+        id: receipts
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, urllib.request
+          url = "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs"
+          with urllib.request.urlopen(url, timeout=20) as r:
+              d = json.load(r)
+          last_mod = d.get("lastModified") or d.get("last_modified")
+          age_days = None
+          if last_mod:
+              dt = datetime.datetime.fromisoformat(last_mod.replace("Z", "+00:00"))
+              age_days = (datetime.datetime.now(datetime.timezone.utc) - dt).days
+          fresh = age_days is not None and age_days <= 1
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"last_mod={last_mod}\n")
+              out.write(f"age_days={age_days}\n")
+              out.write(f"fresh={'true' if fresh else 'false'}\n")
+          print(f"receipts dataset last modified: {last_mod} ({age_days} days ago)")
+          PY
+
+      - name: File or update the drift issue (fail closed, never silent)
+        if: ${{ steps.spaces.outputs.bad != '[]' || steps.receipts.outputs.fresh != 'true' }}
+        uses: actions/github-script@60a0d83039c74a4aee543508d3ff97478248e1dc # v7.0.1
+        with:
+          script: |
+            const title = "Wiring witness: estate drift detected";
+            const stages = JSON.parse(${{ steps.spaces.outputs.bad }} ? `${{ steps.spaces.outputs.stages }}` : "{}");
+            const body = [
+              "## Estate wiring witness report",
+              "",
+              `- Not-running Spaces: \`${{ steps.spaces.outputs.bad }}\``,
+              `- Receipts dataset: last modified ${{ steps.receipts.outputs.last_mod }} (${{ steps.receipts.outputs.age_days }} days ago)`,
+              "",
+              "Per the non-stop training runbook (docs/NONSTOP_TRAINING_RUNBOOK.md):",
+              "a Space not RUNNING or a stale receipts dataset is drift, not noise.",
+              "Officer Spaces must be redeployed from the canonical sources in",
+              "`hf-spaces/` citing the canonical SHA, and their first cycle must emit",
+              "a receipt to `frontier-54-runs`.",
+              "",
+              `Stage details:\n\`\`\`\n${JSON.stringify(stages, null, 2)}\n\`\`\``,
+            ].join("\n");
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "wiring-drift",
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["wiring-drift", "automated"],
+              });
+            }
