@@ -44,6 +44,34 @@ class KhipuTests(unittest.TestCase):
         self.assertFalse(khipu.check(r, secret="s"))
 
 
+class FreshnessTests(unittest.TestCase):
+    def test_stale_chain_is_not_green(self):
+        """A valid-but-old chain must fail a freshness check. Cached values
+        sat 57 days untouched in the Vidal-Gadea tracker and were read with
+        no error and no warning."""
+        import datetime
+
+        secret = "s"
+        old_ts = (datetime.datetime.now(datetime.timezone.utc)
+                  - datetime.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        r1 = khipu.mint({"n": 1}, secret, ts=old_ts)
+        self.assertTrue(khipu.check_chain([r1], secret))  # integrity: valid
+        self.assertFalse(khipu.check_chain([r1], secret, max_age_days=7))  # stale
+        fresh = khipu.mint({"n": 2}, secret, prev_body_sha256=r1["body_sha256"])
+        self.assertTrue(khipu.check_chain([r1, fresh], secret, max_age_days=7))
+
+    def test_unreadable_timestamp_fails_freshness(self):
+        r = khipu.mint({"n": 1}, "s")
+        r["ts"] = "not-a-date"
+        # integrity check re-hashes the body, so we cannot tamper ts post-mint;
+        # instead verify that a bad ts inside a properly minted receipt fails
+        r2 = khipu.mint({"n": 1}, "s")
+        self.assertTrue(khipu.check_chain([r2], "s"))
+        # mint with a garbage ts and check freshness rejects it
+        r3 = khipu.mint({"n": 1}, "s", ts="garbage")
+        self.assertFalse(khipu.check_chain([r3], "s", max_age_days=7))
+
+
 class KamachikunaTests(unittest.TestCase):
     def test_constants_complete(self):
         self.assertEqual(len(kamachikuna.LAWS), 10)

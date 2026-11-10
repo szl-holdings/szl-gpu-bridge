@@ -70,19 +70,40 @@ def check(receipt: dict[str, Any], secret: str) -> bool:
 
 
 def check_chain(
-    receipts: list[dict[str, Any]], secret: str, expected_head: str | None = None
+    receipts: list[dict[str, Any]],
+    secret: str,
+    expected_head: str | None = None,
+    max_age_days: float | None = None,
 ) -> bool:
     """Verify a full chain: every receipt valid, every link intact.
     A prefix of the chain is internally valid — truncation is only
     detectable against `expected_head` (the latest known body_sha256).
-    Pass it to prove completeness, not just integrity."""
+    Pass it to prove completeness, not just integrity.
+
+    `max_age_days` implements the freshness rule: a chain whose newest
+    receipt is older than the window is STALE, not green. A stale record
+    that still verifies is worse than no record, because it is believed.
+    (Vidal-Gadea Lab roadmap, Nov 2026: cached values sat untouched 57
+    days and a program read them with no error and no warning.)"""
     prev: str | None = None
+    newest_ts: str | None = None
     for r in receipts:
         if not check(r, secret):
             return False
         if r.get("prev_receipt_sha256") != prev:
             return False
         prev = r["body_sha256"]
+        newest_ts = r.get("ts") or newest_ts
     if expected_head is not None and prev != expected_head:
         return False  # truncated chain
+    if max_age_days is not None and newest_ts is not None:
+        import datetime
+
+        try:
+            dt = datetime.datetime.fromisoformat(str(newest_ts).replace("Z", "+00:00"))
+        except ValueError:
+            return False  # unreadable timestamp: cannot prove freshness
+        age = (datetime.datetime.now(datetime.timezone.utc) - dt).total_seconds()
+        if age > max_age_days * 86400:
+            return False  # stale chain: valid, but no longer current
     return True

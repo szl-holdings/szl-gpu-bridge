@@ -28,9 +28,18 @@ pick = router.route("honesty-critical", models)  # None if no honest model: fail
 - **provenance** — honest states only: UNTRAINED · CARD_ONLY · MEASURED · UNAVAILABLE · NOT_CLAIMED. Verification proves integrity and origin, never accuracy or performance.
 - **router** — two-axis honesty routing: price axis decides, joules reported separately (never summed with dollars — different units), UNMEASURED energy never counts as zero, honesty-critical tasks fail closed.
 
+## The freshness rule
+> "A line older than seven days is a claim, not a fact." — Vidal-Gadea Lab roadmap, Nov 2026
+
+`khipu.check_chain(..., max_age_days=7)` fails a chain whose newest receipt is
+older than the window. A stale record that still verifies is worse than no
+record, because it is believed — their lab's cached tracker sat 57 days untouched
+and was read by a program with no error and no warning.
+
 ## Design debts deliberately not hidden
 - Chain prefixes are internally valid; completeness requires `expected_head` (tamper-evidence ≠ completeness).
 - An unmeasured quantity is None/UNKNOWN everywhere — never zero.
+- Freshness is a separate axis from integrity: a chain can be both valid and stale.
 
 Tests: `python3 sdk/tests/test_szl_sdk.py` — 11/11 offline, no network, no GPU.
 
