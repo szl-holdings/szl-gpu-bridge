@@ -91,11 +91,14 @@ def upload_receipt(signed: dict, name: str, spec: dict):
     from huggingface_hub import HfApi
 
     api = HfApi()
+    privacy = spec["outputs"].get("private", True)
+    if type(privacy) is not bool:
+        raise ValueError("outputs.private must be a boolean")
     api.create_repo(
         spec["outputs"]["receiptsRepoId"],
         repo_type="dataset",
         exist_ok=True,
-        private=False,
+        private=privacy,
     )
     p = ROOT / "jobs" / name
     p.write_text(json.dumps(signed, indent=2))
