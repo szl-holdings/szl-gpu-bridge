@@ -61,7 +61,7 @@ class MotionGateTests(unittest.TestCase):
         rs = [gate.command({"action": "move", "target": [0.1 * i, 0.1, 0.1],
                             "speed": 0.1})["receipt"] for i in range(1, 4)]
         self.assertTrue(gate.verify_log(rs))
-        rs[1]["claim"]["decision"] = "ALLOWED"
+        rs[1]["claim"]["decision"] = "BLOCKED"  # forge a decision post-hoc
         self.assertFalse(gate.verify_log(rs))
 
     def test_no_secret_means_no_log_verification(self):
