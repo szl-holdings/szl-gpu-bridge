@@ -1,13 +1,13 @@
 """Card generation must preserve existing documents and unknown evidence."""
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
 import unittest
 from unittest.mock import Mock, patch
 
-import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
@@ -24,7 +24,15 @@ class CardTests(unittest.TestCase):
         )
 
     def metadata(self, card):
-        return yaml.safe_load(card.split("---")[1]) or {}
+        header = card.split("---")[1].strip()
+        return (
+            {
+                json.loads(key): json.loads(value)
+                for key, value in (line.split(": ", 1) for line in header.splitlines())
+            }
+            if header
+            else {}
+        )
 
     def test_unknown_license_and_framework_are_not_fabricated(self):
         card = self.card()
