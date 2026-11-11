@@ -16,6 +16,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   check_suite:
     types: [completed]
+  # GitHub Actions-created check suites do not emit another Actions run.
+  # Wake again when either known verifier finishes; never wake on ourselves.
+  workflow_run:
+    workflows: ["GPU bridge contract CI", "CodeQL"]
+    types: [completed]
 
 permissions:
   contents: write        # required to merge the qualified PR (the lane's purpose)
@@ -25,21 +30,30 @@ permissions:
   actions: read          # identify only this run's own in-progress check suite
 
 concurrency:
-  group: auto-merge-${{ github.event.pull_request.number || github.event.check_suite.head_sha }}
+  group: auto-merge-${{ github.event.pull_request.number || github.event.check_suite.head_sha || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   automerge:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || (github.event_name == 'check_suite' && true) }}
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' || github.event_name == 'check_suite' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     steps:
       - name: Evaluate and merge only lockfile-only, all-green Dependabot PRs
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1, verified immutable
         with:
           script: |
+            const wake = context.payload.workflow_run;
+            if (context.eventName === "workflow_run" &&
+                (!wake || !["GPU bridge contract CI", "CodeQL"].includes(wake.name) ||
+                 wake.event !== "pull_request" || wake.status !== "completed" ||
+                 wake.conclusion !== "success" ||
+                 wake.head_repository?.full_name !== `${context.repo.owner}/${context.repo.repo}`)) {
+              console.log("unqualified workflow completion — skip"); return;
+            }
             const pr_number = context.payload.pull_request?.number
-              ?? (context.payload.check_suite?.pull_requests?.[0]?.number);
+              ?? context.payload.check_suite?.pull_requests?.[0]?.number
+              ?? wake?.pull_requests?.[0]?.number;
             if (!pr_number) { console.log("no PR associated — skip"); return; }
 
             const { data: pr } = await github.rest.pulls.get({
@@ -53,6 +67,9 @@ jobs:
             if (pr.state !== "open" || pr.draft) { console.log("not open/non-draft — skip"); return; }
 
             const head = pr.head.sha;
+            if (wake && wake.head_sha !== head) {
+              console.log("stale workflow completion — skip"); return;
+            }
             const base = pr.base.ref;
             const repository = `${context.repo.owner}/${context.repo.repo}`;
             if (pr.head.repo?.full_name !== repository || pr.base.repo?.full_name !== repository) {

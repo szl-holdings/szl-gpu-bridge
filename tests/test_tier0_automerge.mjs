@@ -70,7 +70,9 @@ function fixture(options = {}) {
     },
   };
   const context = { repo: { owner: 'owner', repo: 'repo' }, runId: 123,
-    payload: { pull_request: { number: 42 } } };
+    eventName: state.workflowRun ? 'workflow_run' : 'pull_request_target',
+    payload: state.workflowRun ? { workflow_run: state.workflowRun }
+      : { pull_request: { number: 42 } } };
   state.run = () => evaluate(github, context, { log() {} });
   return state;
 }
@@ -187,4 +189,38 @@ test('does not claim a merge when the API returns merged=false', async () => {
   const state = fixture({ mergeResult: false });
   await state.run();
   assert.equal(state.comments.length, 0);
+});
+
+function completion(overrides = {}) {
+  return { name: 'GPU bridge contract CI', event: 'pull_request',
+    status: 'completed', conclusion: 'success', head_sha: HEAD,
+    head_repository: { full_name: 'owner/repo' },
+    pull_requests: [{ number: 42 }], ...overrides };
+}
+
+test('known verifier completion wakes evaluation and can qualify the current head', async () => {
+  for (const name of ['GPU bridge contract CI', 'CodeQL']) {
+    const state = fixture({ workflowRun: completion({ name }) });
+    await state.run();
+    assert.equal(state.mergeCalls.length, 1);
+    assert.equal(state.mergeCalls[0].pull_number, 42);
+  }
+});
+
+test('workflow completion refuses self-loops, failed runs, forks and unrelated events', async () => {
+  for (const fields of [
+    { name: 'Auto-merge safe dependencies' }, { conclusion: 'failure' },
+    { status: 'in_progress' }, { event: 'push' },
+    { head_repository: { full_name: 'other/repo' } }, { pull_requests: [] },
+  ]) {
+    const state = fixture({ workflowRun: completion(fields) });
+    await state.run();
+    assert.equal(state.mergeCalls.length, 0);
+  }
+});
+
+test('stale verifier completion does not qualify a newer head', async () => {
+  const state = fixture({ workflowRun: completion({ head_sha: 'b'.repeat(40) }) });
+  await state.run();
+  assert.equal(state.mergeCalls.length, 0);
 });
