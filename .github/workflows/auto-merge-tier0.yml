@@ -20,6 +20,9 @@ on:
 permissions:
   contents: write        # required to merge the qualified PR (the lane's purpose)
   pull-requests: write  # required to leave the receipt comment on every merge/skip
+  checks: read
+  statuses: read
+  actions: read          # identify only this run's own in-progress check suite
 
 concurrency:
   group: auto-merge-${{ github.event.pull_request.number || github.event.check_suite.head_sha }}
@@ -49,39 +52,100 @@ jobs:
             }
             if (pr.state !== "open" || pr.draft) { console.log("not open/non-draft — skip"); return; }
 
-            // lockfile-only: every changed file must match these patterns
-            const SAFE = [/\brequirements\/.*\.txt$/, /\brequirements.*\.in$/, /package-lock\.json$/, /\bpoetry\.lock$/, /\buv\.lock$/, /Cargo\.lock$/, /go\.(sum|mod)$/];
-            const { data: files } = await github.rest.pulls.listFiles({
+            const head = pr.head.sha;
+            const base = pr.base.ref;
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            if (pr.head.repo?.full_name !== repository || pr.base.repo?.full_name !== repository) {
+              console.log("cross-repository PR — skip"); return;
+            }
+
+            // Match complete path components, including the source of renames.
+            const SAFE = [
+              /^(?:[^/]+\/)*requirements\/(?:[^/]+\/)*[^/]+\.txt$/,
+              /^(?:[^/]+\/)*requirements[^/]*\.in$/,
+              /^(?:[^/]+\/)*requirements\/(?:[^/]+\/)*[^/]+\.in$/,
+              /^(?:[^/]+\/)*(?:package-lock\.json|poetry\.lock|uv\.lock|Cargo\.lock|go\.(?:sum|mod))$/,
+            ];
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner, repo: context.repo.repo,
               pull_number: pr_number, per_page: 100,
             });
-            const unsafe = files.filter(f => !SAFE.some(rx => rx.test(f.filename)));
+            // GitHub caps this API at 3000 files. Never accept a partial census.
+            if (!files.length || files.length !== pr.changed_files) {
+              console.log("empty or incomplete changed-file inventory — skip"); return;
+            }
+            const unsafe = files.filter(f =>
+              !SAFE.some(rx => rx.test(f.filename)) ||
+              (f.previous_filename && !SAFE.some(rx => rx.test(f.previous_filename))));
             if (unsafe.length) {
               console.log(`non-lockfile changes: ${unsafe.map(f => f.filename).join(", ")} — skip (human gate)`);
               return;
             }
 
-            // all checks green: no pending, no failing
-            const { data: checks } = await github.rest.checkSuites.listForRef({
+            // Only this evaluator's suite may still be running. Waiting for
+            // ourselves would permanently deadlock the lane. All other suites
+            // and each latest commit status must succeed.
+            const { data: ownRun } = await github.rest.actions.getWorkflowRun({
               owner: context.repo.owner, repo: context.repo.repo,
-              ref: pr.head.sha, per_page: 100,
+              run_id: context.runId,
             });
-            const suites = checks.check_suites.filter(s => s.app?.slug !== "github-pages");
-            if (!suites.length) { console.log("no check suites yet — wait"); return; }
-            const bad = suites.filter(s => s.conclusion !== "success");
-            if (bad.length) {
-              console.log(`checks not all green (${bad.map(s => s.conclusion).join(",")}) — skip`);
-              return;
+            if (!Number.isInteger(ownRun.check_suite_id)) {
+              console.log("own check suite unavailable — skip"); return;
+            }
+            const params = {
+              owner: context.repo.owner, repo: context.repo.repo,
+              ref: head, per_page: 100,
+            };
+            const { data: first } = await github.rest.checks.listSuitesForRef(params);
+            const allSuites = await github.paginate(github.rest.checks.listSuitesForRef, params);
+            if (allSuites.length !== first.total_count) {
+              console.log("incomplete or changing check-suite inventory — skip"); return;
+            }
+            const suites = allSuites.filter(s => s.id !== ownRun.check_suite_id);
+            if (!suites.length || suites.some(s => s.status !== "completed" || s.conclusion !== "success")) {
+              console.log("checks not all green — skip"); return;
+            }
+            const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, params);
+            // The status API returns newest first; superseded failures are not current.
+            const latest = new Map();
+            for (const status of statuses) {
+              if (!latest.has(status.context)) latest.set(status.context, status);
+            }
+            if ([...latest.values()].some(s => s.state !== "success")) {
+              console.log("commit statuses not all green — skip"); return;
             }
 
-            await github.rest.pulls.merge({
-              owner: context.repo.owner, repo: context.repo.repo,
-              pull_number: pr_number, merge_method: "merge",
+            const { data: target } = await github.rest.repos.getBranch({
+              owner: context.repo.owner, repo: context.repo.repo, branch: base,
             });
+            if (target.protected !== true) {
+              console.log("protected target not confirmed — skip"); return;
+            }
+            const { data: current } = await github.rest.pulls.get({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: pr_number,
+            });
+            if (current.head.sha !== head || current.base.ref !== base ||
+                current.base.sha !== pr.base.sha || current.user.login !== "dependabot[bot]" ||
+                current.state !== "open" || current.draft || current.mergeable !== true ||
+                !["clean", "unstable"].includes(current.mergeable_state)) {
+              console.log("PR changed or merge policy is blocked/unknown — skip"); return;
+            }
+
+            // `unstable` can reflect our own pending check. GitHub's protected
+            // merge endpoint is the final authority for required checks/reviews;
+            // use only GITHUB_TOKEN, never an administrator or bypass token.
+            const { data: merged } = await github.rest.pulls.merge({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: pr_number, merge_method: "merge", sha: head,
+            });
+            if (merged.merged !== true) {
+              console.log("GitHub did not confirm a merge — no receipt"); return;
+            }
             await github.rest.issues.createComment({
               owner: context.repo.owner, repo: context.repo.repo,
               issue_number: pr_number,
-              body: "Auto-merged by the Tier-0 lane: dependabot + lockfile-only + all checks green. " +
+              body: `Auto-merged by the Tier-0 lane at ${head}: dependabot + complete lockfile inventory + checks green. ` +
                     "Reversible, receipted work per docs/AUTONOMY_LADDER.md — the 0.3% stays human for everything else.",
             });
             console.log(`MERGED #${pr_number} (Tier-0 auto-merge)`);
