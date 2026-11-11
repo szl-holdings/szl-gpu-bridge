@@ -67,8 +67,9 @@ def latest_checkpoint(api: HfApi, repo: str) -> str | None:
     """The resume-on-start contract: find the newest checkpoint-* revision."""
     try:
         files = api.list_repo_files(repo_id=repo, repo_type="model")
-        stops = sorted(int(f.split("-")[-1]) for f in files
-                        if f.startswith("checkpoint-") and f.split("-")[-1].isdigit())
+        stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
+                        if f.startswith("checkpoint-") and "/" in f
+                        and f.split("/")[0].split("-")[-1].isdigit())
         return f"checkpoint-{stops[-1]}" if stops else None
     except Exception:
         return None
