@@ -77,14 +77,59 @@ def get(url, timeout=20):
         return None
 
 
+def parse_arxiv_feed(payload):
+    """Read bounded Atom metadata; retrieval does not establish relevance."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import urlsplit
+
+    if len(payload) > 262144:
+        raise ValueError("arXiv response exceeds the metadata limit")
+    text = payload.decode("utf-8-sig")
+    if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
+        raise ValueError("DTD and entity declarations are not supported")
+    try:
+        feed = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise ValueError("invalid arXiv Atom response") from exc
+    atom = "{http://www.w3.org/2005/Atom}"
+    if feed.tag != atom + "feed":
+        raise ValueError("expected an Atom feed")
+    sources = []
+    for entry in feed.findall(atom + "entry")[:3]:
+        title = " ".join((entry.findtext(atom + "title") or "").split())
+        identifier = (entry.findtext(atom + "id") or "").strip()
+        url = urlsplit(identifier)
+        if (not title or url.scheme not in {"http", "https"}
+                or url.netloc != "arxiv.org" or not url.path.startswith("/abs/")
+                or not url.path[5:] or url.query or url.fragment):
+            raise ValueError("invalid arXiv entry or API error response")
+        sources.append({"title": title, "url": "https://arxiv.org" + url.path})
+    return sources
+
+
+def get_research(timeout=20):
+    """None means unavailable; an empty list is an observed empty feed."""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    url = ("https://export.arxiv.org/api/query?search_query=all:abstention"
+           "+AND+all:LLM&max_results=3&sortBy=submittedDate")
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "szl-dream-architect/2.0", "Accept": "application/atom+xml"})
+    try:
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(req, timeout=timeout) as response:
+            return parse_arxiv_feed(response.read(262145))
+    except (OSError, ValueError):
+        return None
+
+
 def dream():
     """One real vision cycle: estate questions x live research signals
     -> labeled hypotheses with prior art, a test, and a rejection criterion."""
     # 1. The estate's open questions (titles, honestly fetched)
     questions = []
-    for num in FRONTIER_ISSUES:
-        d = get(f"https://huggingface.co/api")  # placeholder guard; real source below
-        break
     # GitHub public API (no token needed for public repos)
     gh = get("https://api.github.com/repos/szl-holdings/szl-gpu-bridge/issues?state=open&per_page=50")
     if gh:
@@ -95,8 +140,8 @@ def dream():
         return {"state": "UNAVAILABLE", "detail": "frontier questions unreachable this cycle"}
 
     # 2. Live research signal (arXiv public API — real retrieval, not static cats)
-    signal = get("http://export.arxiv.org/api/query?search_query=all:abstention+AND+all:LLM&max_results=3&sortBy=submittedDate")
-    # arXiv's Atom feed is XML; record presence honestly, don't parse half-way
+    signal = get_research()
+    # Only retrieval is measured. Relevance to an issue still requires review.
     signal_state = "MEASURED" if signal is not None else "UNAVAILABLE"
 
     # 3. The dream: labeled hypotheses with test + rejection criterion
@@ -106,8 +151,7 @@ def dream():
             "question": q,
             "hypothesis": f"Approach issue #{q['n']} via a receipted, falsifiable experiment "
                           "whose evidence lands in the chain before any claim",
-            "nearest_prior_art": "selective classification (Geifman & El-Yaniv); "
-                                  "RouteLLM routing frontiers; proving-ground battery",
+            "nearest_prior_art": "UNASSESSED — retrieved sources are research candidates",
             "test": "preregistered acceptance criterion frozen before data is seen",
             "rejection_criterion": "if the held-out gate fails twice at frozen thresholds, "
                                    "the hypothesis is rejected and recorded as such",
@@ -118,6 +162,8 @@ def dream():
         "state": "MEASURED",
         "questions_read": len(questions),
         "research_signal": signal_state,
+        "research_sources": signal,
+        "research_source_count": len(signal) if signal is not None else None,
         "hypotheses": hypotheses,
         "note": "A reviewed idea is not a model update. Dreams are proposals; "
                 "gates stay human (Kamachikuna Law 6/7).",
