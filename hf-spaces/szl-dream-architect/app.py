@@ -109,12 +109,17 @@ def parse_arxiv_feed(payload):
 
 def get_research(timeout=20):
     """None means unavailable; an empty list is an observed empty feed."""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
     url = ("https://export.arxiv.org/api/query?search_query=all:abstention"
            "+AND+all:LLM&max_results=3&sortBy=submittedDate")
     req = urllib.request.Request(url, headers={
         "User-Agent": "szl-dream-architect/2.0", "Accept": "application/atom+xml"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(req, timeout=timeout) as response:
             return parse_arxiv_feed(response.read(262145))
     except (OSError, ValueError):
         return None

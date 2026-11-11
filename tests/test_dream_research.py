@@ -6,12 +6,14 @@ module-level worker would create keys, poll services and publish receipts.
 
 import ast
 import io
+from email.message import Message
 import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
 import urllib.error
 import urllib.request
+import urllib.response
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "hf-spaces" / "szl-dream-architect" / "app.py"
@@ -60,7 +62,12 @@ class ResearchTests(unittest.TestCase):
         return io.BytesIO(feed())
 
     def test_atom_sources_reach_dream_without_placeholder_request(self):
-        with patch.object(urllib.request, "urlopen", self.response):
+        with (
+            patch.object(urllib.request, "urlopen", self.response),
+            patch.object(
+                urllib.request.OpenerDirector, "open", side_effect=self.response
+            ),
+        ):
             result = self.functions["dream"]()
         self.assertEqual(result["research_signal"], "MEASURED")
         self.assertEqual(result["research_source_count"], 1)
@@ -78,12 +85,16 @@ class ResearchTests(unittest.TestCase):
         self.assertIn("UNASSESSED", result["hypotheses"][0]["nearest_prior_art"])
 
     def test_empty_feed_is_observed_not_unavailable(self):
-        with patch.object(urllib.request, "urlopen", return_value=io.BytesIO(feed(0))):
+        with patch.object(
+            urllib.request.OpenerDirector, "open", return_value=io.BytesIO(feed(0))
+        ):
             self.assertEqual(self.functions["get_research"](), [])
 
     def test_network_failure_is_unavailable(self):
         with patch.object(
-            urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")
+            urllib.request.OpenerDirector,
+            "open",
+            side_effect=urllib.error.URLError("offline"),
         ):
             self.assertIsNone(self.functions["get_research"]())
 
@@ -95,12 +106,16 @@ class ResearchTests(unittest.TestCase):
             b'<feed xmlns="http://www.w3.org/2005/Atom"><entry/></feed>',
             b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/api/errors#bad</id><title>Error</title></entry></feed>',
             b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>https://example.org/abs/1</id><title>Bad source</title></entry></feed>',
+            b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>http://arxiv.org/abs/2611.00001</id><title> </title></entry></feed>',
+            b'<feed xmlns="http://www.w3.org/2005/Atom"><entry><id> </id><title>Paper</title></entry></feed>',
             b"\xff",
         ]
         for payload in responses:
             with self.subTest(payload=payload):
                 with patch.object(
-                    urllib.request, "urlopen", return_value=io.BytesIO(payload)
+                    urllib.request.OpenerDirector,
+                    "open",
+                    return_value=io.BytesIO(payload),
                 ):
                     self.assertIsNone(self.functions["get_research"]())
 
@@ -111,12 +126,40 @@ class ResearchTests(unittest.TestCase):
 
     def test_response_read_has_a_hard_byte_limit(self):
         class Oversized(io.BytesIO):
+            headers = {"Content-Length": "1"}  # Actual bytes enforce the bound.
+
             def read(response, size=-1):
                 self.assertEqual(size, 262145)
                 return b" " * size
 
-        with patch.object(urllib.request, "urlopen", return_value=Oversized()):
+        with patch.object(
+            urllib.request.OpenerDirector, "open", return_value=Oversized()
+        ):
             self.assertIsNone(self.functions["get_research"]())
+
+    def test_redirect_is_unavailable_without_following_destination(self):
+        requested = []
+
+        class RedirectTransport(urllib.request.HTTPSHandler):
+            def https_open(self, request):
+                requested.append(request.full_url)
+                headers = Message()
+                headers["Location"] = "https://example.org/untrusted-feed"
+                response = urllib.response.addinfourl(
+                    io.BytesIO(b""), headers, request.full_url, 302
+                )
+                response.msg = "Found"
+                return response
+
+        build_opener = urllib.request.build_opener
+        with patch.object(
+            urllib.request,
+            "build_opener",
+            side_effect=lambda *handlers: build_opener(*handlers, RedirectTransport()),
+        ):
+            self.assertIsNone(self.functions["get_research"]())
+        self.assertEqual(len(requested), 1)
+        self.assertTrue(requested[0].startswith("https://export.arxiv.org/api/query?"))
 
     def test_source_count_is_bounded(self):
         self.assertEqual(len(self.functions["parse_arxiv_feed"](feed(8))), 3)
