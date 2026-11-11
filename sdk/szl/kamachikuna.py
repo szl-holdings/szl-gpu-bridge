@@ -67,4 +67,4 @@ AMENDMENTS = {
 
 def gate(action: str, verified: bool) -> tuple[str, str]:
     """Law 6 as a function. Returns (action, 'ALLOWED'|'BLOCKED')."""
-    return (action, "ALLOWED") if verified else (action, "BLOCKED")
+    return (action, "ALLOWED") if verified is True else (action, "BLOCKED")

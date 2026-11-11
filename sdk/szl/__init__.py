@@ -8,4 +8,4 @@ accuracy or performance.
 Canonical source: szl-holdings/szl-gpu-bridge (GitHub is canonical).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.6"

@@ -1,12 +1,8 @@
 """Offline tests for the szl SDK. No network, no GPU."""
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from szl import kamachikuna, khipu, provenance, router  # noqa: E402
+from szl import kamachikuna, khipu, provenance, router
 
 
 class KhipuTests(unittest.TestCase):
@@ -52,8 +48,9 @@ class FreshnessTests(unittest.TestCase):
         import datetime
 
         secret = "s"
-        old_ts = (datetime.datetime.now(datetime.timezone.utc)
-                  - datetime.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        old_ts = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
         r1 = khipu.mint({"n": 1}, secret, ts=old_ts)
         self.assertTrue(khipu.check_chain([r1], secret))  # integrity: valid
         self.assertFalse(khipu.check_chain([r1], secret, max_age_days=7))  # stale
@@ -92,9 +89,19 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual(card_only.state(), "CARD_ONLY")
         # measured requires a verifiable receipt + source + datasets
         secret = "s"
-        receipt = khipu.mint({"kind": "szl.training-receipt/v1"}, secret)
+        receipt = khipu.mint(
+            {
+                "kind": "szl.training-receipt/v1",
+                "model_id": "m",
+                "source_sha": "a" * 40,
+                "datasets": {"train": "b" * 64},
+            },
+            secret,
+        )
         measured = provenance.ProvenanceClaim(
-            model_id="m", source_sha="a" * 40, training_receipt=receipt,
+            model_id="m",
+            source_sha="a" * 40,
+            training_receipt=receipt,
             datasets={"train": "b" * 64},
         )
         self.assertEqual(measured.state(secret), "MEASURED")
@@ -103,9 +110,19 @@ class ProvenanceTests(unittest.TestCase):
 
     def test_badge_is_signed(self):
         secret = "s"
-        receipt = khipu.mint({"kind": "szl.training-receipt/v1"}, secret)
+        receipt = khipu.mint(
+            {
+                "kind": "szl.training-receipt/v1",
+                "model_id": "m",
+                "source_sha": "a" * 40,
+                "datasets": {"train": "b" * 64},
+            },
+            secret,
+        )
         c = provenance.ProvenanceClaim(
-            model_id="m", source_sha="a" * 40, training_receipt=receipt,
+            model_id="m",
+            source_sha="a" * 40,
+            training_receipt=receipt,
             datasets={"train": "b" * 64},
         )
         badge = c.badge(secret)
@@ -120,7 +137,9 @@ class RouterTests(unittest.TestCase):
     def test_honest_cheapest_wins(self):
         models = [
             router.Model("cheap-liar", "FAILED", 0.0, None, None, 0.01),
-            router.Model("honest-mid", "MEASURED", 0.9, "PROVE-OR-ABSTAIN-MASTER", 2.0, 1.0),
+            router.Model(
+                "honest-mid", "MEASURED", 0.9, "PROVE-OR-ABSTAIN-MASTER", 2.0, 1.0
+            ),
             router.Model("honest-expensive", "MEASURED", 0.95, None, 1.0, 5.0),
         ]
         pick = router.route("eval", models)
@@ -129,8 +148,10 @@ class RouterTests(unittest.TestCase):
     def test_honesty_critical_fails_closed(self):
         models = [router.Model("cheap-liar", "FAILED", 0.0, None, None, 0.01)]
         self.assertIsNone(router.route("honesty-critical", models))
-        # non-critical tasks may still use unmeasured models
-        self.assertIsNotNone(router.route("bulk", models))
+        # A known failed model is ineligible even for non-critical tasks.
+        self.assertIsNone(router.route("bulk", models))
+        unmeasured = router.Model("unknown", "UNMEASURED", None, None, None, 0.1)
+        self.assertIs(router.route("bulk", [unmeasured]), unmeasured)
 
     def test_unmeasured_is_none_not_zero(self):
         m = router.Model("m", "UNMEASURED", None, None, None, None)
@@ -146,9 +167,12 @@ class TightenedSecurityTests(unittest.TestCase):
         self.assertFalse(khipu.check(r, secret="s"))
 
     def test_unsigned_receipt_never_measured(self):
-        c = provenance.ProvenanceClaim(model_id="m", source_sha="a" * 40,
-                                        training_receipt={"kind": "szl.training-receipt/v1"},
-                                        datasets={"train": "b" * 64})
+        c = provenance.ProvenanceClaim(
+            model_id="m",
+            source_sha="a" * 40,
+            training_receipt={"kind": "szl.training-receipt/v1"},
+            datasets={"train": "b" * 64},
+        )
         # no secret = UNAVAILABLE, never MEASURED
         self.assertEqual(c.state(None), "UNAVAILABLE")
 
@@ -159,8 +183,10 @@ class TightenedSecurityTests(unittest.TestCase):
 
     def test_future_timestamp_never_verifies(self):
         import datetime
-        future = (datetime.datetime.now(datetime.timezone.utc)
-                  + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        future = (
+            datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
         r = khipu.mint({"claim": "x"}, secret="s", ts=future)
         self.assertFalse(khipu.check(r, secret="s"))
 
@@ -178,15 +204,12 @@ class TightenedSecurityTests(unittest.TestCase):
         self.assertFalse(khipu.check(r, secret="s"))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class OpenShellPolicyTests(unittest.TestCase):
     """Kamachikuna as OpenShell-reviewable policy-as-code."""
 
     def setUp(self):
         from szl import openshell
+
         self.os_ = openshell
 
     def test_policy_document_is_deterministic_and_hashed(self):
@@ -201,6 +224,7 @@ class OpenShellPolicyTests(unittest.TestCase):
         doc = self.os_.policy_document()
         texts = [r["text"] for r in doc["spec"]["rules"]]
         from szl import kamachikuna
+
         self.assertEqual(sorted(texts), sorted(kamachikuna.LAWS.values()))
 
     def test_lean_proven_flags_are_true_only_for_proven_laws(self):
@@ -221,14 +245,16 @@ class OpenShellPolicyTests(unittest.TestCase):
         self.assertEqual(d["decision"], "BLOCKED")
         self.assertIn(7, d["laws"])
         # with a receipt -> allowed
-        d2 = self.os_.admission_gate("train.launch", verified=True,
-                                     receipt={"sha256": "ab" * 32})
+        d2 = self.os_.admission_gate(
+            "train.launch", verified=True, receipt={"sha256": "ab" * 32}
+        )
         self.assertEqual(d2["decision"], "ALLOWED")
         self.assertEqual(d2["receiptSha256"], "ab" * 32)
 
     def test_irreversible_actions_are_human_only(self):
-        d = self.os_.admission_gate("payment.execute", verified=True,
-                                    receipt={"sha256": "cd" * 32})
+        d = self.os_.admission_gate(
+            "payment.execute", verified=True, receipt={"sha256": "cd" * 32}
+        )
         self.assertEqual(d["decision"], "BLOCKED")  # Law 7: human-only
         self.assertIn(7, d["laws"])
         self.assertIn("human-only", d["reason"])
@@ -239,3 +265,7 @@ class OpenShellPolicyTests(unittest.TestCase):
         self.assertEqual(ev["class"], "application_activity")
         self.assertFalse(ev["authorized"])
         self.assertEqual(ev["metadata"]["doctrine"], "v11")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
