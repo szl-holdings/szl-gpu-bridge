@@ -1,10 +1,13 @@
 """Contract tests for tools/lean_axiom_verdict.py and the proving-ground Lean stage."""
+
 import importlib.util
 import pathlib
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location("lean_axiom_verdict", ROOT / "tools" / "lean_axiom_verdict.py")
+_spec = importlib.util.spec_from_file_location(
+    "lean_axiom_verdict", ROOT / "tools" / "lean_axiom_verdict.py"
+)
 lav = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lav)
 N = "Lutar.Lambda.lambda_two_axis_schur_concave"
@@ -19,23 +22,34 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(self.state(0, 0, CORE), "PROVEN")
 
     def test_no_axioms_is_proven(self):
-        self.assertEqual(self.state(0, 0, "'%s' does not depend on any axioms" % N), "PROVEN")
+        self.assertEqual(
+            self.state(0, 0, "'%s' does not depend on any axioms" % N), "PROVEN"
+        )
 
     def test_wrapped_axiom_list_is_parsed(self):
         out = "'%s' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]" % N
         self.assertEqual(self.state(0, 0, out), "PROVEN")
 
     def test_sorry_is_never_proven(self):
-        out = "'%s' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]" % N
+        out = (
+            "'%s' depends on axioms: [propext, sorryAx, Classical.choice, Quot.sound]"
+            % N
+        )
         self.assertEqual(self.state(0, 0, out), "UNPROVEN")
 
     def test_added_axiom_is_never_proven(self):
-        out = "'%s' depends on axioms: [propext, Classical.choice, Quot.sound, Lutar.Lambda.cheat]" % N
+        out = (
+            "'%s' depends on axioms: [propext, Classical.choice, Quot.sound, Lutar.Lambda.cheat]"
+            % N
+        )
         self.assertEqual(self.state(0, 0, out), "AXIOM_DEPENDENT")
 
     def test_axiom_declaration_is_conjecture(self):
         n = "Lutar.Lambda.lambda_schur_concave_n_axis"
-        out = "'%s' depends on axioms: [propext, Classical.choice, Quot.sound, %s]" % (n, n)
+        out = "'%s' depends on axioms: [propext, Classical.choice, Quot.sound, %s]" % (
+            n,
+            n,
+        )
         self.assertEqual(self.state(0, 0, out, n), "CONJECTURE")
 
     def test_failed_build_withholds_verdict(self):

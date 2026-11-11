@@ -13,7 +13,10 @@ Verdicts
   AXIOM_DEPENDENT  depends on an axiom outside the Lean core set
   UNAVAILABLE      build failed, audit failed, or no `#print axioms` line found
 """
-import json, re, sys
+
+import json
+import re
+import sys
 
 ALLOWED = frozenset({"propext", "Classical.choice", "Quot.sound"})
 
@@ -33,26 +36,58 @@ def verdict(build_rc, audit_rc, output, name):
     if build_rc != 0:
         return {"state": "UNAVAILABLE", "reason": "build failed", "axioms": None}
     if audit_rc != 0:
-        return {"state": "UNAVAILABLE", "reason": "axiom audit exited non-zero", "axioms": None}
+        return {
+            "state": "UNAVAILABLE",
+            "reason": "axiom audit exited non-zero",
+            "axioms": None,
+        }
     ax = parse_axioms(output, name)
     if ax is None:
-        return {"state": "UNAVAILABLE", "reason": "no #print axioms line for declaration", "axioms": None}
+        return {
+            "state": "UNAVAILABLE",
+            "reason": "no #print axioms line for declaration",
+            "axioms": None,
+        }
     if name in ax:
         return {"state": "CONJECTURE", "reason": "declared as an axiom", "axioms": ax}
     if "sorryAx" in ax:
         return {"state": "UNPROVEN", "reason": "proof depends on sorry", "axioms": ax}
     extra = sorted(set(ax) - ALLOWED)
     if extra:
-        return {"state": "AXIOM_DEPENDENT", "reason": "non-core axioms: " + ", ".join(extra), "axioms": ax}
-    return {"state": "PROVEN", "reason": "kernel-checked; axioms within Lean core set", "axioms": ax}
+        return {
+            "state": "AXIOM_DEPENDENT",
+            "reason": "non-core axioms: " + ", ".join(extra),
+            "axioms": ax,
+        }
+    return {
+        "state": "PROVEN",
+        "reason": "kernel-checked; axioms within Lean core set",
+        "axioms": ax,
+    }
 
 
 def _selftest():
     n = "A.b"
     cases = [
-        ((0, 0, "'A.b' depends on axioms: [propext, Classical.choice, Quot.sound]", n), "PROVEN"),
+        (
+            (
+                0,
+                0,
+                "'A.b' depends on axioms: [propext, Classical.choice, Quot.sound]",
+                n,
+            ),
+            "PROVEN",
+        ),
         ((0, 0, "'A.b' does not depend on any axioms", n), "PROVEN"),
-        ((0, 0, "'A.b' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]", n), "PROVEN"),
+        (
+            (
+                0,
+                0,
+                "'A.b' depends on axioms: [propext,\n Classical.choice,\n Quot.sound]",
+                n,
+            ),
+            "PROVEN",
+        ),
         ((0, 0, "'A.b' depends on axioms: [propext, sorryAx]", n), "UNPROVEN"),
         ((0, 0, "'A.b' depends on axioms: [propext, A.cheat]", n), "AXIOM_DEPENDENT"),
         ((0, 0, "'A.b' depends on axioms: [A.b]", n), "CONJECTURE"),
@@ -62,7 +97,11 @@ def _selftest():
         ((0, 0, "'A.bb' depends on axioms: [propext]", n), "UNAVAILABLE"),
         ((0, 0, "'A.c' does not depend on any axioms", n), "UNAVAILABLE"),
     ]
-    bad = [(a, want, verdict(*a)["state"]) for a, want in cases if verdict(*a)["state"] != want]
+    bad = [
+        (a, want, verdict(*a)["state"])
+        for a, want in cases
+        if verdict(*a)["state"] != want
+    ]
     print(json.dumps({"selftest_cases": len(cases), "failed": len(bad), "detail": bad}))
     return 1 if bad else 0
 
@@ -71,7 +110,10 @@ if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--selftest":
         sys.exit(_selftest())
     if len(sys.argv) != 5:
-        print("usage: lean_axiom_verdict.py BUILD_RC AUDIT_RC AUDIT_LOG DECL_NAME | --selftest", file=sys.stderr)
+        print(
+            "usage: lean_axiom_verdict.py BUILD_RC AUDIT_RC AUDIT_LOG DECL_NAME | --selftest",
+            file=sys.stderr,
+        )
         sys.exit(2)
     try:
         out = open(sys.argv[3], encoding="utf-8", errors="replace").read()
