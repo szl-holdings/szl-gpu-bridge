@@ -30,7 +30,10 @@ class V1ReceiptPrivacyTests(unittest.TestCase):
         patcher = mock.patch.dict(sys.modules, {"huggingface_hub": hub})
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.spec = {"jobId": "test-job", "outputs": {"receiptsRepoId": "owner/receipts"}}
+        self.spec = {
+            "jobId": "test-job",
+            "outputs": {"receiptsRepoId": "owner/receipts"},
+        }
         self.signed = {"bodyBase64": "dGVzdA==", "signatureBase64": "synthetic"}
         self.name = "training_receipt.signed.json"
 
@@ -42,7 +45,9 @@ class V1ReceiptPrivacyTests(unittest.TestCase):
         self.api.create_repo.assert_called_once_with(
             "owner/receipts", repo_type="dataset", exist_ok=True, private=True
         )
-        self.api.repo_info.assert_called_once_with("owner/receipts", repo_type="dataset")
+        self.api.repo_info.assert_called_once_with(
+            "owner/receipts", repo_type="dataset"
+        )
         self.api.upload_file.assert_called_once_with(
             path_or_fileobj=str(self.runner.ROOT / "jobs" / self.name),
             path_in_repo=f"test-job/{self.name}",
