@@ -24,6 +24,7 @@ class AuditorVerifyTests(unittest.TestCase):
     def setUpClass(cls):
         with tempfile.TemporaryDirectory() as td:
             import os
+
             os.environ["AUDITOR_STATE"] = str(Path(td) / "state.json")
             cls.app = load_module("auditor_app_verify", AUDITOR_APP)
 
