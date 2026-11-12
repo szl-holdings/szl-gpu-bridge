@@ -14,7 +14,7 @@ authors = [{ name = "SZL Holdings", email = "stephen@szlholdings.com" }]
 keywords = ["ai", "governance", "provenance", "receipts", "honesty", "khipu", "kamachikuna"]
 
 [project.urls]
-Homepage = "https://szlholdings.com/"
+Homepage = "https://a-11-oy.com/"
 Source = "https://github.com/szl-holdings/szl-gpu-bridge"
 Sponsors = "https://szlholdings.com/sponsors.html"
 
