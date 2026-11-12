@@ -18,6 +18,12 @@ job only when every line holds:
 Anything else is REJECTED and never executed. Without MESH_JOB_KEY (32+ bytes,
 env only) a worker still heartbeats but runs nothing.
 
+Liveness is not evidence. Heartbeats and the brain's roster are overwritten every
+HEARTBEAT_S, so they go to a separate liveness dataset (MESH_LIVENESS_DS), never
+to the receipts chain: a commit a minute on the chain means the Hub's dataset
+viewer never sees a revision that lasts long enough to index. Registrations,
+jobs and results are events and stay on the chain.
+
 Usage:
   python3 mesh_daemon.py --mode worker
   python3 mesh_daemon.py --mode brain
@@ -43,6 +49,8 @@ import urllib.request
 from pathlib import Path
 
 DS = "SZLHOLDINGS/frontier-54-runs"
+LIVENESS_DS = os.environ.get("MESH_LIVENESS_DS") or "SZLHOLDINGS/mesh-liveness"
+REPO_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
 NODE_ID = socket.gethostname()
 HF = "https://huggingface.co"
 MESH_DIR = Path(os.environ.get("MESH_HOME", str(Path.home() / "szl-mesh")))
@@ -65,16 +73,33 @@ ALLOW = {
 
 
 # ============ THE CHAIN ============
-def chain_read(path: str, timeout=20):
-    req = urllib.request.Request(f"{HF}/datasets/{DS}/resolve/main/{path}",
+def chain_read(path: str, timeout=20, repo: str = DS):
+    req = urllib.request.Request(f"{HF}/datasets/{repo}/resolve/main/{path}",
                                  headers={"User-Agent": "szl-mesh/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
 
-def chain_write(api, path: str, data: dict):
+def chain_write(api, path: str, data: dict, repo: str = DS):
     api.upload_file(path_or_fileobj=json.dumps(data, indent=2).encode(),
-                    path_in_repo=path, repo_id=DS, repo_type="dataset")
+                    path_in_repo=path, repo_id=repo, repo_type="dataset")
+
+
+def liveness_write(api, path: str, data: dict):
+    """Overwritten-every-minute state. Never the receipts chain."""
+    problem = liveness_problem()
+    if problem:
+        raise RuntimeError(f"FAIL-CLOSED: {problem}")
+    chain_write(api, path, data, repo=LIVENESS_DS)
+
+
+def liveness_problem() -> str | None:
+    """Why LIVENESS_DS cannot be used, or None if it can."""
+    if LIVENESS_DS == DS:
+        return "MESH_LIVENESS_DS must not be the receipts chain"
+    if not REPO_ID.fullmatch(LIVENESS_DS):
+        return "MESH_LIVENESS_DS must be an owner/name dataset id"
+    return None
 
 
 def receipt(kind, data):
@@ -237,9 +262,12 @@ def worker_loop(api, brain_url: str, key: bytes) -> int:
     print(f"registered with brain {brain_url}", flush=True)
     for cycle in itertools.count(1):
         try:
-            chain_write(api, f"mesh/workers/{NODE_ID}/heartbeat.json", receipt("szl.mesh-heartbeat/v1", {
+            liveness_write(api, f"mesh/workers/{NODE_ID}/heartbeat.json", receipt("szl.mesh-heartbeat/v1", {
                 "cycle": cycle, "gpu": gpu_state(), "uptime_s": int(time.time() - started),
                 "jobs_done": stats["done"], "jobs_rejected": stats["rejected"]}))
+        except Exception as e:  # a failed heartbeat must not stop the node polling for work
+            print(f"cycle {cycle} heartbeat error: {type(e).__name__}: {e}", flush=True)
+        try:
             seen = poll(api, key, done, seen, stats)
         except Exception as e:  # one bad cycle must not take the node off the mesh
             print(f"cycle {cycle} error: {type(e).__name__}: {e}", flush=True)
@@ -251,32 +279,48 @@ def worker_loop(api, brain_url: str, key: bytes) -> int:
 def brain_loop(api):
     """Track which workers are alive and publish the roster."""
     MESH_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"brain mode: coordinating via {DS}", flush=True)
+    print(f"brain mode: jobs via {DS}, liveness via {LIVENESS_DS}", flush=True)
     workers = {}
     while True:
-        try:
-            tree = json.loads(urllib.request.urlopen(
-                urllib.request.Request(f"{HF}/api/datasets/{DS}/tree/main/mesh/workers?recursive=true",
-                                       headers={"User-Agent": "szl-mesh/1.0"}), timeout=20).read())
+        # Workers are upgraded one node at a time, so a worker that has not been
+        # upgraded yet still heartbeats on the chain. Read both and keep the newest
+        # per node. Reads cost no commits. Drop DS here once every node is upgraded.
+        newest = {}
+        for repo in (LIVENESS_DS, DS):
+            try:
+                tree = json.loads(urllib.request.urlopen(
+                    urllib.request.Request(f"{HF}/api/datasets/{repo}/tree/main/mesh/workers?recursive=true",
+                                           headers={"User-Agent": "szl-mesh/1.0"}), timeout=20).read())
+            except urllib.error.HTTPError as e:
+                if e.code != 404:  # 404: no worker has written to this repo yet
+                    print(f"brain: cannot list workers on {repo}: HTTP {e.code}", flush=True)
+                continue
+            except Exception as e:
+                print(f"brain: cannot list workers on {repo}: {type(e).__name__}: {e}", flush=True)
+                continue
             for f in tree:
-                if "heartbeat" in f["path"]:
+                if f.get("path", "").endswith("/heartbeat.json"):
                     wid = f["path"].split("/")[2]
                     try:
-                        hb = chain_read(f["path"])
+                        hb = chain_read(f["path"], repo=repo)
                         age = age_s(hb["ts"], time.time())
-                        workers[wid] = {"age_s": age, "gpu": hb.get("gpu"),
-                                        "alive": age < HEARTBEAT_S * 3}
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        print(f"brain: unreadable heartbeat {repo}/{f['path']}: {type(e).__name__}", flush=True)
+                        continue
+                    if wid not in newest or age < newest[wid]["age_s"]:
+                        newest[wid] = {"age_s": age, "gpu": hb.get("gpu"),
+                                       "alive": age < HEARTBEAT_S * 3}
+        workers.update(newest)
 
         state = receipt("szl.mesh-brain-state/v1", {
             "workers": {k: {"alive": v["alive"], "gpu": v["gpu"]} for k, v in workers.items()},
             "alive_count": sum(1 for v in workers.values() if v["alive"]),
             "total_known": len(workers)})
-        chain_write(api, "mesh/brain/state.json", state)
-        print(f"brain: {state['alive_count']} of {state['total_known']} alive", flush=True)
+        try:
+            liveness_write(api, "mesh/brain/state.json", state)
+            print(f"brain: {state['alive_count']} of {state['total_known']} alive", flush=True)
+        except Exception as e:  # one failed roster write must not stop the brain
+            print(f"brain: roster write error: {type(e).__name__}: {e}", flush=True)
         time.sleep(HEARTBEAT_S)
 
 
@@ -293,6 +337,9 @@ def main():
     tok = os.environ.get("HF_TOKEN", "")
     if not tok:
         print("FAIL-CLOSED: HF_TOKEN required (env only)", file=sys.stderr)
+        return 2
+    if args.mode != "dispatch" and liveness_problem():
+        print(f"FAIL-CLOSED: {liveness_problem()}", file=sys.stderr)
         return 2
     key = os.environ.get("MESH_JOB_KEY", "").encode()
     if args.mode == "dispatch" and len(key) < MIN_KEY_BYTES:
