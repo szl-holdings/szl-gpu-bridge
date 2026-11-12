@@ -1,9 +1,29 @@
 #!/usr/bin/env bash
 # patch_a6000_bench.sh — repair the zero-energy NVML bug on the A6000 nodes.
 #
-# Run ON THE NODE (e.g. hatun-mcp-prod .145) as user Ubuntu:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/scripts/patch_a6000_bench.sh)
-# or after git pull in ~/szl-gpu-bridge:
+# Run ON THE NODE (e.g. hatun-mcp-prod .145) as user Ubuntu.
+# Download a pinned revision, verify it, then run. Do not pipe this script
+# from the network into a shell, and do not execute the moving main branch
+# by remote URL.
+#
+#   PINNED_SHA="<full 40-character commit from a reviewed revision>"
+#   # sha256 of scripts/patch_a6000_bench.sh at that commit, taken from a
+#   # trusted channel (the review or a signed note), not from the URL you run.
+#   EXPECTED_SHA256="<64-character sha256>"
+#   DEST="${HOME}/szl-gpu-bridge"
+#   rm -rf "${DEST}.partial"
+#   git init "${DEST}.partial"
+#   git -C "${DEST}.partial" remote add origin https://github.com/szl-holdings/szl-gpu-bridge.git
+#   git -C "${DEST}.partial" fetch --depth 1 origin "${PINNED_SHA}"
+#   git -C "${DEST}.partial" checkout --detach FETCH_HEAD
+#   test "$(git -C "${DEST}.partial" rev-parse HEAD)" = "${PINNED_SHA}"
+#   echo "${EXPECTED_SHA256}  ${DEST}.partial/scripts/patch_a6000_bench.sh" | sha256sum -c -
+#   rm -rf "${DEST}"
+#   mv "${DEST}.partial" "${DEST}"
+#   bash "${DEST}/scripts/patch_a6000_bench.sh"
+#
+# The checkout is the whole revision, so scripts/energy_meter.py matches the
+# script you just verified. After that checkout, later runs can be:
 #   bash scripts/patch_a6000_bench.sh
 #
 # What it does (idempotent, FAIL-CLOSED):
@@ -54,7 +74,7 @@ log "installed $SZL_DIR/energy_meter.py"
 if [[ -f "$SZL_DIR/bench.sh" ]]; then
   if grep -q "nvmlDeviceGetPower\b" "$SZL_DIR/bench.sh"; then
     # Replace the nonexistent symbol with the real one, guarded.
-    sed -i.broken-$TS 's/nvmlDeviceGetPower\b/nvmlDeviceGetPowerUsage/g' "$SZL_DIR/bench.sh"
+    sed -i.broken-"$TS" 's/nvmlDeviceGetPower\b/nvmlDeviceGetPowerUsage/g' "$SZL_DIR/bench.sh"
     log "patched bench.sh: nvmlDeviceGetPower -> nvmlDeviceGetPowerUsage"
   fi
   # The zero-conversion bug: any `|| 0` or `except: 0` around power reads.
