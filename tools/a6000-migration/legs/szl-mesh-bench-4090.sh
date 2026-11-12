@@ -2,9 +2,11 @@
 set -e
 export HF_HOME=${HF_HOME:-$HOME/szl-legs/hf-cache} PIP_BREAK_SYSTEM_PACKAGES=1
 pip install -q transformers datasets peft trl accelerate huggingface_hub safetensors pynvml
+export PYTHONPATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../laptop" && pwd)${PYTHONPATH:+:$PYTHONPATH}"
 python3 - <<'BENCH'
 import os, time, json, hashlib, threading, subprocess, torch
 import pynvml
+from benchmark_power import PowerSampler
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer, SFTConfig
@@ -19,20 +21,7 @@ gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
 # ---- NVML energy sampler: integrate power.draw -> joules ----
 pynvml.nvmlInit()
 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-_joules = [0.0]; _watts = []; _stop = [False]
-def sampler():
-    last = time.time()
-    while not _stop[0]:
-        try:
-            w = pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # W
-        except Exception:
-            w = 0.0
-        now = time.time()
-        _joules[0] += w * (now - last); last = now
-        _watts.append(w)
-        time.sleep(1.0)
-th = threading.Thread(target=sampler, daemon=True); th.start()
-
+energy_sampler = PowerSampler(lambda: pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0)
 t0 = time.time()
 tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-1.7B")
 model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen3-1.7B", torch_dtype=torch.bfloat16, device_map="auto")
@@ -54,21 +43,19 @@ cfg = SFTConfig(output_dir=os.path.expanduser("~/szl-workspace/ckpt"), max_lengt
     max_steps=MAX_STEPS, report_to=[], packing=True, seed=SEED)
 trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
 
-t_train = time.time()
-trainer.train()
-train_s = time.time() - t_train
-_stop[0] = True; time.sleep(1.2)
-joules = _joules[0]
-avg_w = sum(_watts)/len(_watts) if _watts else 0
-
+energy_sampler.start()
+t_train = time.monotonic()
+try:
+    trainer.train()
+finally:
+    energy_sampler.stop()
+    pynvml.nvmlShutdown()
+train_s = time.monotonic() - t_train
 # tokens processed estimate: packed 2048-token seqs, batch 4 x accum 8 = 32 seqs/step
 tokens_est = 32 * 2048 * trainer.state.global_step
 logs = trainer.state.log_history
 loss_curve = [{"step": l.get("step"), "loss": l.get("loss")} for l in logs if "loss" in l]
 
-# honest carbon join: measured joules x published US grid average (EPA eGRID ~0.385 kgCO2/kWh)
-KWH = joules / 3.6e6
-CARBON_KG_PER_KWH = 0.385  # EPA eGRID US average; labeled average, NOT node-specific
 receipt = {
   "schema": "szl.gpu-mesh-benchmark/v1",
   "gpu": gpu, "vram_gb": round(torch.cuda.get_device_properties(0).total_memory/1e9,1) if torch.cuda.is_available() else 0,
@@ -78,16 +65,7 @@ receipt = {
   "throughput": {"steps_per_sec": round(trainer.state.global_step/train_s,4),
                  "sec_per_step": round(train_s/trainer.state.global_step,4),
                  "wall_seconds": round(train_s,1)},
-  "energy": {
-    "joules_measured": round(joules,1),
-    "method": "NVML power.draw integrated at 1Hz (pynvml)",
-    "avg_watts": round(avg_w,1),
-    "kwh": round(KWH,6),
-    "joules_per_token": round(joules/max(tokens_est,1),4),
-    "tokens_estimated": tokens_est,
-    "carbon_note": "MEASURED joules x PUBLISHED US grid average (EPA eGRID 0.385 kgCO2/kWh). Node-region carbon NOT claimed: SaladCloud node region undisclosed.",
-    "co2_kg_estimated_us_average": round(KWH * CARBON_KG_PER_KWH, 6),
-  },
+  "energy": energy_sampler.report(tokens_est),
   "loss": {"first": loss_curve[0]["loss"] if loss_curve else None,
            "last": loss_curve[-1]["loss"] if loss_curve else None},
   "provider": "SaladCloud", "torch": torch.__version__,
