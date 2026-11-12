@@ -9,7 +9,6 @@ by each request on arrival. Binds 127.0.0.1 on an OS-assigned port; never 8000.
 import argparse
 import json
 import os
-import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,14 +55,16 @@ def main():
 
         def do_GET(self):
             if self.path != "/stats":
-                return self.send_json(404, {"error": "not found"})
+                self.send_json(404, {"error": "not found"})
+                return
             with lock:
                 snapshot = json.loads(json.dumps(state))
             self.send_json(200, snapshot)
 
         def do_POST(self):
             if self.path != "/v1/chat/completions":
-                return self.send_json(404, {"error": "not found"})
+                self.send_json(404, {"error": "not found"})
+                return
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
             with lock:
                 state["requests"] += 1
@@ -72,8 +73,13 @@ def main():
                 state["arrivals"].append(state["in_flight"])
             try:
                 time.sleep(args.delay)
-                match = re.search(r"capital of (.+)\?$", body["messages"][-1]["content"])
-                answer = RIGHT.get(match.group(1), "unknown") if match else "unknown"
+                # No regex: split on a fixed marker so a crafted prompt cannot make
+                # matching superlinear (CodeQL py/polynomial-redos).
+                prompt = body["messages"][-1]["content"]
+                marker = "capital of "
+                head, sep, tail = prompt.rpartition(marker)
+                country = tail[:-1] if (sep and tail.endswith("?")) else None
+                answer = RIGHT.get(country, "unknown") if country else "unknown"
                 content = (f"The capital is {answer}." if args.mode == "right"
                            else "The capital is Atlantis.")
             finally:
