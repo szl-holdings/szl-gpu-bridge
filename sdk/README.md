@@ -87,7 +87,7 @@ From the repository root:
 ```sh
 python -m pip install build twine
 python -m build sdk --outdir /tmp/szl-dist
-python sdk/tools/verify_release.py --dist /tmp/szl-dist --tag szl-v0.1.6
+python sdk/tools/verify_release.py --dist /tmp/szl-dist --tag szl-v0.1.7
 python -m twine check --strict /tmp/szl-dist/*
 python -m pip install --no-deps --force-reinstall /tmp/szl-dist/*.whl
 python -m unittest discover -s sdk/tests -v
@@ -102,7 +102,7 @@ checked-out commit and that commit must belong to fetched `origin/main` history.
 PyPI must have the matching trusted
 publisher registered; no token fallback is provided.
 
-Version 0.1.6 is a source release candidate until the publish workflow succeeds.
+Version 0.1.7 is a source release candidate until the publish workflow succeeds.
 Earlier `szl-v0.1.5` tags did not change the 0.1.0 package metadata; they are
 not proof that 0.1.5 exists on PyPI. The conda-forge recipe remains a historical
 0.1.0 recipe and must be separately updated with a verified published sdist hash.
