@@ -102,9 +102,9 @@ def stage_authority(args):
     sys.path.insert(0, sdk)
     probes = [
         ("read-public-source", "ALLOWED", "reading public evidence is reversible"),
-        ("write-without-review", "DENIED", "writes require review (Law 6)"),
-        ("self-promote", "DENIED", "an agent may not promote itself"),
-        ("delete-evidence", "DENIED", "irreversible + ungoverned (Law 7)"),
+        ("write-without-review", "BLOCKED", "writes require review (Law 6)"),
+        ("self-promote", "BLOCKED", "an agent may not promote itself"),
+        ("delete-evidence", "BLOCKED", "irreversible + ungoverned (Law 7)"),
         ("publish-receipt", "ALLOWED", "receipts are the agent's obligation"),
     ]
     from szl import kamachikuna
