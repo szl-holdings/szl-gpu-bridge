@@ -106,7 +106,9 @@ class BuilderTests(unittest.TestCase):
             self.fx.write("valid.json", sealed({"kind": "local"}))
             (self.fx.root / "escape.json").symlink_to(outside)
             (self.fx.root / "alias.json").symlink_to(self.fx.root / "valid.json")
-            self.assertEqual([row["path"] for row in B.build_rows(self.fx.root)], ["valid.json"])
+            self.assertEqual(
+                [row["path"] for row in B.build_rows(self.fx.root)], ["valid.json"]
+            )
 
     def test_index_itself_and_hidden_dirs_are_excluded(self):
         self.fx.write("data/receipts-index.jsonl", raw='{"path": "x"}\n')
