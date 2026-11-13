@@ -81,13 +81,19 @@ def save_state(st):
     STATE.with_suffix(".tmp").replace(STATE)
 
 def remember(st, receipt):
-    """Keep the last 24 receipts in state — the proof gallery."""
-    hist = st.setdefault("history", [])
-    slim = {k: receipt.get(k) for k in
-            ("cycle", "ts", "body_sha256", "signature", "chain_state", "findings")}
-    hist.append(slim)
-    del hist[:-24]
-    save_state(st)
+    """Persist the last 24 complete receipt envelopes, then expose the snapshot.
+
+    Body fields (including kind, officer and predecessor) are required to
+    recompute the stored digest. Never reconstruct missing fields in old rows.
+    Detach nested values so later caller mutations cannot alter retained proof.
+    """
+    snapshot = json.loads(json.dumps(receipt, allow_nan=False))
+    history = st.get("history", [])
+    if not isinstance(history, list):
+        raise ValueError("auditor history must be a list")
+    pending = {**st, "history": (history + [snapshot])[-24:]}
+    save_state(pending)
+    st["history"] = pending["history"]
 
 
 def get(url, timeout=20):
