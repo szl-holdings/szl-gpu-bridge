@@ -190,7 +190,12 @@ function receiptNode(receipt) {
   node.tabIndex = 0;
   node.setAttribute('role', 'button');
   node.setAttribute('aria-expanded', 'false');
-  node.appendChild(textNode('div', 'cyc', 'CYCLE ' + field(receipt.cycle)));
+  const cycNode = textNode('div', 'cyc', 'CYCLE ' + field(receipt.cycle) + ' ');
+  const badge = textNode('span', 'vbadge', 'CHECKING…');
+  badge.style.color = 'var(--warn)';
+  cycNode.appendChild(badge);
+  node.appendChild(cycNode);
+  node.verifyBadge = badge;
   node.appendChild(textNode('div', 'ts', field(receipt.timestamp_utc || receipt.ts)
     + ' · ' + field(receipt.chain_state)));
   const digest = typeof receipt[HISTORY_SHA] === 'string' ? receipt[HISTORY_SHA] : '';
@@ -258,6 +263,22 @@ async function refreshHistory() {
     }
     el('finds').replaceChildren(...(findings ? [findings] : []));
     el('hcount').textContent = cards.length;
+    // Verify each receipt server-side; an unverified signature is never shown as proof.
+    for (const card of cards) {
+      const receipt = history.receipts.find(r => JSON.stringify(r) === card.receiptKey);
+      if (!receipt || !card.verifyBadge) continue;
+      fetch('/api/verify', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({receipt})})
+        .then(v => v.json())
+        .then(v => {
+          card.verifyBadge.textContent = v.verified ? 'VERIFIED' : 'UNVERIFIED';
+          card.verifyBadge.style.color = v.verified ? 'var(--ok)' : 'var(--bad)';
+        })
+        .catch(() => {
+          card.verifyBadge.textContent = 'UNVERIFIED';
+          card.verifyBadge.style.color = 'var(--bad)';
+        });
+    }
   } catch (error) {
     el('gallery').replaceChildren(textNode('span', 'bad',
       'history unavailable — previously displayed receipts cleared; retrying on next refresh'));
