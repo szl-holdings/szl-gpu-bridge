@@ -34,6 +34,10 @@ from huggingface_hub import HfApi
 
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
 STOP = {"flag": False}
+# Trainer resume state is pickle-based (torch.save / pickle). It may live in the PRIVATE
+# working repo for resume, but must never be part of a published adapter.
+PICKLE_PATTERNS = ["*.pt", "*.pth", "*.bin", "*.pkl", "*.pickle", "*.ckpt",
+                   "optimizer.*", "scheduler.*", "rng_state*", "training_args.bin"]
 
 
 def receipt(kind: str, detail: str, extra: dict | None = None):
@@ -75,6 +79,20 @@ def latest_checkpoint(api: HfApi, repo: str) -> str | None:
         return None
 
 
+def fetch_resume_checkpoint(api, repo: str, output_dir: str) -> str | None:
+    """Download the newest checkpoint-* folder so Trainer gets a LOCAL path.
+    Trainer.train(resume_from_checkpoint="checkpoint-N") expects a directory; a bare Hub
+    folder name only works if a previous run on this same node left it on disk."""
+    ck = latest_checkpoint(api, repo)
+    if not ck:
+        return None
+    local = os.path.join(output_dir, ck)
+    if not os.path.isdir(local):
+        api.snapshot_download(repo_id=repo, repo_type="model", allow_patterns=[f"{ck}/*"],
+                              local_dir=output_dir)
+    return local if os.path.isdir(local) else None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
@@ -83,14 +101,18 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=200)
     ap.add_argument("--save-steps", type=int, default=50)
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
+    ap.add_argument("--publish-final-to", default="",
+                    help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
     a = ap.parse_args()
     if not a.hf_token:
         print("FAIL-CLOSED: HF_TOKEN required (env or --hf-token)", file=sys.stderr)
         return 2
 
     api = HfApi(token=a.hf_token)
-    api.create_repo(a.adapter_out, exist_ok=True, token=a.hf_token)
-    resume = latest_checkpoint(api, a.adapter_out)
+    # The working repo holds resumable (pickle-bearing) checkpoints, so it is created PRIVATE.
+    # (huggingface_hub.create_repo defaults to public; see SZLHOLDINGS/code-master-v2-candidate.)
+    api.create_repo(a.adapter_out, exist_ok=True, private=True, token=a.hf_token)
+    resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
     receipt("boot", f"worker started — base={a.base} dataset={a.dataset}",
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
@@ -151,7 +173,11 @@ def main() -> int:
     final = os.path.expanduser("~/ckpt/final")
     trainer.save_model(final)
     api.upload_folder(folder_path=final, path_in_repo="final",
-        repo_id=a.adapter_out, repo_type="model")
+        repo_id=a.adapter_out, repo_type="model", ignore_patterns=PICKLE_PATTERNS)
+    if a.publish_final_to:
+        api.create_repo(a.publish_final_to, exist_ok=True, private=True, token=a.hf_token)
+        api.upload_folder(folder_path=final, repo_id=a.publish_final_to, repo_type="model",
+                          ignore_patterns=PICKLE_PATTERNS)  # visibility change stays a human decision
     receipt("complete", f"training complete in {round(time.time()-t0,1)}s",
             {"steps": a.max_steps, "adapter": a.adapter_out,
              "joules_note": "energy metering via the estate's NVML sampler where available"})
