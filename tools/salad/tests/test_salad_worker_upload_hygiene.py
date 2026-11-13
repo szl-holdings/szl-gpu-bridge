@@ -32,4 +32,63 @@ def test_no_checkpoint_means_genesis(tmp_path):
 
 def test_working_repo_created_private():
     src = (pathlib.Path(__file__).resolve().parent.parent / "salad_worker.py").read_text()
-    assert "create_repo(a.adapter_out, exist_ok=True, private=True" in src
+    assert "ensure_private_repo(api, a.adapter_out, a.hf_token)" in src
+
+
+# --- fail-closed visibility verification (create_repo(exist_ok=True) never flips an existing public repo) ---
+import pytest
+
+class _Info:
+    def __init__(self, private): self.private = private
+
+class VisApi:
+    """Fake Hub: `state` is the repo's visibility as the Hub would report it."""
+    def __init__(self, state=None, exists=True, info_exc=None, flip_to=None):
+        self.state, self.exists, self.info_exc, self.flip_to = state, exists, info_exc, flip_to
+        self.created = []
+    def create_repo(self, repo_id, exist_ok=False, private=None, token=None, repo_type=None):
+        self.created.append((repo_id, private))
+        if not self.exists:           # a new repo honours private=True
+            self.exists, self.state = True, private
+        # an existing repo keeps its visibility, exactly like huggingface_hub
+        if self.flip_to is not None:  # race: visibility flipped between create and verify
+            self.state = self.flip_to
+    def repo_info(self, repo_id, repo_type="model"):
+        if self.info_exc: raise self.info_exc
+        return _Info(self.state)
+
+def test_new_repo_is_created_private_and_verified():
+    api = VisApi(exists=False)
+    sw.ensure_private_repo(api, "o/r", "t")
+    assert api.created == [("o/r", True)]
+
+def test_existing_private_repo_passes():
+    sw.ensure_private_repo(VisApi(state=True), "o/r", "t")
+
+def test_existing_public_repo_is_refused():
+    with pytest.raises(sw.VisibilityError, match="not private"):
+        sw.ensure_private_repo(VisApi(state=False), "o/r", "t")
+
+def test_missing_private_field_is_refused():
+    with pytest.raises(sw.VisibilityError):
+        sw.ensure_private_repo(VisApi(state=None), "o/r", "t")
+
+def test_inaccessible_repo_is_refused():
+    with pytest.raises(sw.VisibilityError, match="cannot verify"):
+        sw.ensure_private_repo(VisApi(state=True, info_exc=PermissionError("403")), "o/r", "t")
+
+def test_network_error_is_refused():
+    with pytest.raises(sw.VisibilityError, match="cannot verify"):
+        sw.ensure_private_repo(VisApi(state=True, info_exc=ConnectionError("reset")), "o/r", "t")
+
+def test_race_flip_to_public_after_create_is_refused():
+    with pytest.raises(sw.VisibilityError):
+        sw.ensure_private_repo(VisApi(exists=False, flip_to=False), "o/r", "t")
+
+def test_every_upload_is_preceded_by_a_visibility_check():
+    src = (pathlib.Path(__file__).resolve().parent.parent / "salad_worker.py").read_text()
+    on_save = src.split("def on_save", 1)[1].split("trainer.add_callback", 1)[0]
+    assert on_save.index("verify_private(api, a.adapter_out)") < on_save.index("api.upload_folder(")
+    tail = src.split("trainer.save_model(final)", 1)[1]
+    assert tail.index("verify_private(api, a.adapter_out)") < tail.index("api.upload_folder(")
+    assert tail.index("ensure_private_repo(api, a.publish_final_to") < tail.rindex("api.upload_folder(")
