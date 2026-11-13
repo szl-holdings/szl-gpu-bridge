@@ -178,6 +178,9 @@ def receipt_files(root: Path, exclude: Iterable[Path] = ()) -> list[Path]:
     skip = {Path(e).resolve() for e in exclude}
     out = []
     for p in root.rglob("*"):
+        # A snapshot index must not read through symlinks into other files.
+        if p.is_symlink():
+            continue
         if p.resolve() in skip:
             continue  # never index the index being written
         rel = p.relative_to(root).as_posix()

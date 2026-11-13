@@ -99,6 +99,15 @@ class BuilderTests(unittest.TestCase):
         )
         self.assertEqual(len([k for k in rows if k[0] == "proving-ground/r.jsonl"]), 2)
 
+    def test_symlinked_receipts_do_not_escape_or_duplicate_the_snapshot(self):
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside = Path(outside_dir) / "outside.json"
+            outside.write_text(json.dumps({"kind": "outside-snapshot"}))
+            self.fx.write("valid.json", sealed({"kind": "local"}))
+            (self.fx.root / "escape.json").symlink_to(outside)
+            (self.fx.root / "alias.json").symlink_to(self.fx.root / "valid.json")
+            self.assertEqual([row["path"] for row in B.build_rows(self.fx.root)], ["valid.json"])
+
     def test_index_itself_and_hidden_dirs_are_excluded(self):
         self.fx.write("data/receipts-index.jsonl", raw='{"path": "x"}\n')
         self.fx.write(".cache/huggingface/x.json", {"kind": "cache"})
