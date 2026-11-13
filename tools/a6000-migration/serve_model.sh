@@ -46,12 +46,17 @@ mkdir -p "$OUT"
 
 # 1. BOOT RECEIPT — prove the intent before the server starts. A refused bind
 #    (non-loopback HOST without SZL_API_KEY) exits above and writes nothing.
-python3 -c "
-import json, datetime
-r = {'kind': 'szl.serve-boot-receipt/v1', 'model': '$MODEL', 'source': '$SRC',
+python3 - "$MODEL" "$SRC" "$OUT/boot-receipt.json" <<'PY_RECEIPT'
+import json
+import datetime
+import sys
+
+r = {'kind': 'szl.serve-boot-receipt/v1', 'model': sys.argv[1], 'source': sys.argv[2],
      'ts': datetime.datetime.now(datetime.timezone.utc).isoformat()}
-open('$OUT/boot-receipt.json', 'w').write(json.dumps(r, sort_keys=True))
-print(json.dumps(r, sort_keys=True))"
+with open(sys.argv[3], 'w') as output:
+    output.write(json.dumps(r, sort_keys=True))
+print(json.dumps(r, sort_keys=True))
+PY_RECEIPT
 
 # 2. Pick the serving stack by artifact type
 case "$SRC" in
