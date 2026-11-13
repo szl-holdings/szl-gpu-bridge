@@ -20,6 +20,7 @@ Honesty rules:
 Usage:
   build_receipts_index.py --root SNAPSHOT [--output PATH] [--compare EXISTING] [--check]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,21 +66,36 @@ def _without(obj: dict, drop: Iterable[str]) -> dict:
 
 # (rule name, function(receipt, hash_field) -> bytes or None). Order is fixed.
 RULES: tuple[tuple[str, Callable[[dict, str], bytes | None]], ...] = (
-    ("sorted-json-without-hash-field",
-     lambda r, f: _dump_default(_without(r, [f]))),
-    ("sorted-compact-json-without-hash-field",
-     lambda r, f: _dump_compact(_without(r, [f]))),
-    ("sorted-compact-json-without-hash-and-signature",
-     lambda r, f: _dump_compact(_without(r, {f} | SIGNATURE_KEYS))),
-    ("sorted-json-without-hash-and-signature",
-     lambda r, f: _dump_default(_without(r, {f} | SIGNATURE_KEYS))),
-    ("sorted-json-of-files-member",
-     lambda r, f: _dump_default(r["files"]) if f == "package_sha256" and isinstance(r.get("files"), dict) else None),
+    ("sorted-json-without-hash-field", lambda r, f: _dump_default(_without(r, [f]))),
+    (
+        "sorted-compact-json-without-hash-field",
+        lambda r, f: _dump_compact(_without(r, [f])),
+    ),
+    (
+        "sorted-compact-json-without-hash-and-signature",
+        lambda r, f: _dump_compact(_without(r, {f} | SIGNATURE_KEYS)),
+    ),
+    (
+        "sorted-json-without-hash-and-signature",
+        lambda r, f: _dump_default(_without(r, {f} | SIGNATURE_KEYS)),
+    ),
+    (
+        "sorted-json-of-files-member",
+        lambda r, f: (
+            _dump_default(r["files"])
+            if f == "package_sha256" and isinstance(r.get("files"), dict)
+            else None
+        ),
+    ),
 )
 
 
 def _scalar(value: Any) -> bool:
-    return isinstance(value, (str, int, float)) and not isinstance(value, bool) and str(value) != ""
+    return (
+        isinstance(value, (str, int, float))
+        and not isinstance(value, bool)
+        and str(value) != ""
+    )
 
 
 def _first(receipt: dict, keys: Iterable[str]) -> tuple[str, str]:
@@ -93,22 +109,48 @@ def check_hash(receipt: dict) -> dict:
     """Return hash fields for one receipt object. Never raises on content."""
     claimed, field = _first(receipt, HASH_KEYS)
     if field == UNKNOWN:
-        return {"sha256": UNKNOWN, "hash_field": UNKNOWN, "hash_status": HASH_STATUS_NO_HASH, "hash_rule": UNKNOWN}
+        return {
+            "sha256": UNKNOWN,
+            "hash_field": UNKNOWN,
+            "hash_status": HASH_STATUS_NO_HASH,
+            "hash_rule": UNKNOWN,
+        }
     for name, rule in RULES:
         try:
             payload = rule(receipt, field)
         except (TypeError, ValueError):
             payload = None
         if payload is not None and _sha(payload) == claimed:
-            return {"sha256": claimed, "hash_field": field, "hash_status": HASH_STATUS_VERIFIED, "hash_rule": name}
-    return {"sha256": claimed, "hash_field": field, "hash_status": HASH_STATUS_UNVERIFIED, "hash_rule": UNKNOWN}
+            return {
+                "sha256": claimed,
+                "hash_field": field,
+                "hash_status": HASH_STATUS_VERIFIED,
+                "hash_rule": name,
+            }
+    return {
+        "sha256": claimed,
+        "hash_field": field,
+        "hash_status": HASH_STATUS_UNVERIFIED,
+        "hash_rule": UNKNOWN,
+    }
 
 
 def row_for(path: str, receipt: Any, raw: bytes, line: int | None) -> dict:
-    row = {"path": path, "line": line if line is not None else UNKNOWN, "file_sha256": _sha(raw)}
+    row = {
+        "path": path,
+        "line": line if line is not None else UNKNOWN,
+        "file_sha256": _sha(raw),
+    }
     if not isinstance(receipt, dict):
-        row.update(kind=UNKNOWN, detail=UNKNOWN, ts=UNKNOWN, sha256=UNKNOWN,
-                   hash_field=UNKNOWN, hash_status=HASH_STATUS_NO_HASH, hash_rule=UNKNOWN)
+        row.update(
+            kind=UNKNOWN,
+            detail=UNKNOWN,
+            ts=UNKNOWN,
+            sha256=UNKNOWN,
+            hash_field=UNKNOWN,
+            hash_status=HASH_STATUS_NO_HASH,
+            hash_rule=UNKNOWN,
+        )
         return row
     row["kind"], _ = _first(receipt, KIND_KEYS)
     row["detail"], _ = _first(receipt, DETAIL_KEYS)
@@ -118,9 +160,18 @@ def row_for(path: str, receipt: Any, raw: bytes, line: int | None) -> dict:
 
 
 def _invalid(path: str, raw: bytes, line: int | None) -> dict:
-    return {"path": path, "line": line if line is not None else UNKNOWN, "file_sha256": _sha(raw),
-            "kind": UNKNOWN, "detail": UNKNOWN, "ts": UNKNOWN, "sha256": UNKNOWN,
-            "hash_field": UNKNOWN, "hash_status": HASH_STATUS_INVALID, "hash_rule": UNKNOWN}
+    return {
+        "path": path,
+        "line": line if line is not None else UNKNOWN,
+        "file_sha256": _sha(raw),
+        "kind": UNKNOWN,
+        "detail": UNKNOWN,
+        "ts": UNKNOWN,
+        "sha256": UNKNOWN,
+        "hash_field": UNKNOWN,
+        "hash_status": HASH_STATUS_INVALID,
+        "hash_rule": UNKNOWN,
+    }
 
 
 def receipt_files(root: Path, exclude: Iterable[Path] = ()) -> list[Path]:
@@ -162,7 +213,9 @@ def build_rows(root: Path, exclude: Iterable[Path] = ()) -> list[dict]:
 
 
 def serialise(rows: list[dict]) -> str:
-    return "".join(json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n" for r in rows)
+    return "".join(
+        json.dumps(r, sort_keys=True, ensure_ascii=False) + "\n" for r in rows
+    )
 
 
 def _key(row: dict) -> tuple:
@@ -192,9 +245,13 @@ def compare(old_rows: list[dict], new_rows: list[dict]) -> dict:
     for r in new_rows:
         status[r["hash_status"]] = status.get(r["hash_status"], 0) + 1
     return {
-        "old_rows": len(old_rows), "new_rows": len(new_rows),
-        "added": len(added), "added_by_dir": dict(sorted(by_dir.items())), "added_paths": [k[0] for k in added],
-        "removed": len(removed), "removed_paths": [k[0] for k in removed],
+        "old_rows": len(old_rows),
+        "new_rows": len(new_rows),
+        "added": len(added),
+        "added_by_dir": dict(sorted(by_dir.items())),
+        "added_paths": [k[0] for k in added],
+        "removed": len(removed),
+        "removed_paths": [k[0] for k in removed],
         "changed_fields": dict(sorted(changed.items())),
         "hash_status": dict(sorted(status.items())),
     }
@@ -202,18 +259,38 @@ def compare(old_rows: list[dict], new_rows: list[dict]) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--root", type=Path, required=True, help="local snapshot of the dataset")
-    ap.add_argument("--output", type=Path, help="write the index here (default: stdout)")
-    ap.add_argument("--compare", type=Path, help="existing index to diff against; prints a JSON report to stderr")
-    ap.add_argument("--check", action="store_true", help="exit 1 if --output differs from what would be written")
+    ap.add_argument(
+        "--root", type=Path, required=True, help="local snapshot of the dataset"
+    )
+    ap.add_argument(
+        "--output", type=Path, help="write the index here (default: stdout)"
+    )
+    ap.add_argument(
+        "--compare",
+        type=Path,
+        help="existing index to diff against; prints a JSON report to stderr",
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="exit 1 if --output differs from what would be written",
+    )
     args = ap.parse_args(argv)
     rows = build_rows(args.root, [args.output] if args.output else [])
     text = serialise(rows)
     if args.compare:
-        old = [json.loads(l) for l in args.compare.read_text(encoding="utf-8").splitlines() if l.strip()]
+        old = [
+            json.loads(line)
+            for line in args.compare.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         print(json.dumps(compare(old, rows), indent=2, sort_keys=True), file=sys.stderr)
     if args.check:
-        current = args.output.read_text(encoding="utf-8") if args.output and args.output.exists() else ""
+        current = (
+            args.output.read_text(encoding="utf-8")
+            if args.output and args.output.exists()
+            else ""
+        )
         return 0 if current == text else 1
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
