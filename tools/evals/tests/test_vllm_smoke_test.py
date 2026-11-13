@@ -127,10 +127,9 @@ class WrongAnswers(unittest.TestCase):
         self.assertIn(f"Verdict: {self.smoke.result['verdict']}", lines)
         self.assertNotIn("Verdict: STALE", lines)
 
-    @unittest.expectedFailure
     def test_wrong_answers_do_not_pass(self):
-        # Needs the approved verdict change; remove this decorator when it lands.
-        self.assertNotEqual(self.smoke.result["verdict"], "PASS")
+        self.assertEqual(self.smoke.result["verdict"], "FAIL")
+        self.assertEqual(self.smoke.result["state"], "FAILED")
 
 
 class RightAnswers(unittest.TestCase):
@@ -139,6 +138,8 @@ class RightAnswers(unittest.TestCase):
         try:
             c = run.result["correctness"]
             self.assertEqual((c["checked"], c["correct"], c["incorrect_count"]), (100, 100, 0))
+            self.assertEqual(run.result["verdict"], "PASS")
+            self.assertEqual(run.result["state"], "MEASURED")
         finally:
             run.tmp.cleanup()
 
