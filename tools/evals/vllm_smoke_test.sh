@@ -164,7 +164,7 @@ result = {
     "total_calls": len(prompts),
     "unique_prompts": len({p for _, p in prompts}),
     "errors": errors,
-    "state": "MEASURED" if errors == 0 else "FAILED",
+    "state": "MEASURED" if errors == 0 and not incorrect else "FAILED",
     "concurrency_1": lanes["concurrency_1"],
     "concurrency_4": lanes["concurrency_4"],
     "correctness": {
@@ -174,14 +174,16 @@ result = {
         "incorrect_count": len(incorrect),
         "incorrect": incorrect[:20],
     },
-    "pass_criteria": "errors == 0 AND p95 within 10% of existing baseline",
-    "criteria_evaluated": ["errors == 0"],
+    "pass_criteria": "errors == 0 AND every folded answer contains the expected capital",
+    "criteria_evaluated": [
+        "errors == 0",
+        "correctness (every answer matches the expected capital)",
+    ],
     "criteria_not_evaluated": [
-        "correctness (recorded above; not used by state or verdict)",
         "p95 within 10% of existing baseline (no baseline is loaded)",
         "startup/kernel/OOM errors (server logs are not read)",
     ],
-    "verdict": "PASS" if errors == 0 else "FAIL",
+    "verdict": "PASS" if errors == 0 and not incorrect else "FAIL",
 }
 print(json.dumps(result, indent=2))
 with open(OUT + ".tmp", "w") as f:
