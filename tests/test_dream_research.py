@@ -6,6 +6,7 @@ module-level worker would create keys, poll services and publish receipts.
 
 import ast
 import io
+import re
 from email.message import Message
 import json
 from pathlib import Path
@@ -21,7 +22,7 @@ APP = ROOT / "hf-spaces" / "szl-dream-architect" / "app.py"
 
 def load_research():
     source = ast.parse(APP.read_text(encoding="utf-8"), filename=str(APP))
-    names = {"get", "parse_arxiv_feed", "get_research", "dream"}
+    names = {"get", "parse_arxiv_feed", "get_research", "dream_duty"}
     functions = [
         node
         for node in source.body
@@ -29,8 +30,10 @@ def load_research():
     ]
     namespace = {
         "json": json,
+        "re": re,
         "urllib": urllib,
         "FRONTIER_ISSUES": [135, 136, 137, 138],
+        "ROLE": "szl-dream-architect",
     }
     exec(
         compile(ast.Module(body=functions, type_ignores=[]), str(APP), "exec"),
@@ -62,17 +65,26 @@ class ResearchTests(unittest.TestCase):
         return io.BytesIO(feed())
 
     def test_atom_sources_reach_dream_without_placeholder_request(self):
+        plane = {
+            "state": "UNAVAILABLE",
+            "gateway": "offline",
+            "detail": "compute plane offline (test)",
+        }
         with (
             patch.object(urllib.request, "urlopen", self.response),
             patch.object(
                 urllib.request.OpenerDirector, "open", side_effect=self.response
             ),
         ):
-            result = self.functions["dream"]()
-        self.assertEqual(result["research_signal"], "MEASURED")
-        self.assertEqual(result["research_source_count"], 1)
+            result = self.functions["dream_duty"](plane)
+        surfaces = {s["surface"]: s for s in result}
+        self.assertEqual(surfaces["research_signal"]["state"], "MEASURED")
         self.assertEqual(
-            result["research_sources"],
+            surfaces["research_signal"]["titles"], ["Paper 0 on abstention"]
+        )
+        self.assertEqual(surfaces["research_signal"]["source_count"], 1)
+        self.assertEqual(
+            surfaces["research_signal"]["sources"],
             [
                 {
                     "title": "Paper 0 on abstention",
@@ -82,7 +94,9 @@ class ResearchTests(unittest.TestCase):
         )
         self.assertEqual(len(self.requests), 2)
         self.assertTrue(all(url.startswith("https://") for url, _ in self.requests))
-        self.assertIn("UNASSESSED", result["hypotheses"][0]["nearest_prior_art"])
+        self.assertEqual(surfaces["compute_plane_draft"]["state"], "UNAVAILABLE")
+        self.assertEqual(surfaces["hypotheses"]["state"], "MEASURED")
+        self.assertIn("HYPOTHESIS", surfaces["hypotheses"]["items"][0]["state"])
 
     def test_empty_feed_is_observed_not_unavailable(self):
         with patch.object(
@@ -169,11 +183,15 @@ class ResearchTests(unittest.TestCase):
             {"number": 135, "title": "Synthetic question"}
         ]
         self.functions["get_research"] = lambda: None
-        result = self.functions["dream"]()
-        self.assertEqual(result["research_signal"], "UNAVAILABLE")
-        self.assertIsNone(result["research_source_count"])
-        self.assertIsNone(result["research_sources"])
-        self.assertIn("HYPOTHESIS", result["hypotheses"][0]["state"])
+        result = self.functions["dream_duty"](
+            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"}
+        )
+        surfaces = {s["surface"]: s for s in result}
+        self.assertEqual(surfaces["research_signal"]["state"], "UNAVAILABLE")
+        self.assertIsNone(surfaces["research_signal"]["source_count"])
+        self.assertIsNone(surfaces["research_signal"]["sources"])
+        self.assertEqual(surfaces["hypotheses"]["state"], "MEASURED")
+        self.assertIn("HYPOTHESIS", surfaces["hypotheses"]["items"][0]["state"])
 
     def test_missing_questions_do_not_trigger_research(self):
         self.functions["get"] = lambda url: None
@@ -182,7 +200,14 @@ class ResearchTests(unittest.TestCase):
             self.fail("research requested without a frontier question")
 
         self.functions["get_research"] = forbidden
-        self.assertEqual(self.functions["dream"]()["state"], "UNAVAILABLE")
+        result = self.functions["dream_duty"](
+            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"}
+        )
+        surfaces = {s["surface"]: s for s in result}
+        self.assertEqual(surfaces["frontier_questions"]["state"], "UNAVAILABLE")
+        self.assertEqual(surfaces["research_signal"]["state"], "UNAVAILABLE")
+        self.assertEqual(surfaces["hypotheses"]["state"], "UNAVAILABLE")
+        self.assertEqual(surfaces["hypotheses"]["count"], 0)
 
 
 if __name__ == "__main__":
