@@ -65,8 +65,11 @@ class ResearchTests(unittest.TestCase):
         return io.BytesIO(feed())
 
     def test_atom_sources_reach_dream_without_placeholder_request(self):
-        plane = {"state": "UNAVAILABLE", "gateway": "offline",
-                 "detail": "compute plane offline (test)"}
+        plane = {
+            "state": "UNAVAILABLE",
+            "gateway": "offline",
+            "detail": "compute plane offline (test)",
+        }
         with (
             patch.object(urllib.request, "urlopen", self.response),
             patch.object(
@@ -76,8 +79,9 @@ class ResearchTests(unittest.TestCase):
             result = self.functions["dream_duty"](plane)
         surfaces = {s["surface"]: s for s in result}
         self.assertEqual(surfaces["research_signal"]["state"], "MEASURED")
-        self.assertEqual(surfaces["research_signal"]["titles"],
-                         ["Paper 0 on abstention"])
+        self.assertEqual(
+            surfaces["research_signal"]["titles"], ["Paper 0 on abstention"]
+        )
         self.assertEqual(surfaces["research_signal"]["source_count"], 1)
         self.assertEqual(
             surfaces["research_signal"]["sources"],
@@ -180,7 +184,8 @@ class ResearchTests(unittest.TestCase):
         ]
         self.functions["get_research"] = lambda: None
         result = self.functions["dream_duty"](
-            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"})
+            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"}
+        )
         surfaces = {s["surface"]: s for s in result}
         self.assertEqual(surfaces["research_signal"]["state"], "UNAVAILABLE")
         self.assertIsNone(surfaces["research_signal"]["source_count"])
@@ -196,7 +201,8 @@ class ResearchTests(unittest.TestCase):
 
         self.functions["get_research"] = forbidden
         result = self.functions["dream_duty"](
-            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"})
+            {"state": "UNAVAILABLE", "gateway": "offline", "detail": "test"}
+        )
         surfaces = {s["surface"]: s for s in result}
         self.assertEqual(surfaces["frontier_questions"]["state"], "UNAVAILABLE")
         self.assertEqual(surfaces["research_signal"]["state"], "UNAVAILABLE")
