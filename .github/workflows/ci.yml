@@ -74,7 +74,8 @@ jobs:
           node --test \
             tests/test_cloud_contract.mjs \
             tests/test_cloud_nemo_v3.mjs \
-            tests/test_materialize_frontier_spec.mjs
+            tests/test_materialize_frontier_spec.mjs \
+            tests/test_tier0_automerge.mjs
       - name: Validate JSON schemas and queued specs
         run: |
           python - <<'PY'
