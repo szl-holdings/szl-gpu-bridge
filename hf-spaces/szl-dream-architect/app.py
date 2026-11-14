@@ -96,6 +96,54 @@ def plane_status():
             "detail": "compute plane healthy", "models": models[:8]}
 
 
+def parse_arxiv_feed(payload):
+    """Read bounded Atom metadata; retrieval does not establish relevance."""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import urlsplit
+
+    if len(payload) > 262144:
+        raise ValueError("arXiv response exceeds the metadata limit")
+    text = payload.decode("utf-8-sig")
+    if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
+        raise ValueError("DTD and entity declarations are not supported")
+    try:
+        feed = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise ValueError("invalid arXiv Atom response") from exc
+    atom = "{http://www.w3.org/2005/Atom}"
+    if feed.tag != atom + "feed":
+        raise ValueError("expected an Atom feed")
+    sources = []
+    for entry in feed.findall(atom + "entry")[:3]:
+        title = " ".join((entry.findtext(atom + "title") or "").split())
+        identifier = (entry.findtext(atom + "id") or "").strip()
+        url = urlsplit(identifier)
+        if (not title or url.scheme not in {"http", "https"}
+                or url.netloc != "arxiv.org" or not url.path.startswith("/abs/")
+                or not url.path[5:] or url.query or url.fragment):
+            raise ValueError("invalid arXiv entry or API error response")
+        sources.append({"title": title, "url": "https://arxiv.org" + url.path})
+    return sources
+
+
+def get_research(timeout=20):
+    """None means unavailable; an empty list is an observed empty feed."""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    url = ("https://export.arxiv.org/api/query?search_query=all:abstention"
+           "+AND+all:LLM&max_results=3&sortBy=submittedDate")
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "szl-dream-architect/2.0", "Accept": "application/atom+xml"})
+    try:
+        opener = urllib.request.build_opener(NoRedirect())
+        with opener.open(req, timeout=timeout) as response:
+            return parse_arxiv_feed(response.read(262145))
+    except (OSError, ValueError):
+        return None
+
+
 # ---------------------------------------------------------------- duties
 
 def dream_duty(plane):
@@ -110,21 +158,26 @@ def dream_duty(plane):
             if "pull_request" not in it and it.get("number") in FRONTIER_ISSUES:
                 questions.append({"n": it["number"], "title": it["title"][:140]})
 
-    signal_titles, signal_state = [], "UNAVAILABLE"
-    try:
-        req = urllib.request.Request(
-            "http://export.arxiv.org/api/query?search_query=all:abstention+AND+all:LLM"
-            "&max_results=3&sortBy=submittedDate",
-            headers={"User-Agent": "szl-dreamer/3.0"})
-        xml = urllib.request.urlopen(req, timeout=20).read().decode(errors="replace")
-        for entry in re.findall(r"<entry>(.*?)</entry>", xml, re.S):
-            t = re.search(r"<title>(.*?)</title>", entry, re.S)
-            if t:
-                signal_titles.append(" ".join(t.group(1).split())[:120])
-        if signal_titles:
-            signal_state = "MEASURED"
-    except Exception:
-        signal_titles = []
+    if not questions:
+        # Fail-closed: no frontier questions means no research fetch and no
+        # drafted hypotheses this cycle -- research serves questions.
+        return [
+            {"surface": "frontier_questions", "state": "UNAVAILABLE",
+             "questions": []},
+            {"surface": "research_signal", "state": "UNAVAILABLE",
+             "titles": [], "sources": None, "source_count": None},
+            {"surface": "compute_plane_draft", "state": "UNAVAILABLE", "model": "",
+             "detail": "no frontier questions this cycle -- nothing to draft"},
+            {"surface": "hypotheses", "state": "UNAVAILABLE", "count": 0,
+             "labeled": "HYPOTHESIS -- never a claim", "items": []}]
+
+    # Live research signal through the fail-closed retrieval boundary:
+    # bounded read (hard byte limit), no redirect following, bounded source
+    # count, https only. None means unavailable; an empty list is an
+    # observed empty feed.
+    signal = get_research()
+    signal_titles = [s["title"][:120] for s in (signal or [])]
+    signal_state = "MEASURED" if signal is not None else "UNAVAILABLE"
 
     # Draft on the estate compute plane (TLS gateway). A 402 x402 challenge is
     # recorded honestly as PAYWALLED -- the paywall is the monetization
@@ -190,7 +243,8 @@ def dream_duty(plane):
     return [
         {"surface": "frontier_questions", "state": "MEASURED" if questions else "UNAVAILABLE",
          "questions": questions},
-        {"surface": "research_signal", "state": signal_state, "titles": signal_titles},
+        {"surface": "research_signal", "state": signal_state, "titles": signal_titles,
+         "sources": signal, "source_count": len(signal) if signal is not None else None},
         {"surface": "compute_plane_draft", "state": draft_state, "model": draft_model,
          "detail": draft_detail[:300]},
         {"surface": "hypotheses", "state": "MEASURED" if questions else "UNAVAILABLE",
