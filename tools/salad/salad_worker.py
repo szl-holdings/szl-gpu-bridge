@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (the top-company pattern).
+"""salad_worker.py — the resumable burst-training worker (v2, 2026-11-14).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -11,14 +11,26 @@ k8s spot pools):
   4. Graceful preemption — SIGTERM handler checkpoints before exit.
   5. Receipts — boot/step/complete receipts to the chain; silence is an alarm.
 
-This worker implements all five. It runs identically on Salad containers and
-on the estate's A6000s (tested there first — never ship to spot metal what
-hasn't run on owned metal).
+v2 fixes the 2026-11-14 lane failures (evidence: mesh/lanelogs/*-hbfinal.log in
+SZLHOLDINGS/frontier-54-runs; all 8 szl-train-*-r1 boots INNER_EXIT:1):
+  F1 (LazyRow): fmt() fallback did json.dumps(ex) on a datasets LazyRow ->
+     "Object of type LazyRow is not JSON serializable". Fix: dict(ex) first.
+  F2 (multi-config datasets): load_dataset without a config crashed on
+     SZLHOLDINGS/a11oy-verifiable-corpus. Fix: --dataset-config; fail-closed
+     receipt listing available configs when it is omitted.
+  F3 (split-schema mismatch): szl-frontier-sft-mix-v3 validation.jsonl infers
+     a null-typed 'kind' column and crashes casting strings. Fix: on dataset
+     generation failure, retry train-only from the Hub's train.jsonl.
+  F4 (no-kernel-image GPUs): torch cu126 lacks sm_120 (RTX 5090) kernels ->
+     mid-run "CUDA error: no kernel image". Fix: fail-closed arch precheck
+     BEFORE training; dispatch should also pin gpu_classes.
+  F5 (stub datasets): SZLHOLDINGS/governed-sft-mix-v2 has no data files; the
+     packaged json loader silently "trained" on spec.json. Fix: --min-examples
+     guard refuses stub-sized data with an honest fail-closed receipt.
 
-Usage:
-  python3 salad_worker.py --base Qwen/Qwen3-1.7B \\
-      --dataset SZLHOLDINGS/abstention-doctrine-sft-v1 \\
-      --adapter-out SZLHOLDINGS/test-adapter --max-steps 200
+Fail-closed posture unchanged: private-repo verification before every upload,
+receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
+published adapters. Visibility flips remain human decisions.
 """
 from __future__ import annotations
 import argparse, datetime, hashlib, json, os, signal, sys, time
@@ -72,14 +84,7 @@ class VisibilityError(RuntimeError):
 
 
 def verify_private(api, repo_id: str, repo_type: str = "model") -> None:
-    """Fail closed unless the Hub reports this repo as private RIGHT NOW.
-
-    create_repo(..., private=True, exist_ok=True) does NOT change an existing repo's
-    visibility: if the repo already exists and is public, it stays public. So every
-    upload must be preceded by an explicit read of the current visibility. Anything other
-    than an affirmative private=True (public, missing field, 401/403/404, network error)
-    blocks the upload.
-    """
+    """Fail closed unless the Hub reports this repo as private RIGHT NOW."""
     try:
         info = api.repo_info(repo_id=repo_id, repo_type=repo_type)
     except Exception as e:  # inaccessible, deleted, transient error -> unknown -> refuse
@@ -91,7 +96,6 @@ def verify_private(api, repo_id: str, repo_type: str = "model") -> None:
 
 
 def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model") -> None:
-    """Create the repo private if absent, then verify it is actually private."""
     api.create_repo(repo_id, exist_ok=True, private=True, token=token, repo_type=repo_type)
     verify_private(api, repo_id, repo_type)
 
@@ -108,10 +112,7 @@ def latest_checkpoint(api: HfApi, repo: str) -> str | None:
         return None
 
 
-def fetch_resume_checkpoint(api, repo: str, output_dir: str) -> str | None:
-    """Download the newest checkpoint-* folder so Trainer gets a LOCAL path.
-    Trainer.train(resume_from_checkpoint="checkpoint-N") expects a directory; a bare Hub
-    folder name only works if a previous run on this same node left it on disk."""
+def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | None:
     ck = latest_checkpoint(api, repo)
     if not ck:
         return None
@@ -122,6 +123,59 @@ def fetch_resume_checkpoint(api, repo: str, output_dir: str) -> str | None:
     return local if os.path.isdir(local) else None
 
 
+def cuda_arch_precheck() -> None:
+    """F4: fail-closed BEFORE training if this torch build lacks kernels for the GPU."""
+    if not torch.cuda.is_available():
+        receipt("fail-closed", "CUDA unavailable — refusing to train on CPU")
+        raise SystemExit(4)
+    cap = torch.cuda.get_device_capability(0)
+    sm = f"sm_{cap[0]}{cap[1]}"
+    arch_list = torch.cuda.get_arch_list()
+    if sm not in arch_list:
+        gpu = torch.cuda.get_device_name(0)
+        receipt("fail-closed",
+                f"torch {torch.__version__} lacks {sm} kernels for {gpu} "
+                f"(arch_list={arch_list}) — pin gpu_classes or use a newer CUDA build",
+                {"gpu": gpu, "sm": sm})
+        raise SystemExit(4)
+
+
+def load_train_split(a, api: HfApi):
+    """F2/F3: config-aware, split-safe train loading with train-only fallback."""
+    kwargs = {"split": "train"}
+    if a.dataset_config:
+        kwargs["name"] = a.dataset_config
+    try:
+        return load_dataset(a.dataset, **kwargs)
+    except ValueError as e:
+        # F2: multi-config dataset without a config
+        msg = str(e)
+        if "available configs" in msg and "pick one" in msg:
+            import re as _re
+            first = msg.split("available configs:")[-1].splitlines()[0]
+            cfgs = [c for c in _re.findall(r"'([^']+)'", first) if "/" not in c]
+            receipt("fail-closed",
+                    f"dataset {a.dataset} needs --dataset-config; available: {cfgs}",
+                    {"configs": cfgs})
+            raise SystemExit(5)
+        raise
+    except Exception as e:
+        # F3: split-schema mismatch — retry train-only from the Hub's train.jsonl
+        receipt("warn", f"dataset generation failed ({str(e)[:100]}); retrying train-only load")
+        train_file = a.dataset_train_file or "train.jsonl"
+        try:
+            return load_dataset("json", data_files={"train": train_file},
+                                split="train", token=a.hf_token)
+        except Exception:
+            from huggingface_hub import hf_hub_download
+            from datasets import Dataset as _Dataset
+            receipt("warn", f"loading {train_file} directly from the Hub")
+            p = hf_hub_download(repo_id=a.dataset, repo_type="dataset",
+                                filename=train_file, token=a.hf_token)
+            rows = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+            return _Dataset.from_list(rows)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
@@ -129,6 +183,12 @@ def main() -> int:
     ap.add_argument("--adapter-out", required=True)
     ap.add_argument("--max-steps", type=int, default=200)
     ap.add_argument("--save-steps", type=int, default=50)
+    ap.add_argument("--min-examples", type=int, default=8,
+                    help="F5 honesty guard: refuse to train on stub-sized data")
+    ap.add_argument("--dataset-config", default="",
+                    help="F2: config name for multi-config datasets")
+    ap.add_argument("--dataset-train-file", default="",
+                    help="F3: explicit train data file for split-schema-broken datasets")
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
     ap.add_argument("--publish-final-to", default="",
                     help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
@@ -139,7 +199,6 @@ def main() -> int:
 
     api = HfApi(token=a.hf_token)
     # The working repo holds resumable (pickle-bearing) checkpoints, so it is created PRIVATE.
-    # (huggingface_hub.create_repo defaults to public; see SZLHOLDINGS/code-master-v2-candidate.)
     # create_repo(exist_ok=True) leaves an EXISTING public repo public, so verify explicitly.
     try:
         ensure_private_repo(api, a.adapter_out, a.hf_token)
@@ -147,17 +206,32 @@ def main() -> int:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
     resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
-    receipt("boot", f"worker started — base={a.base} dataset={a.dataset}",
+    receipt("boot", f"worker started — base={a.base} dataset={a.dataset}"
+            + (f" config={a.dataset_config}" if a.dataset_config else ""),
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
-             "node": os.environ.get("HOSTNAME", "unknown")})
+             "node": os.environ.get("HOSTNAME", "unknown"),
+             "worker_version": "v2-20261114"})
+
+    cuda_arch_precheck()  # F4
 
     tok = AutoTokenizer.from_pretrained(a.base)
     model = AutoModelForCausalLM.from_pretrained(
         a.base, dtype=torch.bfloat16, device_map="auto")
-    ds = load_dataset(a.dataset, split="train")
+    ds = load_train_split(a, api)  # F2/F3
+
+    # F5 honesty guard: stub-sized "datasets" (spec files, READMEs) are not training data.
+    if len(ds) < a.min_examples:
+        receipt("fail-closed",
+                f"dataset {a.dataset} has {len(ds)} examples (< {a.min_examples}) — "
+                "refusing to train on stub data; publish a real mix first",
+                {"examples": len(ds)})
+        print(f"FAIL-CLOSED: {len(ds)} examples is stub-sized; not training", file=sys.stderr)
+        return 6
+
     ds = ds.select(range(min(2000, len(ds))))
     def fmt(ex):
+        ex = dict(ex)  # F1: LazyRow -> plain dict; JSON-safe in every branch
         if "text" in ex: return {"text": ex["text"]}
         if "messages" in ex:
             return {"text": tok.apply_chat_template(ex["messages"], tokenize=False)}
@@ -181,9 +255,6 @@ def main() -> int:
         task_type="CAUSAL_LM")
 
     trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
-
-    class StopOnSignal(torch.utils.data.Dataset):
-        pass  # SIGTERM handled at save boundaries via callback below
 
     from transformers import TrainerCallback
     class ReceiptCallback(TrainerCallback):
