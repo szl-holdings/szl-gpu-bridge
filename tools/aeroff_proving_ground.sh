@@ -6,6 +6,8 @@
 # Fail closed: any stage that cannot verify reports UNAVAILABLE, never zero.
 set -euo pipefail
 OUT="$HOME/aeroff-pg"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERDICT="$HERE/lean_axiom_verdict.py"
 mkdir -p "$OUT/logs"
 TS() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 RECEIPT() { python3 -c "
@@ -36,10 +38,23 @@ import math, json
 # Inputs from the disclosure (M1 system): PVC cone E=2.9GPa, nu=0.38
 E, nu = 2.9e9, 0.38
 rho = 1400.0  # PVC kg/m^3 (nominal; recorded as INPUT_ASSUMED)
-# Rayleigh velocity approximation (Malischewsky-Tuan relation used in the doc)
+# Rayleigh speed: the physical root of the Rayleigh equation
+#   xi^3 - 8 xi^2 + (24 - 16 k) xi - 16 (1 - k) = 0,
+#   xi = (cR/cS)^2,  k = (cS/cP)^2 = (1 - 2 nu) / (2 (1 - nu)),
+# found by bisection on (0, 1). The Viktorov closed form
+# (0.87 + 1.12 nu) / (1 + nu) is printed as a cross-check; it has no square root.
 cS = math.sqrt(E/(2*rho*(1+nu)))          # shear speed from assumed modulus
-cR = cS * math.sqrt((0.87 + 1.12*nu)/(1 + nu))
+k = (1 - 2*nu)/(2*(1 - nu))
+f = lambda x: x**3 - 8*x**2 + (24 - 16*k)*x - 16*(1 - k)
+lo, hi = 0.0, 1.0
+for _ in range(200):
+    mid = (lo + hi)/2
+    if f(mid) > 0: hi = mid
+    else: lo = mid
+ratio = math.sqrt((lo + hi)/2)
+cR = cS * ratio
 print(json.dumps({"stage":"numerics","rayleigh_cR_mps":cR,"cS_mps":cS,
+                  "cR_over_cS_exact":ratio,"cR_over_cS_viktorov":(0.87 + 1.12*nu)/(1 + nu),
                   "inputs":{"E_Pa":E,"nu":nu,"rho_assumed":rho},
                   "state":"COMPUTED","note":"rho is INPUT_ASSUMED, not measured"}))
 # EP gain G = 2/(1-|R|^2) for |R| in [0.3,0.7]
@@ -57,40 +72,63 @@ RECEIPT numerics "formulas" "COMPUTED" "Rayleigh/EP-gain/TOF battery done; see l
 
 # ---- Stage 3: the falsifiable acoustic-validation suite ----
 cd "$OUT/acoustic-validation"
-if make test 2>&1 || pytest -q 2>&1; then
-  RECEIPT acoustic "suite" "PASS" "acoustic-validation suite green at $ACSHA"
+if ! python3 -m pytest --version >/dev/null 2>&1; then
+  RECEIPT acoustic "suite" "UNAVAILABLE" "pytest is not installed on this node; suite not run at $ACSHA"
 else
-  RECEIPT acoustic "suite" "FAIL" "acoustic-validation suite failed at $ACSHA (logged)"
+  set +e
+  python3 -m pytest -q 2>&1 | tee "$OUT/logs/acoustic.log"; AVRC=${PIPESTATUS[0]}
+  set -e
+  AVSUM=$(tail -1 "$OUT/logs/acoustic.log" | tr -d '=' | cut -c1-100)
+  if [ "$AVRC" -eq 0 ]; then
+    RECEIPT acoustic "suite" "PASS" "pytest exit 0 at $ACSHA:$AVSUM"
+  elif [ "$AVRC" -eq 5 ]; then
+    RECEIPT acoustic "suite" "UNAVAILABLE" "pytest collected no tests at $ACSHA"
+  else
+    RECEIPT acoustic "suite" "FAIL" "pytest exit $AVRC at $ACSHA:$AVSUM"
+  fi
 fi
 
 # ---- Stage 4: Lean — prove the base case, explore the open n-axis ----
 cd "$OUT/lutar-lean"
 RECEIPT lean "build" "STARTED" "lake build beginning (mathlib compile is the long pole)"
 if lake build 2>&1 | tee "$OUT/logs/lean-build.log"; then
-  RECEIPT lean "build" "MEASURED" "kernel builds; SchurConcave.lean compiles"
-  grep -q "theorem lambda_two_axis_schur_concave" Lutar/Lambda/SchurConcave.lean \
-    && RECEIPT lean "axiom3-2axis" "PROVEN" "2-axis theorem present in built kernel" \
-    || RECEIPT lean "axiom3-2axis" "UNKNOWN" "theorem text not found in built kernel"
-  grep -q "axiom lambda_schur_concave_n_axis" Lutar/Lambda/SchurConcave.lean \
-    && RECEIPT lean "axiom3-naxis" "CONJECTURE" "n-axis axiom-tagged: Chad's 'resolved' claim OVERSTATED by exactly one induction step" \
-    || RECEIPT lean "axiom3-naxis" "UNKNOWN" "n-axis axiom not found — verify the file"
+  RECEIPT lean "build" "MEASURED" "lake build exit 0 at $LEANSHA"
+  # Verdicts come from the kernel (#print axioms), not from the theorem's text:
+  # a sorry proof or an added axiom also builds and also matches a grep.
+  for pair in "axiom3-2axis:Lutar.Lambda.lambda_two_axis_schur_concave" \
+              "axiom3-naxis:Lutar.Lambda.lambda_schur_concave_n_axis"; do
+    STAGE="${pair%%:*}"; DECL="${pair#*:}"
+    printf 'import Lutar.Lambda.SchurConcave\n#print axioms %s\n' "$DECL" > "$OUT/logs/audit-$STAGE.lean"
+    set +e
+    lake env lean "$OUT/logs/audit-$STAGE.lean" > "$OUT/logs/audit-$STAGE.log" 2>&1; ARC=$?
+    V=$(python3 "$VERDICT" 0 "$ARC" "$OUT/logs/audit-$STAGE.log" "$DECL")
+    set -e
+    VSTATE=$(printf '%s' "$V" | python3 -c 'import json,sys
+try: print(json.load(sys.stdin)["state"])
+except Exception: print("UNAVAILABLE")')
+    VDETAIL=$(printf '%s' "$V" | python3 -c 'import json,sys
+try:
+    v=json.load(sys.stdin); print("axioms=%s; %s" % (v["axioms"], v["reason"]))
+except Exception: print("verdict tool produced no result")')
+    RECEIPT lean "$STAGE" "$VSTATE" "$VDETAIL"
+  done
 else
   RECEIPT lean "build" "UNAVAILABLE" "build failed — verdicts WITHHELD (grep on a failed build proves nothing)"
 fi
 
 # ---- Stage 5: 24h loop — re-verify every hour, receipt each cycle ----
-RECEIPT loop "24h" "STARTED" "hourly re-verification for 24 cycles"
+RECEIPT loop "24h" "STARTED" "hourly Hub reachability probe for 24 cycles"
 for i in $(seq 1 24); do
   sleep 3600
-  # re-run the cheap stages; anything unreachable is UNAVAILABLE, never skipped silently
+  # Reachability probe only: the stages above are NOT re-run and commit growth is not compared.
   N=$(python3 -c "
 import urllib.request, json
 try:
     with urllib.request.urlopen('https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/commits/main', timeout=20) as r:
         print(len(json.load(r)))
 except Exception: print(-1)")
-  if [ "$N" -gt 0 ]; then STATE="MEASURED commits=$N"; else STATE="UNAVAILABLE"; fi
-  RECEIPT cycle "$i/24" "$STATE" "hourly cycle; chain commit count (growth = work)"
+  if [ "$N" -gt 0 ]; then STATE="REACHABLE first_page_commits=$N"; else STATE="UNAVAILABLE"; fi
+  RECEIPT cycle "$i/24" "$STATE" "hourly Hub reachability probe; stages not re-run, growth not compared"
 done
 RECEIPT loop "24h" "COMPLETE" "24-hour proving ground complete; receipts in $OUT/receipts.jsonl"
 echo "DONE. Receipts: $OUT/receipts.jsonl"

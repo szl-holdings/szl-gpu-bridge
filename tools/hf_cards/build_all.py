@@ -6,18 +6,18 @@ Usage:
   python3 build_all.py --upload --limit N   # publish generated cards (default 25)
 
 Honesty rules (Law 7/8): no fabricated metrics. Auto-generated cards state
-what the asset is and link to the receipts chain for measured claims.
+the limits of inventory evidence and preserve supplied metadata.
 """
 
 from __future__ import annotations
 import argparse
 import json
-import re
+from pathlib import Path
 import sys
 import urllib.request
 import concurrent.futures
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from card_factory import REGISTRY, model_card, dataset_card, space_card  # noqa: E402
 
 TOK = __import__("os").environ.get("HF_TOKEN", "")
@@ -38,7 +38,7 @@ def list_assets():
 
 
 def no_readme():
-    """API-based (rate-limit safe): an asset lacks a card iff cardData is absent."""
+    """Only a successful file inventory can establish that README.md is absent."""
     import concurrent.futures
     out = []
     def check(item):
@@ -46,8 +46,13 @@ def no_readme():
         base = {"model": "models", "dataset": "datasets", "space": "spaces"}[kind]
         try:
             d = get(f"https://huggingface.co/api/{base}/{e['id']}?full=true")
-            if not d.get("cardData"):
-                return (kind, e)
+            siblings = d.get("siblings")
+            if not isinstance(siblings, list):
+                return None  # missing inventory is unknown, never absence
+            if any(not isinstance(f, dict) or not isinstance(f.get("rfilename"), str) for f in siblings):
+                return None
+            if not any(f["rfilename"].casefold() == "readme.md" for f in siblings):
+                return (kind, d)
         except Exception:
             return None  # unreadable != missing; never count errors as missing
         return None
@@ -71,46 +76,22 @@ def verify_registry():
     return bad
 
 
-# ---- content: hand-written for flagships, heuristic otherwise ----
-FLAGSHIPS = {
-    "SZLHOLDINGS/szl-nemo": dict(
-        name="szl-nemo", tagline="Nemotron v3 node — the governed GPU bridge model",
-        what="The Nemotron v3 inference target served from the SZL A6000 mesh, "
-             "reachable through the governed GPU bridge. Requests are metered, "
-             "receipted, and fail-closed under the Kamachikuna constitution.",
-        investor="This is sovereign inference: a frontier-class model served on "
-                 "owned hardware with metered energy and hash-chained receipts — "
-                 "no dependence on any single cloud vendor."),
-    "SZLHOLDINGS/szl-khipu": dict(
-        name="szl-khipu", tagline="Khipu — signed, hash-chained receipts as a model artifact",
-        what="The khipu receipt format: every claim the estate makes is a signed, "
-             "hash-chained receipt. Empty receipts never verify; unsigned receipts "
-             "are never MEASURED.",
-        investor="Tamper-evident AI claims, machine-checked: the substrate that makes "
-                 "every number on every card auditable."),
-}
-
-
 def heuristic(kind, e):
     rid = e["id"]
     short = rid.split("/")[-1]
     pretty = short.replace("-", " ").replace("_", " ").title()
-    kind_word = {"model": "model", "dataset": "dataset", "space": "live app"}[kind]
+    kind_word = {"model": "model", "dataset": "dataset", "space": "Space"}[kind]
     return dict(
         name=pretty,
-        tagline=f"{pretty} — part of the SZL Holdings AI estate",
-        what=f"This {kind_word} is part of the SZL Holdings estate: an AI research and "
-             f"product portfolio where every claim carries a receipt. Measured results "
-             f"for this artifact live on the public receipts chain — we publish "
-             f"numbers only where a signed receipt backs them.",
-        investor="SZL Holdings builds receipt-backed AI: measured honesty, a "
-                 "machine-checked constitution, and a public hash-chained evidence "
-                 "chain. This artifact is one piece of that estate.",
+        tagline=f"{pretty} — {kind_word} repository; qualification pending",
+        what=f"This {kind_word} repository is listed under SZLHOLDINGS. Its name alone does not establish the artifact type, training status, deployment, or capabilities.",
+        investor="An inventory entry is not evidence of performance or production readiness.",
     )
 
 
 def generate(kind, e):
-    c = FLAGSHIPS.get(e["id"], heuristic(kind, e))
+    c = heuristic(kind, e)
+    c["metadata"] = e.get("cardData") or {}
     fn = {"model": model_card, "dataset": dataset_card, "space": space_card}[kind]
     return fn(rid=e["id"], **c)
 
@@ -118,10 +99,15 @@ def generate(kind, e):
 def upload(kind, rid, content):
     from huggingface_hub import HfApi
     api = HfApi(token=TOK)
+    repo_type = {"space": "space", "dataset": "dataset", "model": "model"}[kind]
+    info = api.repo_info(rid, repo_type=repo_type)
+    if info.siblings is None or not info.sha:
+        raise RuntimeError("Cannot establish current repository contents and revision")
+    if any(f.rfilename.casefold() == "readme.md" for f in info.siblings):
+        raise RuntimeError("README already exists; preserve it for a reviewed edit")
     api.upload_file(path_or_fileobj=content.encode(), path_in_repo="README.md",
-                    repo_id=rid, repo_type="space" if kind == "space" else
-                    ("dataset" if kind == "dataset" else "model"),
-                    commit_message="card: complete investor-grade card (generated, links verified)")
+                    repo_id=rid, repo_type=repo_type, parent_commit=info.sha,
+                    commit_message="docs: add unverified inventory card with supplied metadata")
     return True
 
 

@@ -74,10 +74,12 @@ jobs:
       - name: File or update the main-health issue (never silent)
         if: ${{ steps.health.outputs.has_failures == 'true' }}
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          MAIN_HEALTH_REPORT: ${{ steps.health.outputs.report }}
         with:
           script: |
             const title = "Main health watch: red workflows detected";
-            const report = ${{ steps.health.outputs.report }};
+            const report = JSON.stringify(JSON.parse(process.env.MAIN_HEALTH_REPORT), null, 2);
             const body = [
               "## Main-branch workflow failures (latest runs)",
               "",

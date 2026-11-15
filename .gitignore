@@ -1,3 +1,8 @@
 # Python bytecode (never source; mirrors .dockerignore)
 __pycache__/
 *.py[co]
+
+# SDK release artifacts are built and verified from source in CI.
+sdk/dist/
+sdk/build/
+sdk/*.egg-info/

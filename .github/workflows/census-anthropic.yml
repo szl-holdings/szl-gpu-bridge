@@ -31,6 +31,7 @@ jobs:
       - name: Run the Anthropic census leg
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
         run: |
           python3 tools/census/anthropic_leg.py --out census-anthropic-leg.json
           cat census-anthropic-leg.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps({m['model']: {'score': m['score'], 'state': m['state']} for m in d['legs']}, indent=2))"

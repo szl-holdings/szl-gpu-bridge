@@ -90,13 +90,21 @@ def sign_receipt(receipt: dict) -> dict:
 def upload_receipt(signed: dict, name: str, spec: dict):
     from huggingface_hub import HfApi
 
+    privacy = spec["outputs"].get("private", True)
+    if type(privacy) is not bool:
+        raise ValueError("outputs.private must be a boolean")
     api = HfApi()
     api.create_repo(
         spec["outputs"]["receiptsRepoId"],
         repo_type="dataset",
         exist_ok=True,
-        private=False,
+        private=privacy,
     )
+    # create_repo ignores private for existing repos. Confirm the destination
+    # matches the signed policy before any receipt bytes can leave the host.
+    info = api.repo_info(spec["outputs"]["receiptsRepoId"], repo_type="dataset")
+    if getattr(info, "private", None) is not privacy:
+        raise ValueError("receipt repository visibility differs from outputs.private")
     p = ROOT / "jobs" / name
     p.write_text(json.dumps(signed, indent=2))
     api.upload_file(

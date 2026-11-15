@@ -1,0 +1,6 @@
+include LICENSE
+include README.md
+recursive-include tests *.py
+include tools/verify_release.py
+include tools/check_release_ref.sh
+prune conda-forge
