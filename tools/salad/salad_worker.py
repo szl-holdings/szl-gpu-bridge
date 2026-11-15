@@ -50,6 +50,14 @@ now accepts JSONL, a whole-file JSON list, or an object whose known keys
 (atlas/rows/data/examples/items/train) hold the row list, and fails closed
 with a receipt if none is usable.
 
+v3.4 adds F8 - the dataset-cap honesty flag. The worker silently capped every
+lane at 2000 examples (a memory guard from the burst lanes); a flagship mix of
+10270 rows would have trained on a fifth of the corpus with no receipted trace.
+The cap is now --max-examples (default 2000 = legacy behavior for existing
+lanes), it is receipted in a dataset receipt BEFORE training starts, and
+receipt uploads retry (3 attempts, 60s apart) so a transient Hub 429 cannot
+silently drop a proof receipt.
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -83,13 +91,18 @@ def receipt(kind: str, detail: str, extra: dict | None = None):
     print(json.dumps(r), flush=True)
     tok = os.environ.get("HF_TOKEN", "")
     if tok:
-        try:
-            HfApi(token=tok).upload_file(
-                path_or_fileobj=json.dumps(r, indent=2).encode(),
-                path_in_repo=f"mesh/salad-{r['receipt_sha256'][:12]}.json",
-                repo_id=DS_RECEIPTS, repo_type="dataset")
-        except Exception as e:
-            print(f"receipt upload failed (training continues): {str(e)[:80]}", flush=True)
+        for attempt in range(3):  # v3.4: a transient Hub 429 must not drop a proof receipt
+            try:
+                HfApi(token=tok).upload_file(
+                    path_or_fileobj=json.dumps(r, indent=2).encode(),
+                    path_in_repo=f"mesh/salad-{r['receipt_sha256'][:12]}.json",
+                    repo_id=DS_RECEIPTS, repo_type="dataset")
+                break
+            except Exception as e:
+                if attempt == 2:
+                    print(f"receipt upload failed after retries (training continues): {str(e)[:80]}", flush=True)
+                else:
+                    time.sleep(60)
     return r
 
 
@@ -356,6 +369,9 @@ def main() -> int:
     ap.add_argument("--adapter-out", required=True)
     ap.add_argument("--max-steps", type=int, default=200)
     ap.add_argument("--save-steps", type=int, default=50)
+    ap.add_argument("--max-examples", type=int, default=2000,
+                    help="F8: cap on examples per lane (default 2000 = legacy cap); "
+                         "raise to train on the full mix")
     ap.add_argument("--min-examples", type=int, default=8,
                     help="F5 honesty guard: refuse to train on stub-sized data")
     ap.add_argument("--dataset-config", default="",
@@ -386,7 +402,7 @@ def main() -> int:
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.3-20261115",
+             "worker_version": "v3.4-20261115",
              "energy_start": energy_start,
              "zeus_window": zeus_start})
 
@@ -434,7 +450,12 @@ def main() -> int:
         print(f"FAIL-CLOSED: {len(ds)} examples is stub-sized; not training", file=sys.stderr)
         return 6
 
-    ds = ds.select(range(min(2000, len(ds))))
+    # F8: the cap is now an explicit, receipted argument (legacy default 2000).
+    n_raw = len(ds)
+    n_used = min(a.max_examples, n_raw)
+    receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
+            {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples})
+    ds = ds.select(range(n_used))
     def fmt(ex):
         ex = dict(ex)  # F1: LazyRow -> plain dict; JSON-safe in every branch
         if "text" in ex: return {"text": ex["text"]}
