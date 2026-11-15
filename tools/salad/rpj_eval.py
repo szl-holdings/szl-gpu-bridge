@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2026 SZL Holdings -- SPDX-License-Identifier: Apache-2.0
-"""Reasoning-per-Joule (RPJ) evaluation harness.
+"""Reasoning-per-Joule (RPJ) evaluation harness, governed edition (v1.1).
 
 Leader-harvest (2026-11-15 CTO audit, doctrine pass 6):
   - Korea  LG AI Research, EXAONE Deep (arXiv 2503.12524): pass@k with sampling
@@ -10,10 +10,19 @@ Leader-harvest (2026-11-15 CTO audit, doctrine pass 6):
           with the reasoning appended to obtain the final answer.
   - Ireland Intercom Fin doctrine: resolution-rate-first metrics -- a response
           only counts when the task is verifiably resolved end to end.
-  - Estate khipu/energy-attest doctrine: every measurement is a signed-style
-          receipt with MEASURED nvml joule deltas (device-level cumulative
-          counter), kind szl.rpj/v1. No leader publishes per-response joules;
-          this harness makes reasoning quality directly comparable per joule.
+
+Estate math instilled (doctrine pass 7 -- the wedge):
+  - Lambda (Lambda-Spine) aggregator, per szl-lambda-gate: the weighted
+          GEOMETRIC MEAN of axis scores in [0,1]; any zeroed axis drives the
+          aggregate to 0 (non-compensatory, fail-closed). ADVISORY ONLY:
+          Lambda uniqueness = Conjecture 1, machine-checked open, never
+          "green", never a theorem.
+  - governed-receipt-spec core fields: decision (allow/review/abstain),
+          lambda status, energy {joules, label} (never fabricated),
+          payload_digest, and a prev/digest/seq hash chain (genesis = 64
+          zeros at seq 0).
+  - khipu/energy-attest doctrine: MEASURED nvml joule deltas per response
+          (device-level cumulative counter), kind szl.rpj/v1.
 
 Run on any NVML-visible GPU node (Salad worker image or VM):
   python rpj_eval.py --base Qwen/Qwen3-1.7B \
@@ -24,7 +33,6 @@ Run on any NVML-visible GPU node (Salad worker image or VM):
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import datetime as _dt
 import hashlib
 import json
@@ -35,6 +43,17 @@ from typing import Callable, Optional
 
 TEMPERATURE = 0.6   # EXAONE Deep eval setting
 TOP_P = 0.95        # EXAONE Deep eval setting
+
+# Lambda axis weights (sum to 1.0). Declared in every receipt.
+LAMBDA_AXES = {
+    "resolution": 0.5,   # cons@k: majority-verdict resolution rate
+    "sample_stability": 0.2,  # pass@1: mean per-sample resolution rate
+    "energy_measured": 0.3,   # 1.0 iff joules are MEASURED, else 0.0 -> Lambda = 0
+}
+LAMBDA_STATUS = (
+    "advisory -- Lambda uniqueness = Conjecture 1 (machine-checked open); "
+    "never green, never a theorem"
+)
 
 
 # ---------------------------------------------------------------- energy ---
@@ -57,9 +76,9 @@ class EnergyMeter:
 
 # ------------------------------------------------------------- verifiers ---
 def _lean_verifier(prompt: str, completion: str) -> bool:
-    """Heuristic resolution check (no Lean toolchain on worker nodes):
+    """Heuristic resolution check (no Lean toolchain on worker nodes).
 
-    Fin-style honest completion: `sorry`/`admit` anywhere, or a dangling `:= by`
+    Fin-style honest completion: sorry/admit anywhere, or a dangling := by
     with nothing after it, is NOT a resolution.
     """
     low = completion.lower()
@@ -88,26 +107,39 @@ def load_verifier(name: str, spec: Optional[str]) -> Callable[[str, str], bool]:
     raise SystemExit(f"unknown verifier: {name} (lean_heuristic|exact)")
 
 
-# --------------------------------------------------------------- receipts ---
-def _sha256(obj: object) -> str:
-    blob = json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(blob).hexdigest()
+# ------------------------------------------------------------ math core ---
+def lambda_aggregate(axes: dict[str, float], weights: dict[str, float]) -> float:
+    """Lambda-Spine aggregator: weighted geometric mean, non-compensatory.
+
+    Any axis at 0.0 drives the aggregate to 0.0 (fail-closed floor). All axis
+    values are clamped to [0,1]. ADVISORY ONLY (Conjecture 1, never green).
+    """
+    score = 1.0
+    for axis, weight in weights.items():
+        value = max(0.0, min(1.0, axes.get(axis, 0.0)))
+        score *= value ** weight
+    return score
 
 
-def receipt(kind_detail: str, payload: dict) -> dict:
+def _sha256_hex(blob: str) -> str:
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def governed_receipt(detail: str, payload: dict, prev_digest: str, seq: int) -> dict:
+    """Emit a governed-receipt-spec-shaped szl.rpj/v1 record with hash chain."""
     body = dict(payload)
     body["kind"] = "szl.rpj/v1"
-    body["detail"] = kind_detail
+    body["detail"] = detail
     body["ts"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
-    body["receipt_sha256"] = _sha256(
-        {k: v for k, v in body.items() if k != "receipt_sha256"}
-    )
+    body["prev"] = prev_digest
+    body["seq"] = seq
+    body["digest"] = _sha256_hex(json.dumps(body, sort_keys=True, ensure_ascii=False))
     return body
 
 
 # ------------------------------------------------------------------- main ---
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Reasoning-per-Joule harness")
+    ap = argparse.ArgumentParser(description="Reasoning-per-Joule governed eval harness")
     ap.add_argument("--base", required=True, help="HF base model id")
     ap.add_argument("--adapter", default=None, help="optional LoRA adapter repo id")
     ap.add_argument("--dataset", required=True, help="jsonl: {prompt[,answer]}")
@@ -175,10 +207,14 @@ def main() -> int:
             )
         return tok.decode(out2[0][ids2["input_ids"].shape[1]:], skip_special_tokens=True)
 
+    verifier = VERIFIERS.get(args.verifier, _lean_verifier)
     summary = []
+    prev_digest = "0" * 64
+    seq = 0
     for budget in budgets:
         per_item: list[dict] = []
         joules_total = 0
+        energy_label = "MEASURED"
         for row in rows:
             prompt = row["prompt"]
             verdicts: list[bool] = []
@@ -188,41 +224,82 @@ def main() -> int:
                     [{"role": "user", "content": prompt}],
                     max_new=256, budget=budget,
                 )
-                verdicts.append(VERIFIERS.get(args.verifier, _lean_verifier)(prompt, answer))
-            joules_total += meter.read() - e0
-            per_item.append({"prompt_sha": _sha256(prompt)[:16], "verdicts": verdicts})
+                verdicts.append(verifier(prompt, answer))
+            try:
+                delta = meter.read() - e0
+                joules_total += delta
+            except Exception:  # noqa: BLE001 (honest degradation, never fabricate)
+                energy_label = "UNAVAILABLE"
+            per_item.append({"prompt_sha": _sha256_hex(prompt)[:16], "verdicts": verdicts})
 
         # EXAONE Deep: pass@1 over k samples + cons@k majority vote
         n = len(per_item)
         pass1 = sum(sum(it["verdicts"]) / max(1, args.k) for it in per_item) / max(1, n)
         cons = sum(sum(it["verdicts"]) * 2 > args.k for it in per_item) / max(1, n)
-        mean_j = joules_total / max(1, n * args.k)
-        rpj = (cons / mean_j) if mean_j > 0 else 0.0
-        rec = receipt(
+        mean_j = (joules_total / max(1, n * args.k)) if energy_label == "MEASURED" else None
+
+        # --- estate math: Lambda aggregation (advisory, non-compensatory) ---
+        axes = {
+            "resolution": cons,
+            "sample_stability": pass1,
+            "energy_measured": 1.0 if energy_label == "MEASURED" else 0.0,
+        }
+        lam = lambda_aggregate(axes, LAMBDA_AXES)
+        rpj = (cons / mean_j) if (mean_j is not None and mean_j > 0) else 0.0
+
+        # governed decision: allow only on majority resolution; abstain on zero
+        if cons >= 0.5:
+            decision = "allow"
+        elif cons > 0.0 or pass1 > 0.0:
+            decision = "review"
+        else:
+            decision = "abstain"
+
+        payload_digest = _sha256_hex(json.dumps(per_item, sort_keys=True))
+        seq += 1
+        rec = governed_receipt(
             f"rpj budget={budget} k={args.k}",
             {
                 "base": args.base, "adapter": args.adapter,
                 "gpu": meter.gpu, "budget": budget, "k": args.k,
                 "items": n, "pass_at_1": round(pass1, 4),
                 "cons_at_k": round(cons, 4),
-                "joules_per_response": round(mean_j, 1),
-                "energy": {"label": "MEASURED", "method":
-                    "nvmlDeviceGetTotalEnergyConsumption cumulative-counter delta (device level)"},
+                "decision": decision,
+                "lambda": {
+                    "aggregate": round(lam, 6),
+                    "axes": {k2: round(v, 4) for k2, v in axes.items()},
+                    "weights": LAMBDA_AXES,
+                    "status": LAMBDA_STATUS,
+                },
+                "energy": {
+                    "label": energy_label,
+                    "joules": round(mean_j, 1) if mean_j is not None else None,
+                    "method": "nvmlDeviceGetTotalEnergyConsumption "
+                              "cumulative-counter delta (device level)",
+                },
                 "reasoning_per_joule": round(rpj, 6),
+                "payload_digest": payload_digest,
             },
+            prev_digest, seq,
         )
+        prev_digest = rec["digest"]
         path = Path(args.out) / f"rpj-{args.base.split('/')[-1]}-b{budget}.json"
         path.write_text(json.dumps(rec, indent=2, ensure_ascii=False))
-        summary.append({k: rec[k] for k in
-                        ("budget", "pass_at_1", "cons_at_k",
-                         "joules_per_response", "reasoning_per_joule")})
-        print(f"[rpj] budget={budget:5d} pass@1={pass1:.3f} cons@{args.k}={cons:.3f} "
-              f"J/resp={mean_j:8.1f} RPJ={rpj:.6f}", flush=True)
+        summary.append({k3: rec[k3] for k3 in
+                        ("budget", "decision", "pass_at_1", "cons_at_k",
+                         "reasoning_per_joule")})
+        print(f"[rpj] budget={budget:5d} decision={decision:7s} pass@1={pass1:.3f} "
+              f"cons@{args.k}={cons:.3f} Lambda={lam:.4f} "
+              f"J/resp={(mean_j if mean_j is not None else -1):8.1f} RPJ={rpj:.6f}",
+              flush=True)
 
-    tail = receipt(
-        "rpj summary",
+    seq += 1
+    tail = governed_receipt(
+        "rpj governed summary",
         {"base": args.base, "adapter": args.adapter, "gpu": meter.gpu,
-         "verifier": args.verifier, "rows": summary},
+         "verifier": args.verifier, "rows": summary,
+         "lambda_status": LAMBDA_STATUS},
+        prev_digest, seq,
     )
     (Path(args.out) / "rpj-summary.json").write_text(
         json.dumps(tail, indent=2, ensure_ascii=False)
