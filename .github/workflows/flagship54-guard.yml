@@ -1,0 +1,32 @@
+name: Flagship54 completion guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flagship54-guard-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  guard-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile the guard and its tests
+        run: python -m py_compile tools/salad/flagship54_guard.py tools/salad/test_flagship54_guard.py
+      - name: Run credential-free completion and shutdown contracts
+        run: python -m unittest discover -s tools/salad -p 'test_flagship54_guard.py' -v
