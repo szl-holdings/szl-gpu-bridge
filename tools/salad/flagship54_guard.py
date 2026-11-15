@@ -20,7 +20,7 @@ import time
 import urllib.request
 import uuid
 
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 LANE = 'szl-train-flagship54-v1'
 REPO = 'SZLHOLDINGS/salad-flagship54-v1'
 BASE = 'https://api.salad.com/api/public/organizations/alloyscape/projects/default/containers/'
@@ -288,8 +288,24 @@ def cycle(cfg, api, salad, *, apply=False, backup_latest=False) -> dict:
         path = receipt(cfg, 'CHECKPOINT_ARCHIVED', {'revision':info.sha,'checkpoint':latest,'file_count':len(names),'archive':str(root),'manifest_sha256':hashlib.sha256(canonical(manifest)+b'\n').hexdigest()})
         return {**result,'status':'CHECKPOINT_ARCHIVED','archive':str(root),'receipt':str(path),'files':len(names),'bytes':manifest['total_bytes']}
     if latest < cfg['max_steps']:
-        status = 'TRAINING' if group.get('replicas', 0) > 0 and result['cloud_state'] == 'running' else 'HOLD_INCOMPLETE_COMPUTE_NOT_RUNNING'
-        return {**result,'status':status,'final_present':'final/adapter_model.safetensors' in entries}
+        counts = result['cloud_counts'] or {}
+        keys = ('allocating_count', 'creating_count', 'running_count', 'stopping_count')
+        if type(group.get('replicas')) is not int or group['replicas'] < 1:
+            status = 'HOLD_INCOMPLETE_COMPUTE_NOT_RUNNING'
+        elif not all(type(counts.get(k)) is int and counts[k] >= 0 for k in keys):
+            status = 'COMPUTE_STATUS_UNKNOWN'
+        elif counts['running_count'] > 0:
+            status = 'TRAINING'
+        elif counts['allocating_count'] > 0:
+            status = 'ALLOCATING'
+        elif counts['creating_count'] > 0:
+            status = 'CREATING'
+        elif counts['stopping_count'] > 0:
+            status = 'STOPPING'
+        else:
+            status = 'NO_RUNNING_REPLICA'
+        return {**result,'status':status,'final_present':'final/adapter_model.safetensors' in entries,
+                'process_liveness_verified': False}
     names = required_exports(entries, latest)
     root, manifest = archive(api, info, entries, names, cfg)
     validate_export(root, manifest, latest, cfg)
