@@ -30,3 +30,6 @@ jobs:
         run: python -m py_compile tools/salad/flagship54_guard.py tools/salad/test_flagship54_guard.py
       - name: Run credential-free completion and shutdown contracts
         run: python -m unittest discover -s tools/salad -p 'test_flagship54_guard.py' -v
+
+      - name: Run direct checkpoint archive contracts
+        run: python -m unittest discover -s tests -p 'test_direct_checkpoint_archive.py' -v
