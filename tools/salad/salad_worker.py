@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3, 2026-11-14).
+"""salad_worker.py — the resumable burst-training worker (v3.1, 2026-11-15).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -22,6 +22,17 @@ Power-only samples are NEVER labeled measured energy. If pynvml/NVML or the
 energy counter is unavailable, the receipt says UNAVAILABLE — never a
 fabricated joule. Counter resets (driver reload) are detected: a negative
 delta is reported UNAVAILABLE with a note, not a wrapped-around number.
+
+v3.1 adds F6 - the resume-past-complete honesty guard. A Salad respawn of a
+finished lane resumes at global_step >= max_steps; HF Trainer then runs stray
+epoch-boundary steps and saves a junk checkpoint every step, and the worker
+printed a fake training-complete receipt for a no-op boot (observed
+2026-11-15: resumed checkpoint-200 -> 18 stray steps -> checkpoint-218, and a
+"complete in 12.2s, train_loss 0" receipt). Now the worker reads the resumed
+checkpoint trainer_state.json BEFORE loading the model: if
+global_step >= max_steps it emits an already-complete receipt (with the
+final adapter verified present), exits 0 without training, and never
+fabricates completion metrics.
 
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
@@ -116,6 +127,15 @@ def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | Non
         api.snapshot_download(repo_id=repo, repo_type="model", allow_patterns=[f"{ck}/*"],
                               local_dir=output_dir)
     return local if os.path.isdir(local) else None
+
+
+def resume_global_step(resume_dir: str) -> int | None:
+    """F6: read the resumed checkpoint's global_step without loading weights."""
+    try:
+        with open(os.path.join(resume_dir, "trainer_state.json"), encoding="utf-8") as f:
+            return int(json.load(f).get("global_step", 0))
+    except Exception:
+        return None
 
 
 def cuda_arch_precheck() -> None:
@@ -266,10 +286,37 @@ def main() -> int:
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3-20261114",
+             "worker_version": "v3.1-20261115",
              "energy_start": energy_start})
 
     cuda_arch_precheck()  # F4
+
+    # F6: resume-past-complete honesty guard. Salad respawns a container whose
+    # command exited; a finished lane would otherwise resume at global_step >=
+    # max_steps, run stray epoch-boundary steps, push a junk checkpoint every
+    # step, and print a fake completion receipt. Exit honestly instead.
+    if resume:
+        rgs = resume_global_step(resume)
+        if rgs is not None and rgs >= a.max_steps:
+            energy_end = sample_energy_j()
+            final_present = False
+            try:
+                verify_private(api, a.adapter_out)
+                final_present = "final/adapter_model.safetensors" in api.list_repo_files(
+                    a.adapter_out, repo_type="model")
+            except Exception:
+                final_present = False
+            receipt("already-complete",
+                    f"resumed checkpoint global_step={rgs} >= max_steps={a.max_steps} — "
+                    "training already complete on this lane; no new steps this boot"
+                    + ("" if final_present else "; FINAL ADAPTER MISSING — investigate"),
+                    {"resume_global_step": rgs, "max_steps": a.max_steps,
+                     "final_adapter_present": final_present,
+                     "energy_start": energy_start, "energy_end": energy_end,
+                     "energy_j": energy_delta(energy_start, energy_end)})
+            print(f"ALREADY-COMPLETE: global_step {rgs} >= max_steps {a.max_steps}; "
+                  "exiting without training", flush=True)
+            return 0
 
     tok = AutoTokenizer.from_pretrained(a.base)
     model = AutoModelForCausalLM.from_pretrained(
