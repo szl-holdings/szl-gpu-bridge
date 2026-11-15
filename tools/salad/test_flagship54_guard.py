@@ -180,4 +180,25 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(result['status'],'DRAINING')
         self.assertFalse(list((self.root/'state'/'receipts').glob('done-*')))
 
+    def _check_incomplete_status(self, counts, expected):
+        api,salad,_,state=self.arrange(step=5750)
+        salad.request.return_value['current_state']['instance_status_counts']=counts
+        with patch.object(g,'download_checked',return_value=(state,{})):
+            result=g.cycle(self.cfg,api,salad,apply=True)
+        self.assertEqual(result['status'],expected)
+        self.assertFalse(result['process_liveness_verified'])
+        salad.request.assert_called_once_with()
+    def test_allocating_is_not_training(self):
+        self._check_incomplete_status({'allocating_count':1,'creating_count':0,'running_count':0,'stopping_count':0},'ALLOCATING')
+    def test_creating_is_not_training(self):
+        self._check_incomplete_status({'allocating_count':0,'creating_count':1,'running_count':0,'stopping_count':0},'CREATING')
+    def test_stopping_is_not_training(self):
+        self._check_incomplete_status({'allocating_count':0,'creating_count':0,'running_count':0,'stopping_count':1},'STOPPING')
+    def test_no_running_replica_is_not_training(self):
+        self._check_incomplete_status({'allocating_count':0,'creating_count':0,'running_count':0,'stopping_count':0},'NO_RUNNING_REPLICA')
+    def test_unknown_counts_are_not_training(self):
+        self._check_incomplete_status({},'COMPUTE_STATUS_UNKNOWN')
+    def test_negative_counts_are_not_training(self):
+        self._check_incomplete_status({'allocating_count':-1,'creating_count':0,'running_count':0,'stopping_count':0},'COMPUTE_STATUS_UNKNOWN')
+
 if __name__=='__main__': unittest.main(verbosity=2)
