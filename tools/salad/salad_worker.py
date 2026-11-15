@@ -58,6 +58,18 @@ lanes), it is receipted in a dataset receipt BEFORE training starts, and
 receipt uploads retry (3 attempts, 60s apart) so a transient Hub 429 cannot
 silently drop a proof receipt.
 
+v3.5 adds F9 - verified, honest resume-on-start. Resume existed since v1, but
+every failure mode degraded SILENTLY to GENESIS: a repo-listing error returned
+None, a partial local checkpoint dir (worker killed mid-save) shadowed the
+durable Hub copy, and a failed checkpoint download crashed or restarted from
+step 0. On a spot fleet that is an unbounded from-scratch respawn loop with
+zero durable progress and no receipted trace (observed 2026-11-15 on the v4
+lane: a respawn trained step 1 at full compute despite checkpoint-50 on the
+Hub). Now: listing failures raise, partial local dirs are deleted and
+re-downloaded from the Hub, downloads retry (3 attempts, 60s apart) then
+fail closed with a receipt, and the boot receipt says resume_from
+"checkpoint-N (verified)" vs "GENESIS (no checkpoints on hub)".
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -118,6 +130,10 @@ class VisibilityError(RuntimeError):
     """Raised when a repo that must hold pickle-bearing checkpoints is not verifiably private."""
 
 
+class ResumeError(RuntimeError):
+    """F9: raised when resume-on-start cannot be verified — never degrade silently to GENESIS."""
+
+
 def verify_private(api, repo_id: str, repo_type: str = "model") -> None:
     """Fail closed unless the Hub reports this repo as private RIGHT NOW."""
     try:
@@ -136,26 +152,57 @@ def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model")
 
 
 def latest_checkpoint(api: HfApi, repo: str) -> str | None:
-    """The resume-on-start contract: find the newest checkpoint-* revision."""
+    """The resume-on-start contract: find the newest checkpoint-* revision.
+
+    F9: a listing failure is never silently folded into GENESIS — it raises so
+    the boot receipt can say 'could not check' instead of pretending the lane
+    has no checkpoints. On a spot fleet a silent GENESIS is an unbounded
+    from-scratch respawn loop with zero durable progress.
+    """
     try:
         files = api.list_repo_files(repo_id=repo, repo_type="model")
-        stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
-                       if f.startswith("checkpoint-") and "/" in f
-                       and f.split("/")[0].split("-")[-1].isdigit())
-        return f"checkpoint-{stops[-1]}" if stops else None
-    except Exception:
-        return None
+    except Exception as e:
+        raise ResumeError(f"cannot list checkpoints of {repo}: {type(e).__name__}: {str(e)[:120]}") from None
+    stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
+                   if f.startswith("checkpoint-") and "/" in f
+                   and f.split("/")[0].split("-")[-1].isdigit())
+    return f"checkpoint-{stops[-1]}" if stops else None
 
 
 def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | None:
-    ck = latest_checkpoint(api, repo)
+    """F9: verified, honest resume-on-start.
+
+    The Hub listing is authoritative. A LOCAL checkpoint dir is trusted only
+    if its trainer_state.json is readable — a worker killed mid-save leaves a
+    partial dir that would otherwise silently shadow the durable Hub copy and
+    force a from-scratch restart (observed 2026-11-15 on the v4 lane: a
+    respawn trained step 1 at full compute despite checkpoint-50 on the Hub).
+    Partial local dirs are deleted and re-downloaded; a download that still
+    fails after retries raises instead of degrading into silent GENESIS.
+    """
+    ck = latest_checkpoint(api, repo)  # raises ResumeError on listing failure
     if not ck:
         return None
     local = os.path.join(output_dir, ck)
+    if os.path.isdir(local) and resume_global_step(local) is None:
+        import shutil
+        shutil.rmtree(local, ignore_errors=True)
+        receipt("warn", f"local {ck} had no readable trainer_state.json "
+                "(killed mid-save?) — deleted; re-downloading the durable Hub copy")
     if not os.path.isdir(local):
-        api.snapshot_download(repo_id=repo, repo_type="model", allow_patterns=[f"{ck}/*"],
-                              local_dir=output_dir)
-    return local if os.path.isdir(local) else None
+        for attempt in range(3):
+            try:
+                api.snapshot_download(repo_id=repo, repo_type="model",
+                                      allow_patterns=[f"{ck}/*"], local_dir=output_dir)
+                break
+            except Exception as e:
+                if attempt == 2:
+                    raise ResumeError(f"download of {ck} failed after 3 attempts: {str(e)[:120]}") from None
+                time.sleep(60)
+    gs = resume_global_step(local)
+    if gs is None:
+        raise ResumeError(f"{ck} present but trainer_state.json unreadable — refusing silent GENESIS")
+    return local
 
 
 def resume_global_step(resume_dir: str) -> int | None:
@@ -394,15 +441,24 @@ def main() -> int:
     except VisibilityError as e:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
-    resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
+    try:
+        resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
+    except ResumeError as e:
+        # F9 fail-closed: never silently restart from step 0 when resume
+        # infrastructure is broken — that is an unbounded spot-GPU burn loop.
+        receipt("fail-closed", f"resume infrastructure failed — refusing silent "
+                f"from-scratch restart: {e}")
+        print(f"FAIL-CLOSED: resume failed: {e}", file=sys.stderr)
+        return 7
     energy_start = sample_energy_j()  # v3: cumulative counter at boot
     zeus_start = zeus_begin_window()  # v3.2: ML.ENERGY-class window at boot
     receipt("boot", f"worker started — base={a.base} dataset={a.dataset}"
             + (f" config={a.dataset_config}" if a.dataset_config else ""),
-            {"resume_from": resume or "GENESIS",
+            {"resume_from": (os.path.basename(resume) + " (verified)" if resume
+                             else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.4-20261115",
+             "worker_version": "v3.5-20261115",
              "energy_start": energy_start,
              "zeus_window": zeus_start})
 
