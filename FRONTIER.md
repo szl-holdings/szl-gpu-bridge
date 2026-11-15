@@ -25,13 +25,26 @@ to a receipted run from 2026-11-15.
 | F8 | v3.4 | (parallel lane) | merged #187 |
 | F9 | v3.5 | honest resume-on-start: latest checkpoint verified before continuation, partial local ckpts deleted + re-downloaded, download retries 3×60 s then fail-closed exit 7 | merged #188; boot receipts state "checkpoint-N (verified)" vs "GENESIS" |
 
-## Post-train bench (`tools/salad/bench_eval.py`, v1.0)
+## Post-train bench (`tools/salad/bench_eval.py`, v2)
 
-Same-method comparison of eval-split loss vs train-split reference loss (criterion 1:
-eval loss ≤ final train loss + 1.0), plus base-vs-adapter improvement on the identical
-pipeline, MEASURED energy (NVML deltas), sha256 pinning of eval/train files and adapter
-snapshot, and a fail-closed receipt uploaded to the Hub. Holdout quality is explicitly NOT
-claimed by the harness (recorded as `false` until computed).
+The v2 harness computes shifted-target-token-weighted causal-LM loss (`L-1` targets),
+records offered/scored/skipped rows and input/predicted/correct token counts, and
+converts NVML millijoule counters to joules. Its meter scope is GPU-0 device-total:
+this benchmark does not independently establish process/whole-node energy or Zeus
+cross-verification. A completed measurement is not a passed acceptance criterion;
+held-out quality remains explicitly false until separate gates are measured.
+
+Base, adapter and dataset revisions are resolved before hydration. A local original
+result/source/hash bundle is preserved before one parent-bound Hub publication,
+followed by exact-commit byte readback. Publication-only recovery never remeasures.
+Historical v1 receipts retain their v1 identity and are not silently relabelled v2.
+
+The plan-first [one-shot launcher](docs/runbooks/salad-benchmark-launch.md) binds
+attempt, declared source revision, exact harness bytes and typed receipt destination.
+It does not download mutable scripts, decode source at boot, hide a child failure
+behind a shell success tail, start a watcher, or confer source/compute admission.
+Deployment and generation-bound resource reclamation remain controller-owned gates.
+Historical snapshots elsewhere in this program are not fresh runtime qualification.
 
 ## Active A/B: frontier-v5-r1 (kernel build at boot)
 

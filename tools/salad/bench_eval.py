@@ -266,6 +266,14 @@ def validate_completed_result(result, manifest):
         raise ValueError("only completed v2 measurements may be published")
     if manifest.get("receipt_schema") != SCHEMA or manifest.get("status") != "OK":
         raise ValueError("manifest/receipt status or schema mismatch")
+    if "source_revision" in result or "launch_contract_sha256" in result:
+        for field, length in (("source_revision", 40), ("launch_contract_sha256", 64)):
+            value = result.get(field)
+            if (
+                not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{%d}" % length, value) is None
+            ):
+                raise ValueError("incomplete launch provenance binding")
     repo = manifest.get("repo_id")
     if (
         not isinstance(repo, str)
@@ -540,7 +548,26 @@ def main():
         metavar="BUNDLE_DIR",
         help="retry saved evidence publication without inference",
     )
+    ap.add_argument(
+        "--run-id", default=None, help="controller-bound unique attempt; never reused"
+    )
+    ap.add_argument("--source-revision", default=None)
+    ap.add_argument("--launch-contract-sha256", default=None)
     a = ap.parse_args()
+    if a.run_id is not None and re.fullmatch(r"[0-9a-f]{32}", a.run_id) is None:
+        ap.error("run-id must be a 32-character lowercase hexadecimal attempt identity")
+    binding = (a.source_revision, a.launch_contract_sha256)
+    if any(binding) and (
+        not all(binding)
+        or a.run_id is None
+        or re.fullmatch(r"[0-9a-f]{40}", a.source_revision or "") is None
+        or re.fullmatch(r"[0-9a-f]{64}", a.launch_contract_sha256 or "") is None
+    ):
+        ap.error(
+            "launch binding requires run-id, immutable source revision and contract hash"
+        )
+    if a.publish_only and (a.run_id is not None or any(binding)):
+        ap.error("publication-only must retain the original bundle identity")
 
     from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
@@ -568,8 +595,12 @@ def main():
         )
     if a.max_length < 2 or a.train_ref_rows < 1:
         ap.error("max-length must be >=2 and train-ref-rows must be positive")
-    run_id = uuid.uuid4().hex
+    run_id = a.run_id if a.run_id is not None else uuid.uuid4().hex
     output_dir = Path(a.output_dir) if a.output_dir else Path("bench-receipts") / run_id
+    if output_dir.exists() or output_dir.is_symlink():
+        ap.error(
+            "output bundle already exists; reconcile or use --publish-only, never remeasure it"
+        )
     # Separate every attempt; a result from an earlier run must not reap a newer job.
     receipt_prefix = a.receipt_dir.rstrip("/") + "/" + run_id
     import torch
@@ -595,6 +626,11 @@ def main():
             "rendered text; identical pipeline for all three measurements"
         ),
     }
+
+    if all(binding):
+        # Operator-provided provenance references, not a signature or approval.
+        rec["source_revision"] = a.source_revision
+        rec["launch_contract_sha256"] = a.launch_contract_sha256
 
     def fail(msg, extra=None):
         rec.update({"status": "ERROR", "error": msg, "completed_utc": utcnow()})
