@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v2, 2026-11-14).
+"""salad_worker.py — the resumable burst-training worker (v3, 2026-11-14).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -11,22 +11,17 @@ k8s spot pools):
   4. Graceful preemption — SIGTERM handler checkpoints before exit.
   5. Receipts — boot/step/complete receipts to the chain; silence is an alarm.
 
-v2 fixes the 2026-11-14 lane failures (evidence: mesh/lanelogs/*-hbfinal.log in
-SZLHOLDINGS/frontier-54-runs; all 8 szl-train-*-r1 boots INNER_EXIT:1):
-  F1 (LazyRow): fmt() fallback did json.dumps(ex) on a datasets LazyRow ->
-     "Object of type LazyRow is not JSON serializable". Fix: dict(ex) first.
-  F2 (multi-config datasets): load_dataset without a config crashed on
-     SZLHOLDINGS/a11oy-verifiable-corpus. Fix: --dataset-config; fail-closed
-     receipt listing available configs when it is omitted.
-  F3 (split-schema mismatch): szl-frontier-sft-mix-v3 validation.jsonl infers
-     a null-typed 'kind' column and crashes casting strings. Fix: on dataset
-     generation failure, retry train-only from the Hub's train.jsonl.
-  F4 (no-kernel-image GPUs): torch cu126 lacks sm_120 (RTX 5090) kernels ->
-     mid-run "CUDA error: no kernel image". Fix: fail-closed arch precheck
-     BEFORE training; dispatch should also pin gpu_classes.
-  F5 (stub datasets): SZLHOLDINGS/governed-sft-mix-v2 has no data files; the
-     packaged json loader silently "trained" on spec.json. Fix: --min-examples
-     guard refuses stub-sized data with an honest fail-closed receipt.
+v2 fixed the 2026-11-14 lane failures (F1 LazyRow serialization, F2
+multi-config datasets, F3 split-schema mismatch, F4 no-kernel-image GPUs ->
+fail-closed arch precheck, F5 stub datasets -> --min-examples guard).
+
+v3 (this) adds MEASURED energy receipts — the leader method (CodeCarbon):
+read the cumulative NVML energy counter (nvmlDeviceGetTotalEnergyConsumption,
+mJ) at boot and at completion; report the device-level delta in joules.
+Power-only samples are NEVER labeled measured energy. If pynvml/NVML or the
+energy counter is unavailable, the receipt says UNAVAILABLE — never a
+fabricated joule. Counter resets (driver reload) are detected: a negative
+delta is reported UNAVAILABLE with a note, not a wrapped-around number.
 
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
@@ -105,8 +100,8 @@ def latest_checkpoint(api: HfApi, repo: str) -> str | None:
     try:
         files = api.list_repo_files(repo_id=repo, repo_type="model")
         stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
-                        if f.startswith("checkpoint-") and "/" in f
-                        and f.split("/")[0].split("-")[-1].isdigit())
+                       if f.startswith("checkpoint-") and "/" in f
+                       and f.split("/")[0].split("-")[-1].isdigit())
         return f"checkpoint-{stops[-1]}" if stops else None
     except Exception:
         return None
@@ -138,6 +133,65 @@ def cuda_arch_precheck() -> None:
                 f"(arch_list={arch_list}) — pin gpu_classes or use a newer CUDA build",
                 {"gpu": gpu, "sm": sm})
         raise SystemExit(4)
+
+
+def _ensure_pynvml():
+    """Best-effort pynvml (NVML bindings) for MEASURED joules; UNAVAILABLE is honest."""
+    try:
+        import pynvml  # type: ignore
+        return pynvml
+    except Exception:
+        try:
+            import subprocess as _sp
+            _sp.run([sys.executable, "-m", "pip", "install", "-q", "pynvml"],
+                    timeout=120, check=False)
+            import pynvml  # type: ignore
+            return pynvml
+        except Exception:
+            return None
+
+
+_NVML = None
+_NVML_TRIED = False
+
+
+def sample_energy_j() -> dict:
+    """v3: leader-method (CodeCarbon) cumulative NVML energy counter, device level.
+
+    Returns {"label": "MEASURED"|"UNAVAILABLE", "energy_j": float|None, "gpu": str|None}.
+    Power-only samples are NOT labeled measured energy; a missing counter is UNAVAILABLE.
+    """
+    global _NVML, _NVML_TRIED
+    try:
+        if _NVML is None and not _NVML_TRIED:
+            _NVML_TRIED = True
+            _NVML = _ensure_pynvml()
+        if _NVML is None:
+            return {"label": "UNAVAILABLE", "energy_j": None, "gpu": None,
+                    "note": "pynvml unavailable; joules NOT fabricated"}
+        _NVML.nvmlInit()
+        h = _NVML.nvmlDeviceGetHandleByIndex(0)
+        e = _NVML.nvmlDeviceGetTotalEnergyConsumption(h) / 1000.0  # mJ -> J
+        name = _NVML.nvmlDeviceGetName(h)
+        name = name.decode() if isinstance(name, bytes) else name
+        return {"label": "MEASURED", "energy_j": float(e), "gpu": name}
+    except Exception as e:
+        return {"label": "UNAVAILABLE", "energy_j": None, "gpu": None,
+                "note": f"NVML energy counter unavailable ({type(e).__name__}); joules NOT fabricated"}
+
+
+def energy_delta(start: dict, end: dict) -> dict:
+    """Device-level joules between two MEASURED samples; negative delta = counter reset -> UNAVAILABLE."""
+    if start.get("label") == "MEASURED" and end.get("label") == "MEASURED":
+        a, b = start.get("energy_j"), end.get("energy_j")
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            if b >= a:
+                return {"label": "MEASURED", "joules": round(b - a, 1),
+                        "method": "nvmlDeviceGetTotalEnergyConsumption cumulative-counter delta (device level)"}
+            return {"label": "UNAVAILABLE", "joules": None,
+                    "note": "NVML energy counter reset mid-run (driver reload?); delta NOT fabricated"}
+    return {"label": "UNAVAILABLE", "joules": None,
+            "note": "energy counters unavailable at start or end; joules NOT fabricated"}
 
 
 def load_train_split(a, api: HfApi):
@@ -206,12 +260,14 @@ def main() -> int:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
     resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
+    energy_start = sample_energy_j()  # v3: cumulative counter at boot
     receipt("boot", f"worker started — base={a.base} dataset={a.dataset}"
             + (f" config={a.dataset_config}" if a.dataset_config else ""),
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v2-20261114"})
+             "worker_version": "v3-20261114",
+             "energy_start": energy_start})
 
     cuda_arch_precheck()  # F4
 
@@ -305,9 +361,12 @@ def main() -> int:
             return 3
         api.upload_folder(folder_path=final, repo_id=a.publish_final_to, repo_type="model",
                           ignore_patterns=PICKLE_PATTERNS)  # visibility change stays a human decision
+    energy_end = sample_energy_j()  # v3: cumulative counter at completion
     receipt("complete", f"training complete in {round(time.time()-t0,1)}s",
             {"steps": a.max_steps, "adapter": a.adapter_out,
-             "joules_note": "energy metering via the estate's NVML sampler where available"})
+             "energy_start": energy_start,
+             "energy_end": energy_end,
+             "energy_j": energy_delta(energy_start, energy_end)})
     return 0
 
 
