@@ -1,0 +1,14 @@
+{
+  "card_sha256": "8c9231781d2738418b0600f62e688c302b16641fb16099d6c69a2698f301b62b",
+  "current_weights_bound_by_receipt": false,
+  "evaluation_rerun": false,
+  "kind": "szl.card-evidence-correction/v1",
+  "prior_readme_sha256": "a8b06b31ba28be74fa5babba4dd2ceeedf9c616329c2130cd7149a122e2d277f",
+  "prior_revision": "c950364c41071e43646305974082cf694c9ffc0c",
+  "receipt_bytes": 1991,
+  "receipt_path": "receipts/eval_battery.json",
+  "receipt_sha256": "45a24761e66438086b0c362d347fbc8d2712a11af38fc8eacf4f96353782c208",
+  "recorded_pass": 3,
+  "recorded_total": 6,
+  "repo": "SZLHOLDINGS/abstention-v2-candidate"
+}
