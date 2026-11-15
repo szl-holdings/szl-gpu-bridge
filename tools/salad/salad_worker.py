@@ -41,6 +41,15 @@ receipt field (zeus_window). Same doctrine: if zeus-ml cannot import or the
 window cannot open/close, the field says UNAVAILABLE - joules are never
 fabricated, and the v3 NVML fields are left untouched.
 
+v3.3 adds F7 - object-JSON dataset support in the F3 direct-download fallback.
+Some estate datasets publish a top-level JSON object (e.g. a proving-ground
+atlas) instead of JSONL; the old fallback crashed on the first pretty-printed
+line, turning the lane into a crash-restart loop with zero durable output
+(observed 2026-11-15 on szl-train-formula-proving-ground-r1). The fallback
+now accepts JSONL, a whole-file JSON list, or an object whose known keys
+(atlas/rows/data/examples/items/train) hold the row list, and fails closed
+with a receipt if none is usable.
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -316,7 +325,27 @@ def load_train_split(a, api: HfApi):
             receipt("warn", f"loading {train_file} directly from the Hub")
             p = hf_hub_download(repo_id=a.dataset, repo_type="dataset",
                                 filename=train_file, token=a.hf_token)
-            rows = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+            rows = None
+            try:
+                rows = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+            except json.JSONDecodeError:
+                with open(p, encoding="utf-8") as f:
+                    obj = json.load(f)
+                if isinstance(obj, list):
+                    rows = obj
+                elif isinstance(obj, dict):
+                    for k in ("atlas", "rows", "data", "examples", "items", "train"):
+                        if isinstance(obj.get(k), list):
+                            rows = obj[k]
+                            receipt("warn", "object-JSON dataset; using list under key " + k + " (" + str(len(rows)) + " rows)")
+                            break
+                    if rows is None:
+                        rows = next((v for v in obj.values() if isinstance(v, list)), None)
+                        if rows is not None:
+                            receipt("warn", "object-JSON dataset; using first list-valued field (" + str(len(rows)) + " rows)")
+            if not rows:
+                receipt("fail-closed", "no usable rows in " + train_file + " (expected JSONL, JSON list, or keyed list)")
+                raise SystemExit(5)
             return _Dataset.from_list(rows)
 
 
@@ -357,7 +386,7 @@ def main() -> int:
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.2-20261115",
+             "worker_version": "v3.3-20261115",
              "energy_start": energy_start,
              "zeus_window": zeus_start})
 
