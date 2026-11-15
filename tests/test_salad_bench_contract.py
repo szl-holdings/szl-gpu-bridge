@@ -145,7 +145,7 @@ class Fixture:
         hf.HfApi = lambda **_: self
         hf.hf_hub_download = self.download
         hf.snapshot_download = self.snapshot
-        hf.CommitOperationAdd = lambda **kw: types.SimpleNamespace(**kw)
+        hf.CommitOperationAdd = types.SimpleNamespace
         torch = types.ModuleType("torch")
         torch.bfloat16 = "test-only"
         torch.manual_seed = lambda _: None
