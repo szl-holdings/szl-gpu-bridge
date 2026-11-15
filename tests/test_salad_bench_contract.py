@@ -642,6 +642,58 @@ class BenchContract(unittest.TestCase):
         path.write_text(path.read_text() + " " * (2 * 1024 * 1024))
         self.assert_no_publication(bundle)
 
+    def test_boolean_energy_is_not_a_joule_measurement(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(
+            bundle,
+            lambda r: r["eval_base"].update(
+                energy_counter_start=0, energy_counter_end=1000, energy_j=True
+            ),
+        )
+        self.assert_no_publication(bundle)
+
+    def test_boolean_offered_total_is_not_a_row_count(self):
+        bundle = self.make_bundle()
+
+        def corrupt(r):
+            r["rows"]["eval"] = True
+            for field in ("eval_base", "eval_adapter"):
+                r[field].update(
+                    rows=1,
+                    rows_offered=1,
+                    rows_skipped=0,
+                    tokens=4,
+                    predicted_tokens=3,
+                    correct_tokens=3,
+                    token_accuracy=1.0,
+                    mean_loss=4.0,
+                    perplexity=math.exp(4.0),
+                )
+            r["criterion_1"].update(eval_loss=4.0, **{"pass": True})
+            r["improvement_vs_base"].update(
+                eval_loss_base=4.0, eval_loss_adapter=4.0, delta=0.0
+            )
+
+        self.rewrite_result(bundle, corrupt)
+        self.assert_no_publication(bundle)
+
+    def test_failed_criterion_remains_a_completed_failed_gate(self):
+        bundle = self.make_bundle()
+
+        def measured_failure(r):
+            r["eval_adapter"].update(mean_loss=6.0, perplexity=math.exp(6.0))
+            r["criterion_1"].update(eval_loss=6.0, **{"pass": False})
+            r["improvement_vs_base"].update(eval_loss_adapter=6.0, delta=-2.5)
+
+        self.rewrite_result(bundle, measured_failure)
+        self.assertEqual(
+            self.bench.publish_bundle(bundle, self.fixture, self.fixture.download),
+            SHA_COMMIT,
+        )
+        result = self.receipt()
+        self.assertIs(result["criterion_1"]["pass"], False)
+        self.assertIs(result["heldout_quality_measured"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

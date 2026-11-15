@@ -348,7 +348,7 @@ def validate_completed_result(result, manifest):
             or tokens != predicted + rows
             or tokens > rows * max_length
             or correct > predicted
-            or result.get("rows", {}).get(row_field) != offered
+            or _integer(result.get("rows", {}).get(row_field), 1) != offered
         ):
             raise ValueError("inconsistent benchmark coverage")
         loss = _finite(metrics.get("mean_loss"), 0)
@@ -373,6 +373,8 @@ def validate_completed_result(result, manifest):
             if counter is not None:
                 _integer(counter)
         expected_energy = energy_fields(start, end)
+        if expected_energy["energy_j"] is not None:
+            _finite(metrics.get("energy_j"), 0)
         for name in (
             "energy_j",
             "energy_label",
