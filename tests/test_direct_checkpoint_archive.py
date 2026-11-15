@@ -198,15 +198,17 @@ class ArchiveTests(unittest.TestCase):
         path.write_text("another-writer")
         # Exercise entry directly: a rejected lock has no reachable body.
         manager = g.exclusive_lock(path)
-        with self.assertRaises(g.Hold):
-            manager.__enter__()
+        self.assertRaises(g.Hold, manager.__enter__)
         self.assertEqual(path.read_text(), "another-writer")
 
     def test_lock_released_on_error(self):
         path = self.root / "owned.lock"
-        with self.assertRaises(ValueError):
+
+        def fail_inside_lock():
             with g.exclusive_lock(path):
-                raise ValueError()
+                raise ValueError("synthetic locked-operation failure")
+
+        self.assertRaises(ValueError, fail_inside_lock)
         self.assertFalse(path.exists())
 
     def test_no_manifest_on_download_failure(self):
