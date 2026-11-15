@@ -196,9 +196,10 @@ class ArchiveTests(unittest.TestCase):
     def test_existing_lock_not_removed(self):
         path = self.root / "taken.lock"
         path.write_text("another-writer")
+        # Exercise entry directly: a rejected lock has no reachable body.
+        manager = g.exclusive_lock(path)
         with self.assertRaises(g.Hold):
-            with g.exclusive_lock(path):
-                pass
+            manager.__enter__()
         self.assertEqual(path.read_text(), "another-writer")
 
     def test_lock_released_on_error(self):
