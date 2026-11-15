@@ -694,6 +694,69 @@ class BenchContract(unittest.TestCase):
         self.assertIs(result["criterion_1"]["pass"], False)
         self.assertIs(result["heldout_quality_measured"], False)
 
+    def test_controller_bound_attempt_and_source_are_preserved(self):
+        run_id = "a" * 32
+        self.assertEqual(
+            self.run_main(
+                (
+                    "--run-id",
+                    run_id,
+                    "--source-revision",
+                    "b" * 40,
+                    "--launch-contract-sha256",
+                    "c" * 64,
+                )
+            ),
+            0,
+        )
+        result = self.receipt()
+        self.assertEqual(result["run_id"], run_id)
+        self.assertTrue(result["receipt_prefix"].endswith("/" + run_id))
+        self.assertEqual(result["source_revision"], "b" * 40)
+        self.assertEqual(result["launch_contract_sha256"], "c" * 64)
+
+    def test_invalid_attempt_is_refused_before_provider_calls(self):
+        with self.assertRaises(SystemExit) as error:
+            self.run_main(("--run-id", "../other"))
+        self.assertEqual(error.exception.code, 2)
+        self.assertFalse(self.fixture.events)
+
+    def test_partial_launch_binding_is_refused_before_provider_calls(self):
+        with self.assertRaises(SystemExit) as error:
+            self.run_main(("--run-id", "a" * 32, "--source-revision", "b" * 40))
+        self.assertEqual(error.exception.code, 2)
+        self.assertFalse(self.fixture.events)
+
+    def test_publication_retry_cannot_relabel_original_attempt(self):
+        bundle = self.make_bundle()
+        with self.assertRaises(SystemExit):
+            self.run_main(("--publish-only", str(bundle), "--run-id", "d" * 32))
+        self.assertFalse(self.fixture.events)
+
+    def test_standalone_measurement_does_not_claim_launch_binding(self):
+        self.assertEqual(self.run_main(), 0)
+        self.assertNotIn("source_revision", self.receipt())
+        self.assertNotIn("launch_contract_sha256", self.receipt())
+
+    def test_partial_recovered_launch_binding_is_rejected(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, lambda r: r.update(source_revision="b" * 40))
+        self.assert_no_publication(bundle)
+
+    def test_attempt_reuse_cannot_overwrite_original_bundle(self):
+        run_id = "a" * 32
+        self.assertEqual(self.run_main(("--run-id", run_id)), 0)
+        original = (self.root / "bench-receipts" / run_id / "result.json").read_bytes()
+        self.fixture.events.clear()
+        with self.assertRaises(SystemExit) as error:
+            self.run_main(("--run-id", run_id))
+        self.assertEqual(error.exception.code, 2)
+        self.assertFalse(self.fixture.events)
+        self.assertEqual(
+            (self.root / "bench-receipts" / run_id / "result.json").read_bytes(),
+            original,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
