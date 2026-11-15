@@ -1,1 +1,234 @@
-IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwojIENvcHlyaWdodCAyMDI2IFNaTCBIb2xkaW5ncyAtLSBTUERYLUxpY2Vuc2UtSWRlbnRpZmllcjogQXBhY2hlLTIuMAoiIiJHb3Zlcm5lZCBwb3N0LXRyYWluIGJlbmNoIGZvciBTYWxhZC10cmFpbmVkIGFkYXB0ZXJzICh2MS4wKS4KClNhbWUtbWV0aG9kIGNvbXBhcmlzb24gb2YgZXZhbC1zcGxpdCBsb3NzIHZzIHRyYWluLXNwbGl0IHJlZmVyZW5jZSBsb3NzCih2NGZ1bGwgYWNjZXB0YW5jZSBjcml0ZXJpb24gMTogZXZhbF9yZXBvIGxvc3MgPD0gZmluYWwgdHJhaW4gbG9zcyArIDEuMCksCnBsdXMgYmFzZS12cy1hZGFwdGVyIGltcHJvdmVtZW50IG9uIHRoZSBpZGVudGljYWwgcGlwZWxpbmUsIE1FQVNVUkVEIGVuZXJneQooTlZNTCBjdW11bGF0aXZlLWNvdW50ZXIgam91bGUgZGVsdGFzKSwgZnVsbCBwaW5uaW5nIG9mIGJhc2UgcmV2aXNpb24sIGFkYXB0ZXIKcmV2aXNpb24sIGRhdGFzZXQgZmlsZSBzaGEyNTZzLCBhbmQgYSBmYWlsLWNsb3NlZCByZWNlaXB0IHRvIHRoZSBIdWIuCgpNaXJyb3JzIHRvb2xzL3NhbGFkL3NhbGFkX3dvcmtlci5weSdzIGV4YWN0IHRleHQgcGlwZWxpbmU6CiAgdGV4dCA9IHRva2VuaXplci5hcHBseV9jaGF0X3RlbXBsYXRlKG1lc3NhZ2VzLCB0b2tlbml6ZT1GYWxzZSkKICB0cnVuY2F0ZSB0byBtYXhfbGVuZ3RoICh3b3JrZXIgU0ZUQ29uZmlnIG1heF9sZW5ndGg9MjA0OCksIGNhdXNhbC1MTSBsb3NzCm92ZXIgdGhlIGZ1bGwgcmVuZGVyZWQgdGV4dC4gQm90aCBzcGxpdHMgYXJlIGNvbXB1dGVkIHdpdGggVEhJUyBzY3JpcHQncyBvbmUKbWV0aG9kLCBzbyBjcml0ZXJpb24gMSBpcyBpbnRlcm5hbGx5IGNvbnNpc3RlbnQ7IHRoZSBtZXRob2QgaXMgZGVjbGFyZWQgaW4KdGhlIHJlY2VpcHQgYW5kIG5ldmVyIGNsYWltZWQgdG8gYmUgVFJMJ3MgaW50ZXJuYWwgbG9zcyB2ZXJiYXRpbS4KIiIiCmltcG9ydCBhcmdwYXJzZSwgZGF0ZXRpbWUsIGhhc2hsaWIsIGpzb24sIG9zLCBzeXMsIHRpbWUKaW1wb3J0IHRvcmNoCmZyb20gaHVnZ2luZ2ZhY2VfaHViIGltcG9ydCBIZkFwaSwgaGZfaHViX2Rvd25sb2FkLCBzbmFwc2hvdF9kb3dubG9hZAoKU0NIRU1BID0gInN6bC5zYWxhZC1iZW5jaC92MSIKCgpkZWYgdXRjbm93KCk6CiAgICByZXR1cm4gZGF0ZXRpbWUuZGF0ZXRpbWUubm93KGRhdGV0aW1lLnRpbWV6b25lLnV0Yykuc3RyZnRpbWUoIiVZLSVtLSVkVCVIOiVNOiVTLiVmIilbOi0zXSArICJaIgoKCmRlZiBzaGEyNTZfZmlsZShwYXRoKToKICAgIGggPSBoYXNobGliLnNoYTI1NigpCiAgICB3aXRoIG9wZW4ocGF0aCwgInJiIikgYXMgZjoKICAgICAgICBmb3IgY2h1bmsgaW4gaXRlcihsYW1iZGE6IGYucmVhZCgxIDw8IDIwKSwgYiIiKToKICAgICAgICAgICAgaC51cGRhdGUoY2h1bmspCiAgICByZXR1cm4gaC5oZXhkaWdlc3QoKQoKCmNsYXNzIEVuZXJneToKICAgIGRlZiBfX2luaXRfXyhzZWxmKToKICAgICAgICBzZWxmLm9rID0gRmFsc2UKICAgICAgICB0cnk6CiAgICAgICAgICAgIGltcG9ydCBweW52bWwKICAgICAgICAgICAgcHludm1sLm52bWxJbml0KCkKICAgICAgICAgICAgc2VsZi5wID0gcHludm1sCiAgICAgICAgICAgIHNlbGYuaCA9IHB5bnZtbC5udm1sRGV2aWNlR2V0SGFuZGxlQnlJbmRleCgwKQogICAgICAgICAgICBzZWxmLm5hbWUgPSBweW52bWwubnZtbERldmljZUdldE5hbWUoc2VsZi5oKQogICAgICAgICAgICBpZiBpc2luc3RhbmNlKHNlbGYubmFtZSwgYnl0ZXMpOgogICAgICAgICAgICAgICAgc2VsZi5uYW1lID0gc2VsZi5uYW1lLmRlY29kZSgpCiAgICAgICAgICAgIHNlbGYub2sgPSBUcnVlCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICBzZWxmLm5hbWUgPSAiTlZNTF9VTkFWQUlMQUJMRTogIiArIHJlcHIoZSlbOjEyMF0KCiAgICBkZWYgcmVhZChzZWxmKToKICAgICAgICBpZiBub3Qgc2VsZi5vazoKICAgICAgICAgICAgcmV0dXJuIE5vbmUKICAgICAgICByZXR1cm4gaW50KHNlbGYucC5udm1sRGV2aWNlR2V0VG90YWxFbmVyZ3lDb25zdW1wdGlvbihzZWxmLmgpKQoKCmRlZiBsb2FkX2pzb25sKHBhdGgsIG1heF9yb3dzPU5vbmUpOgogICAgcm93cyA9IFtdCiAgICB3aXRoIG9wZW4ocGF0aCwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZjoKICAgICAgICBmb3IgbGluZSBpbiBmOgogICAgICAgICAgICBsaW5lID0gbGluZS5zdHJpcCgpCiAgICAgICAgICAgIGlmIG5vdCBsaW5lOgogICAgICAgICAgICAgICAgY29udGludWUKICAgICAgICAgICAgcm93cy5hcHBlbmQoanNvbi5sb2FkcyhsaW5lKSkKICAgICAgICAgICAgaWYgbWF4X3Jvd3MgYW5kIGxlbihyb3dzKSA+PSBtYXhfcm93czoKICAgICAgICAgICAgICAgIGJyZWFrCiAgICByZXR1cm4gcm93cwoKCmRlZiBtYWluKCk6CiAgICBhcCA9IGFyZ3BhcnNlLkFyZ3VtZW50UGFyc2VyKCkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS1iYXNlIiwgcmVxdWlyZWQ9VHJ1ZSkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS1iYXNlLXJldmlzaW9uIiwgZGVmYXVsdD1Ob25lLCBoZWxwPSJwaW5uZWQgcmV2aXNpb24gb2YgdGhlIGJhc2UgbW9kZWwiKQogICAgYXAuYWRkX2FyZ3VtZW50KCItLWFkYXB0ZXItcmVwbyIsIHJlcXVpcmVkPVRydWUpCiAgICBhcC5hZGRfYXJndW1lbnQoIi0tYWRhcHRlci1kaXIiLCBkZWZhdWx0PSJmaW5hbCIpCiAgICBhcC5hZGRfYXJndW1lbnQoIi0tZGF0YXNldCIsIHJlcXVpcmVkPVRydWUpCiAgICBhcC5hZGRfYXJndW1lbnQoIi0tZXZhbC1maWxlIiwgcmVxdWlyZWQ9VHJ1ZSkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS1ldmFsLXNoYTI1NiIsIGRlZmF1bHQ9Tm9uZSkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS10cmFpbi1maWxlIiwgcmVxdWlyZWQ9VHJ1ZSkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS10cmFpbi1zaGEyNTYiLCBkZWZhdWx0PU5vbmUpCiAgICBhcC5hZGRfYXJndW1lbnQoIi0tdHJhaW4tcmVmLXJvd3MiLCB0eXBlPWludCwgZGVmYXVsdD0yMDAwKQogICAgYXAuYWRkX2FyZ3VtZW50KCItLW1heC1sZW5ndGgiLCB0eXBlPWludCwgZGVmYXVsdD0yMDQ4KQogICAgYXAuYWRkX2FyZ3VtZW50KCItLXJlY2VpcHRzLXJlcG8iLCByZXF1aXJlZD1UcnVlKQogICAgYXAuYWRkX2FyZ3VtZW50KCItLXJlY2VpcHQtZGlyIiwgcmVxdWlyZWQ9VHJ1ZSkKICAgIGFwLmFkZF9hcmd1bWVudCgiLS1zZWVkIiwgdHlwZT1pbnQsIGRlZmF1bHQ9MTIzNCkKICAgIGEgPSBhcC5wYXJzZV9hcmdzKCkKCiAgICB0b3JjaC5tYW51YWxfc2VlZChhLnNlZWQpCiAgICBhcGkgPSBIZkFwaSh0b2tlbj1vcy5lbnZpcm9uLmdldCgiSEZfVE9LRU4iKSkKICAgIHN0YXJ0ZWQgPSB1dGNub3coKQogICAgdDAgPSB0aW1lLnRpbWUoKQogICAgcmVjID0geyJzY2hlbWEiOiBTQ0hFTUEsICJraW5kIjogIk1FQVNVUkVEIiwgInN0YXJ0ZWRfdXRjIjogc3RhcnRlZCwKICAgICAgICAgICAiYmFzZSI6IGEuYmFzZSwgImJhc2VfcmV2aXNpb24iOiBhLmJhc2VfcmV2aXNpb24sCiAgICAgICAgICAgImFkYXB0ZXJfcmVwbyI6IGEuYWRhcHRlcl9yZXBvLCAiYWRhcHRlcl9kaXIiOiBhLmFkYXB0ZXJfZGlyLAogICAgICAgICAgICJkYXRhc2V0IjogYS5kYXRhc2V0LCAibWF4X2xlbmd0aCI6IGEubWF4X2xlbmd0aCwgInNlZWQiOiBhLnNlZWQsCiAgICAgICAgICAgIm1ldGhvZCI6ICgidGV4dD1hcHBseV9jaGF0X3RlbXBsYXRlKG1lc3NhZ2VzLCB0b2tlbml6ZT1GYWxzZSk7ICIKICAgICAgICAgICAgICAgICAgICAgICJ0b2tlbml6ZSt0cnVuY2F0ZSB0byBtYXhfbGVuZ3RoOyBjYXVzYWwtTE0gbG9zcyBvdmVyIGZ1bGwgIgogICAgICAgICAgICAgICAgICAgICAgInJlbmRlcmVkIHRleHQ7IGlkZW50aWNhbCBwaXBlbGluZSBmb3IgYWxsIHRocmVlIG1lYXN1cmVtZW50cyIpfQoKICAgIGRlZiBmYWlsKG1zZywgZXh0cmE9Tm9uZSk6CiAgICAgICAgcmVjLnVwZGF0ZSh7InN0YXR1cyI6ICJFUlJPUiIsICJlcnJvciI6IG1zZywgImNvbXBsZXRlZF91dGMiOiB1dGNub3coKX0pCiAgICAgICAgaWYgZXh0cmE6CiAgICAgICAgICAgIHJlYy51cGRhdGUoZXh0cmEpCiAgICAgICAgdHJ5OgogICAgICAgICAgICBhcGkudXBsb2FkX2ZpbGUocGF0aF9vcl9maWxlb2JqPWpzb24uZHVtcHMocmVjLCBpbmRlbnQ9MSkuZW5jb2RlKCksCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBwYXRoX2luX3JlcG89YS5yZWNlaXB0X2RpciArICIvcmVzdWx0Lmpzb24iLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgcmVwb19pZD1hLnJlY2VpcHRzX3JlcG8sIHJlcG9fdHlwZT0iZGF0YXNldCIpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICBwcmludCgiUkVDRUlQVCBVUExPQUQgRkFJTEVEIFRPTzoiLCByZXByKGUpLCBmaWxlPXN5cy5zdGRlcnIpCiAgICAgICAgcHJpbnQoIkZBSUwtQ0xPU0VEOiIsIG1zZywgZmlsZT1zeXMuc3RkZXJyKQogICAgICAgIHJldHVybiA3CgogICAgIyAtLS0gZW5lcmd5IG1ldGVyIChkZWNsYXJlZCwgbmV2ZXIgZmFicmljYXRlZCkKICAgIGVuID0gRW5lcmd5KCkKICAgIHJlY1siZ3B1Il0gPSBlbi5uYW1lCgogICAgIyAtLS0gcGlucyArIGZhaWwtY2xvc2VkIGNoZWNrcwogICAgZXZhbF9wYXRoID0gaGZfaHViX2Rvd25sb2FkKGEuZGF0YXNldCwgYS5ldmFsX2ZpbGUsIHJlcG9fdHlwZT0iZGF0YXNldCIpCiAgICB0cmFpbl9wYXRoID0gaGZfaHViX2Rvd25sb2FkKGEuZGF0YXNldCwgYS50cmFpbl9maWxlLCByZXBvX3R5cGU9ImRhdGFzZXQiKQogICAgZXZfc2hhLCB0cl9zaGEgPSBzaGEyNTZfZmlsZShldmFsX3BhdGgpLCBzaGEyNTZfZmlsZSh0cmFpbl9wYXRoKQogICAgcmVjWyJwaW5zIl0gPSB7ImV2YWxfc2hhMjU2IjogZXZfc2hhLCAidHJhaW5fc2hhMjU2IjogdHJfc2hhLAogICAgICAgICAgICAgICAgICAgImV2YWxfc2hhMjU2X2V4cGVjdGVkIjogYS5ldmFsX3NoYTI1NiwKICAgICAgICAgICAgICAgICAgICJ0cmFpbl9zaGEyNTZfZXhwZWN0ZWQiOiBhLnRyYWluX3NoYTI1Nn0KICAgIGlmIGEuZXZhbF9zaGEyNTYgYW5kIGV2X3NoYSAhPSBhLmV2YWxfc2hhMjU2OgogICAgICAgIHJldHVybiBmYWlsKCJldmFsIGZpbGUgc2hhMjU2IG1pc21hdGNoIiwgcmVjKQogICAgaWYgYS50cmFpbl9zaGEyNTYgYW5kIHRyX3NoYSAhPSBhLnRyYWluX3NoYTI1NjoKICAgICAgICByZXR1cm4gZmFpbCgidHJhaW4gZmlsZSBzaGEyNTYgbWlzbWF0Y2giLCByZWMpCgogICAgdHJ5OgogICAgICAgIGFkaXIgPSBzbmFwc2hvdF9kb3dubG9hZChhLmFkYXB0ZXJfcmVwbywgYWxsb3dfcGF0dGVybnM9W2EuYWRhcHRlcl9kaXIgKyAiLyoiXSkKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgICAgICByZXR1cm4gZmFpbCgiYWRhcHRlciBzbmFwc2hvdCBmYWlsZWQ6ICIgKyByZXByKGUpWzoyMDBdLCByZWMpCiAgICBhZGFwdGVyX3BhdGggPSBvcy5wYXRoLmpvaW4oYWRpciwgYS5hZGFwdGVyX2RpcikKICAgIGlmIG5vdCBvcy5wYXRoLmlzZmlsZShvcy5wYXRoLmpvaW4oYWRhcHRlcl9wYXRoLCAiYWRhcHRlcl9tb2RlbC5zYWZldGVuc29ycyIpKToKICAgICAgICByZXR1cm4gZmFpbCgiYWRhcHRlcl9tb2RlbC5zYWZldGVuc29ycyBtaXNzaW5nIHVuZGVyICIgKyBhLmFkYXB0ZXJfZGlyLCByZWMpCiAgICB0cnk6CiAgICAgICAgaW5mbyA9IGFwaS5tb2RlbF9pbmZvKGEuYWRhcHRlcl9yZXBvKQogICAgICAgIHJlY1siYWRhcHRlcl9yZXBvX3JldmlzaW9uIl0gPSBnZXRhdHRyKGluZm8sICJzaGEiLCBOb25lKQogICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICByZWNbImFkYXB0ZXJfcmVwb19yZXZpc2lvbiJdID0gTm9uZQoKICAgIGZyb20gdHJhbnNmb3JtZXJzIGltcG9ydCBBdXRvVG9rZW5pemVyLCBBdXRvTW9kZWxGb3JDYXVzYWxMTQogICAgZnJvbSBwZWZ0IGltcG9ydCBQZWZ0TW9kZWwKICAgIHRvayA9IEF1dG9Ub2tlbml6ZXIuZnJvbV9wcmV0cmFpbmVkKGEuYmFzZSwgcmV2aXNpb249YS5iYXNlX3JldmlzaW9uKQogICAgaWYgdG9rLmNoYXRfdGVtcGxhdGUgaXMgTm9uZToKICAgICAgICByZXR1cm4gZmFpbCgiYmFzZSB0b2tlbml6ZXIgaGFzIG5vIGNoYXQgdGVtcGxhdGU7IHBpcGVsaW5lIHVuZGVmaW5lZCIsIHJlYykKCiAgICBldmFsX3Jvd3MgPSBsb2FkX2pzb25sKGV2YWxfcGF0aCkKICAgIHRyYWluX3Jvd3MgPSBsb2FkX2pzb25sKHRyYWluX3BhdGgsIGEudHJhaW5fcmVmX3Jvd3MpCiAgICBpZiBub3QgZXZhbF9yb3dzIG9yIG5vdCB0cmFpbl9yb3dzOgogICAgICAgIHJldHVybiBmYWlsKCJlbXB0eSBzcGxpdCBhZnRlciBsb2FkIiwgeyJldmFsX3Jvd3MiOiBsZW4oZXZhbF9yb3dzKSwgInRyYWluX3JlZl9yb3dzIjogbGVuKHRyYWluX3Jvd3MpfSkKICAgIHJlY1sicm93cyJdID0geyJldmFsIjogbGVuKGV2YWxfcm93cyksICJ0cmFpbl9yZWYiOiBsZW4odHJhaW5fcm93cyksCiAgICAgICAgICAgICAgICAgICAidHJhaW5fcmVmX25vdGUiOiAiZmlyc3QtTiBkZXRlcm1pbmlzdGljIHJvd3Mgb2YgdHJhaW4gZmlsZSJ9CgogICAgZGVmIG1lYXN1cmUobW9kZWwsIHJvd3MsIGxhYmVsKToKICAgICAgICBlMCA9IGVuLnJlYWQoKQogICAgICAgIHcwID0gdGltZS50aW1lKCkKICAgICAgICB0b3RfbG9zcywgdG90X3RvaywgdG90X2NvcnJlY3QsIG4gPSAwLjAsIDAsIDAsIDAKICAgICAgICBtb2RlbC5ldmFsKCkKICAgICAgICB3aXRoIHRvcmNoLm5vX2dyYWQoKToKICAgICAgICAgICAgZm9yIGksIGV4IGluIGVudW1lcmF0ZShyb3dzKToKICAgICAgICAgICAgICAgIG1zZ3MgPSBleC5nZXQoIm1lc3NhZ2VzIikKICAgICAgICAgICAgICAgIGlmIG5vdCBtc2dzOgogICAgICAgICAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgICAgICAgICB0ZXh0ID0gdG9rLmFwcGx5X2NoYXRfdGVtcGxhdGUobXNncywgdG9rZW5pemU9RmFsc2UpCiAgICAgICAgICAgICAgICBlbmMgPSB0b2sodGV4dCwgdHJ1bmNhdGlvbj1UcnVlLCBtYXhfbGVuZ3RoPWEubWF4X2xlbmd0aCwKICAgICAgICAgICAgICAgICAgICAgICAgICByZXR1cm5fdGVuc29ycz0icHQiKS50byhtb2RlbC5kZXZpY2UpCiAgICAgICAgICAgICAgICBpZiBlbmNbImlucHV0X2lkcyJdLnNoYXBlWzFdIDwgMjoKICAgICAgICAgICAgICAgICAgICBjb250aW51ZQogICAgICAgICAgICAgICAgb3V0ID0gbW9kZWwoKiplbmMsIGxhYmVscz1lbmNbImlucHV0X2lkcyJdKQogICAgICAgICAgICAgICAgTCA9IGVuY1siaW5wdXRfaWRzIl0uc2hhcGVbMV0KICAgICAgICAgICAgICAgIHRvdF9sb3NzICs9IG91dC5sb3NzLml0ZW0oKSAqIEwKICAgICAgICAgICAgICAgIHRvdF90b2sgKz0gTAogICAgICAgICAgICAgICAgIyB0b2tlbiBhY2N1cmFjeSBvbiBuZXh0LXRva2VuIHByZWRpY3Rpb24gKGFyZ21heCB2cyBsYWJlbCkKICAgICAgICAgICAgICAgIGxvZ2l0cyA9IG91dC5sb2dpdHNbOiwgOi0xXQogICAgICAgICAgICAgICAgdGFyZ2V0cyA9IGVuY1siaW5wdXRfaWRzIl1bOiwgMTpdCiAgICAgICAgICAgICAgICB0b3RfY29ycmVjdCArPSBpbnQoKGxvZ2l0cy5hcmdtYXgoLTEpID09IHRhcmdldHMpLnN1bSgpKQogICAgICAgICAgICAgICAgbiArPSAxCiAgICAgICAgICAgICAgICBpZiBuICUgMjAwID09IDA6CiAgICAgICAgICAgICAgICAgICAgcHJpbnQoZiJbe2xhYmVsfV0ge259L3tsZW4ocm93cyl9IGxvc3M9e3RvdF9sb3NzL21heCh0b3RfdG9rLDEpOi40Zn0iLCBmbHVzaD1UcnVlKQogICAgICAgIGUxID0gZW4ucmVhZCgpCiAgICAgICAgZHQgPSB0aW1lLnRpbWUoKSAtIHcwCiAgICAgICAgcmVzID0geyJyb3dzIjogbiwgInRva2VucyI6IHRvdF90b2ssICJtZWFuX2xvc3MiOiB0b3RfbG9zcyAvIG1heCh0b3RfdG9rLCAxKSwKICAgICAgICAgICAgICAgInBlcnBsZXhpdHkiOiBmbG9hdCh0b3JjaC5leHAodG9yY2gudGVuc29yKHRvdF9sb3NzIC8gbWF4KHRvdF90b2ssIDEpKSkpLAogICAgICAgICAgICAgICAidG9rZW5fYWNjdXJhY3kiOiB0b3RfY29ycmVjdCAvIG1heCh0b3RfdG9rIC0gbiwgMSksCiAgICAgICAgICAgICAgICJzZWNvbmRzIjogcm91bmQoZHQsIDEpLAogICAgICAgICAgICAgICAiZW5lcmd5X2oiOiAoZTEgLSBlMCkgaWYgKGUwIGlzIG5vdCBOb25lIGFuZCBlMSBpcyBub3QgTm9uZSkgZWxzZSBOb25lLAogICAgICAgICAgICAgICAiZW5lcmd5X2xhYmVsIjogIk1FQVNVUkVEIiBpZiAoZTAgaXMgbm90IE5vbmUgYW5kIGUxIGlzIG5vdCBOb25lKSBlbHNlICJOT1RfTUVBU1VSRUQifQogICAgICAgIHByaW50KGYiW3tsYWJlbH1dIERPTkUge2pzb24uZHVtcHMocmVzKX0iLCBmbHVzaD1UcnVlKQogICAgICAgIHJldHVybiByZXMKCiAgICBrdyA9IHsiZHR5cGUiOiB0b3JjaC5iZmxvYXQxNiwgImRldmljZV9tYXAiOiAiYXV0byJ9CiAgICBpZiBhLmJhc2VfcmV2aXNpb246CiAgICAgICAga3dbInJldmlzaW9uIl0gPSBhLmJhc2VfcmV2aXNpb24KICAgIGJhc2UgPSBBdXRvTW9kZWxGb3JDYXVzYWxMTS5mcm9tX3ByZXRyYWluZWQoYS5iYXNlLCAqKmt3KQogICAgcmVjWyJldmFsX2Jhc2UiXSA9IG1lYXN1cmUoYmFzZSwgZXZhbF9yb3dzLCAiZXZhbC9iYXNlIikKCiAgICBtb2RlbCA9IFBlZnRNb2RlbC5mcm9tX3ByZXRyYWluZWQoYmFzZSwgYWRhcHRlcl9wYXRoKQogICAgbW9kZWwuZXZhbCgpCiAgICByZWNbImV2YWxfYWRhcHRlciJdID0gbWVhc3VyZShtb2RlbCwgZXZhbF9yb3dzLCAiZXZhbC9hZGFwdGVyIikKICAgIHJlY1sidHJhaW5fcmVmX2FkYXB0ZXIiXSA9IG1lYXN1cmUobW9kZWwsIHRyYWluX3Jvd3MsICJ0cmFpbnJlZi9hZGFwdGVyIikKCiAgICByZWNbImNyaXRlcmlvbl8xIl0gPSB7CiAgICAgICAgInJ1bGUiOiAiZXZhbF9yZXBvIGxvc3MgKGFkYXB0ZXIpIDw9IHRyYWluLXJlZiBsb3NzIChhZGFwdGVyKSArIDEuMCIsCiAgICAgICAgImV2YWxfbG9zcyI6IHJlY1siZXZhbF9hZGFwdGVyIl1bIm1lYW5fbG9zcyJdLAogICAgICAgICJ0cmFpbl9yZWZfbG9zcyI6IHJlY1sidHJhaW5fcmVmX2FkYXB0ZXIiXVsibWVhbl9sb3NzIl0sCiAgICAgICAgInBhc3MiOiByZWNbImV2YWxfYWRhcHRlciJdWyJtZWFuX2xvc3MiXSA8PSByZWNbInRyYWluX3JlZl9hZGFwdGVyIl1bIm1lYW5fbG9zcyJdICsgMS4wfQogICAgcmVjWyJpbXByb3ZlbWVudF92c19iYXNlIl0gPSB7CiAgICAgICAgImV2YWxfbG9zc19iYXNlIjogcmVjWyJldmFsX2Jhc2UiXVsibWVhbl9sb3NzIl0sCiAgICAgICAgImV2YWxfbG9zc19hZGFwdGVyIjogcmVjWyJldmFsX2FkYXB0ZXIiXVsibWVhbl9sb3NzIl0sCiAgICAgICAgImRlbHRhIjogcmVjWyJldmFsX2Jhc2UiXVsibWVhbl9sb3NzIl0gLSByZWNbImV2YWxfYWRhcHRlciJdWyJtZWFuX2xvc3MiXX0KICAgIHJlY1siaGVsZG91dF9xdWFsaXR5X21lYXN1cmVkIl0gPSBGYWxzZQogICAgcmVjWyJoZWxkb3V0X3F1YWxpdHlfbm90ZSJdID0gKCJjcml0ZXJpYSAyLTUgKGNvbnRhbWluYXRpb24gb2ZmaWNpYWwgY2hlY2ssIHJlZnVzYWwgIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJwcmVzZXJ2YXRpb24sIG5ldXRyYWwgY2FwYWJpbGl0eSBwcm9iZSwgaW52ZW50ZWQtSUQgcmF0ZSkgIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJub3QgY29tcHV0ZWQgYnkgdGhpcyBiZW5jaDsgaGVsZG91dF9xdWFsaXR5IHN0YXlzIGZhbHNlICIKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAidW50aWwgYWxsIGFyZSBjb21wdXRlZCBhbmQgcmVjb3JkZWQgKGZhaWwtY2xvc2VkKS4iKQogICAgcmVjWyJzdGF0dXMiXSA9ICJPSyIKICAgIHJlY1siY29tcGxldGVkX3V0YyJdID0gdXRjbm93KCkKICAgIHJlY1sid2FsbF9zZWNvbmRzIl0gPSByb3VuZCh0aW1lLnRpbWUoKSAtIHQwLCAxKQoKICAgIGFwaS51cGxvYWRfZmlsZShwYXRoX29yX2ZpbGVvYmo9anNvbi5kdW1wcyhyZWMsIGluZGVudD0xKS5lbmNvZGUoKSwKICAgICAgICAgICAgICAgICAgICBwYXRoX2luX3JlcG89YS5yZWNlaXB0X2RpciArICIvcmVzdWx0Lmpzb24iLAogICAgICAgICAgICAgICAgICAgIHJlcG9faWQ9YS5yZWNlaXB0c19yZXBvLCByZXBvX3R5cGU9ImRhdGFzZXQiKQogICAgd2l0aCBvcGVuKF9fZmlsZV9fLCAicmIiKSBhcyBmOgogICAgICAgIGFwaS51cGxvYWRfZmlsZShwYXRoX29yX2ZpbGVvYmo9Zi5yZWFkKCksCiAgICAgICAgICAgICAgICAgICAgICAgIHBhdGhfaW5fcmVwbz1hLnJlY2VpcHRfZGlyICsgIi9iZW5jaF9ldmFsLnB5IiwKICAgICAgICAgICAgICAgICAgICAgICAgcmVwb19pZD1hLnJlY2VpcHRzX3JlcG8sIHJlcG9fdHlwZT0iZGF0YXNldCIpCiAgICBwcmludCgiQkVOQ0hfT0sgIiArIGpzb24uZHVtcHMocmVjWyJjcml0ZXJpb25fMSJdKSwgZmx1c2g9VHJ1ZSkKICAgIHJldHVybiAwCgoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIHN5cy5leGl0KG1haW4oKSkK
+#!/usr/bin/env python3
+# Copyright 2026 SZL Holdings -- SPDX-License-Identifier: Apache-2.0
+"""Governed post-train bench for Salad-trained adapters (v1.0).
+
+Same-method comparison of eval-split loss vs train-split reference loss
+(v4full acceptance criterion 1: eval_repo loss <= final train loss + 1.0),
+plus base-vs-adapter improvement on the identical pipeline, MEASURED energy
+(NVML cumulative-counter joule deltas), full pinning of base revision, adapter
+revision, dataset file sha256s, and a fail-closed receipt to the Hub.
+
+Mirrors tools/salad/salad_worker.py's exact text pipeline:
+  text = tokenizer.apply_chat_template(messages, tokenize=False)
+  truncate to max_length (worker SFTConfig max_length=2048), causal-LM loss
+over the full rendered text. Both splits are computed with THIS script's one
+method, so criterion 1 is internally consistent; the method is declared in
+the receipt and never claimed to be TRL's internal loss verbatim.
+"""
+import argparse, datetime, hashlib, json, os, sys, time
+import torch
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
+
+SCHEMA = "szl.salad-bench/v1"
+
+
+def utcnow():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+class Energy:
+    def __init__(self):
+        self.ok = False
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            self.p = pynvml
+            self.h = pynvml.nvmlDeviceGetHandleByIndex(0)
+            self.name = pynvml.nvmlDeviceGetName(self.h)
+            if isinstance(self.name, bytes):
+                self.name = self.name.decode()
+            self.ok = True
+        except Exception as e:
+            self.name = "NVML_UNAVAILABLE: " + repr(e)[:120]
+
+    def read(self):
+        if not self.ok:
+            return None
+        return int(self.p.nvmlDeviceGetTotalEnergyConsumption(self.h))
+
+
+def load_jsonl(path, max_rows=None):
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rows.append(json.loads(line))
+            if max_rows and len(rows) >= max_rows:
+                break
+    return rows
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--base-revision", default=None, help="pinned revision of the base model")
+    ap.add_argument("--adapter-repo", required=True)
+    ap.add_argument("--adapter-dir", default="final")
+    ap.add_argument("--dataset", required=True)
+    ap.add_argument("--eval-file", required=True)
+    ap.add_argument("--eval-sha256", default=None)
+    ap.add_argument("--train-file", required=True)
+    ap.add_argument("--train-sha256", default=None)
+    ap.add_argument("--train-ref-rows", type=int, default=2000)
+    ap.add_argument("--max-length", type=int, default=2048)
+    ap.add_argument("--receipts-repo", required=True)
+    ap.add_argument("--receipt-dir", required=True)
+    ap.add_argument("--seed", type=int, default=1234)
+    a = ap.parse_args()
+
+    torch.manual_seed(a.seed)
+    api = HfApi(token=os.environ.get("HF_TOKEN"))
+    started = utcnow()
+    t0 = time.time()
+    rec = {"schema": SCHEMA, "kind": "MEASURED", "started_utc": started,
+           "base": a.base, "base_revision": a.base_revision,
+           "adapter_repo": a.adapter_repo, "adapter_dir": a.adapter_dir,
+           "dataset": a.dataset, "max_length": a.max_length, "seed": a.seed,
+           "method": ("text=apply_chat_template(messages, tokenize=False); "
+                      "tokenize+truncate to max_length; causal-LM loss over full "
+                      "rendered text; identical pipeline for all three measurements")}
+
+    def fail(msg, extra=None):
+        rec.update({"status": "ERROR", "error": msg, "completed_utc": utcnow()})
+        if extra:
+            rec.update(extra)
+        try:
+            api.upload_file(path_or_fileobj=json.dumps(rec, indent=1).encode(),
+                            path_in_repo=a.receipt_dir + "/result.json",
+                            repo_id=a.receipts_repo, repo_type="model")
+        except Exception as e:
+            print("RECEIPT UPLOAD FAILED TOO:", repr(e), file=sys.stderr)
+        print("FAIL-CLOSED:", msg, file=sys.stderr)
+        return 7
+
+    # --- energy meter (declared, never fabricated)
+    en = Energy()
+    rec["gpu"] = en.name
+
+    # --- pins + fail-closed checks
+    eval_path = hf_hub_download(a.dataset, a.eval_file, repo_type="dataset")
+    train_path = hf_hub_download(a.dataset, a.train_file, repo_type="dataset")
+    ev_sha, tr_sha = sha256_file(eval_path), sha256_file(train_path)
+    rec["pins"] = {"eval_sha256": ev_sha, "train_sha256": tr_sha,
+                   "eval_sha256_expected": a.eval_sha256,
+                   "train_sha256_expected": a.train_sha256}
+    if a.eval_sha256 and ev_sha != a.eval_sha256:
+        return fail("eval file sha256 mismatch", rec)
+    if a.train_sha256 and tr_sha != a.train_sha256:
+        return fail("train file sha256 mismatch", rec)
+
+    try:
+        adir = snapshot_download(a.adapter_repo, allow_patterns=[a.adapter_dir + "/*"])
+    except Exception as e:
+        return fail("adapter snapshot failed: " + repr(e)[:200], rec)
+    adapter_path = os.path.join(adir, a.adapter_dir)
+    if not os.path.isfile(os.path.join(adapter_path, "adapter_model.safetensors")):
+        return fail("adapter_model.safetensors missing under " + a.adapter_dir, rec)
+    try:
+        info = api.model_info(a.adapter_repo)
+        rec["adapter_repo_revision"] = getattr(info, "sha", None)
+    except Exception:
+        rec["adapter_repo_revision"] = None
+
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+    from peft import PeftModel
+    tok = AutoTokenizer.from_pretrained(a.base, revision=a.base_revision)
+    if tok.chat_template is None:
+        return fail("base tokenizer has no chat template; pipeline undefined", rec)
+
+    eval_rows = load_jsonl(eval_path)
+    train_rows = load_jsonl(train_path, a.train_ref_rows)
+    if not eval_rows or not train_rows:
+        return fail("empty split after load", {"eval_rows": len(eval_rows), "train_ref_rows": len(train_rows)})
+    rec["rows"] = {"eval": len(eval_rows), "train_ref": len(train_rows),
+                   "train_ref_note": "first-N deterministic rows of train file"}
+
+    def measure(model, rows, label):
+        e0 = en.read()
+        w0 = time.time()
+        tot_loss, tot_tok, tot_correct, n = 0.0, 0, 0, 0
+        model.eval()
+        with torch.no_grad():
+            for i, ex in enumerate(rows):
+                msgs = ex.get("messages")
+                if not msgs:
+                    continue
+                text = tok.apply_chat_template(msgs, tokenize=False)
+                enc = tok(text, truncation=True, max_length=a.max_length,
+                          return_tensors="pt").to(model.device)
+                if enc["input_ids"].shape[1] < 2:
+                    continue
+                out = model(**enc, labels=enc["input_ids"])
+                L = enc["input_ids"].shape[1]
+                tot_loss += out.loss.item() * L
+                tot_tok += L
+                # token accuracy on next-token prediction (argmax vs label)
+                logits = out.logits[:, :-1]
+                targets = enc["input_ids"][:, 1:]
+                tot_correct += int((logits.argmax(-1) == targets).sum())
+                n += 1
+                if n % 200 == 0:
+                    print(f"[{label}] {n}/{len(rows)} loss={tot_loss/max(tot_tok,1):.4f}", flush=True)
+        e1 = en.read()
+        dt = time.time() - w0
+        res = {"rows": n, "tokens": tot_tok, "mean_loss": tot_loss / max(tot_tok, 1),
+               "perplexity": float(torch.exp(torch.tensor(tot_loss / max(tot_tok, 1)))),
+               "token_accuracy": tot_correct / max(tot_tok - n, 1),
+               "seconds": round(dt, 1),
+               "energy_j": (e1 - e0) if (e0 is not None and e1 is not None) else None,
+               "energy_label": "MEASURED" if (e0 is not None and e1 is not None) else "NOT_MEASURED"}
+        print(f"[{label}] DONE {json.dumps(res)}", flush=True)
+        return res
+
+    kw = {"dtype": torch.bfloat16, "device_map": "auto"}
+    if a.base_revision:
+        kw["revision"] = a.base_revision
+    base = AutoModelForCausalLM.from_pretrained(a.base, **kw)
+    rec["eval_base"] = measure(base, eval_rows, "eval/base")
+
+    model = PeftModel.from_pretrained(base, adapter_path)
+    model.eval()
+    rec["eval_adapter"] = measure(model, eval_rows, "eval/adapter")
+    rec["train_ref_adapter"] = measure(model, train_rows, "trainref/adapter")
+
+    rec["criterion_1"] = {
+        "rule": "eval_repo loss (adapter) <= train-ref loss (adapter) + 1.0",
+        "eval_loss": rec["eval_adapter"]["mean_loss"],
+        "train_ref_loss": rec["train_ref_adapter"]["mean_loss"],
+        "pass": rec["eval_adapter"]["mean_loss"] <= rec["train_ref_adapter"]["mean_loss"] + 1.0}
+    rec["improvement_vs_base"] = {
+        "eval_loss_base": rec["eval_base"]["mean_loss"],
+        "eval_loss_adapter": rec["eval_adapter"]["mean_loss"],
+        "delta": rec["eval_base"]["mean_loss"] - rec["eval_adapter"]["mean_loss"]}
+    rec["heldout_quality_measured"] = False
+    rec["heldout_quality_note"] = ("criteria 2-5 (contamination official check, refusal "
+                                   "preservation, neutral capability probe, invented-ID rate) "
+                                   "not computed by this bench; heldout_quality stays false "
+                                   "until all are computed and recorded (fail-closed).")
+    rec["status"] = "OK"
+    rec["completed_utc"] = utcnow()
+    rec["wall_seconds"] = round(time.time() - t0, 1)
+
+    api.upload_file(path_or_fileobj=json.dumps(rec, indent=1).encode(),
+                    path_in_repo=a.receipt_dir + "/result.json",
+                    repo_id=a.receipts_repo, repo_type="model")
+    with open(__file__, "rb") as f:
+        api.upload_file(path_or_fileobj=f.read(),
+                        path_in_repo=a.receipt_dir + "/bench_eval.py",
+                        repo_id=a.receipts_repo, repo_type="model")
+    print("BENCH_OK " + json.dumps(rec["criterion_1"]), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
