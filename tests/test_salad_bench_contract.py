@@ -237,16 +237,22 @@ class BenchContract(unittest.TestCase):
         )
 
     def make_bundle(self, status="OK"):
+        # A complete synthetic measurement, not a status-only pseudo-receipt.
+        self.assertEqual(self.run_main(), 0)
+        rec = self.receipt()
+        rec.update(
+            status=status,
+            run_id="unique",
+            receipts_repo="test/receipts",
+            receipts_repo_type="model",
+            receipt_prefix="receipts/test/unique",
+        )
+        self.fixture.events.clear()
+        self.fixture.creates.clear()
+        self.fixture.downloads.clear()
+        self.fixture.uploads.clear()
         return self.bench.save_bundle(
-            {
-                "schema": self.bench.SCHEMA,
-                "status": status,
-                "heldout_quality_measured": False,
-            },
-            self.root / "bundle",
-            "test/receipts",
-            "model",
-            "receipts/test/unique",
+            rec, self.root / "bundle", "test/receipts", "model", "receipts/test/unique"
         )
 
     def test_actual_measurement_converts_millijoules_to_joules(self):
@@ -524,6 +530,117 @@ class BenchContract(unittest.TestCase):
             self.assertEqual(self.run_main(), 7)
         self.assertFalse(any(x[0] == "snapshot" for x in self.fixture.events))
         self.assertFalse(self.fixture.creates)
+
+    def rewrite_result(self, bundle, change):
+        import hashlib
+
+        path = bundle / "result.json"
+        result = json.loads(path.read_text())
+        change(result)
+        raw = json.dumps(result).encode()
+        path.write_bytes(raw)
+        manifest_path = bundle / "bundle.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["sha256"]["result.json"] = hashlib.sha256(raw).hexdigest()
+        manifest_path.write_text(json.dumps(manifest))
+
+    def assert_no_publication(self, bundle):
+        with self.assertRaises(ValueError):
+            self.bench.publish_bundle(bundle, self.fixture, self.fixture.download)
+        self.assertFalse(self.fixture.events)
+        self.assertFalse(self.fixture.creates)
+
+    def test_status_only_bundle_cannot_be_published(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, lambda r: r.pop("eval_base"))
+        self.assert_no_publication(bundle)
+
+    def test_manifest_cannot_retarget_preserved_receipt(self):
+        bundle = self.make_bundle()
+        path = bundle / "bundle.json"
+        manifest = json.loads(path.read_text())
+        manifest["repo_type"] = "dataset"
+        path.write_text(json.dumps(manifest))
+        self.assert_no_publication(bundle)
+
+    def test_manifest_cannot_move_attempt_prefix(self):
+        bundle = self.make_bundle()
+        path = bundle / "bundle.json"
+        manifest = json.loads(path.read_text())
+        manifest["prefix"] = "receipts/different/unique"
+        path.write_text(json.dumps(manifest))
+        self.assert_no_publication(bundle)
+
+    def test_rehashed_false_metric_is_not_qualified(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(
+            bundle, lambda r: r["eval_base"].update(predicted_tokens=999)
+        )
+        self.assert_no_publication(bundle)
+
+    def test_rehashed_energy_unit_error_is_rejected(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, lambda r: r["eval_base"].update(energy_j=2000.0))
+        self.assert_no_publication(bundle)
+
+    def test_rehashed_heldout_upgrade_is_rejected(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, lambda r: r.update(heldout_quality_measured=True))
+        self.assert_no_publication(bundle)
+
+    def test_rehashed_nonfinite_metric_is_rejected(self):
+        bundle = self.make_bundle()
+        self.rewrite_result(
+            bundle, lambda r: r["eval_base"].update(mean_loss=float("nan"))
+        )
+        self.assert_no_publication(bundle)
+
+    def test_duplicate_json_keys_are_rejected(self):
+        bundle = self.make_bundle()
+        path = bundle / "bundle.json"
+        raw = path.read_text()
+        path.write_text('{"repo_type":"dataset",' + raw[1:])
+        self.assert_no_publication(bundle)
+
+    def test_symlink_bundle_member_is_not_read_or_published(self):
+        bundle = self.make_bundle()
+        original = Path.is_symlink
+        with patch.object(
+            Path, "is_symlink", lambda p: p.name == "result.json" or original(p)
+        ):
+            self.assert_no_publication(bundle)
+
+    def test_existing_bundle_directory_cannot_be_partially_modified(self):
+        target = self.root / "preserved"
+        target.mkdir()
+        (target / "bench_eval.py").write_bytes(b"existing evidence")
+        with self.assertRaises(FileExistsError):
+            self.bench.save_bundle(
+                {"schema": self.bench.SCHEMA, "status": "ERROR"},
+                target,
+                "test/receipts",
+                "dataset",
+                "receipts/old",
+            )
+        self.assertEqual({p.name for p in target.iterdir()}, {"bench_eval.py"})
+
+    def test_saved_bundle_flushes_before_manifest_commit_marker(self):
+        events = []
+        original = self.bench.os.fsync
+
+        def flush(fd):
+            events.append("fsync")
+            return original(fd)
+
+        with patch.object(self.bench.os, "fsync", side_effect=flush):
+            self.make_bundle()
+        self.assertGreaterEqual(len(events), 3)
+
+    def test_bundle_input_read_is_bounded(self):
+        bundle = self.make_bundle()
+        path = bundle / "bundle.json"
+        path.write_text(path.read_text() + " " * (2 * 1024 * 1024))
+        self.assert_no_publication(bundle)
 
 
 if __name__ == "__main__":

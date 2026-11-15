@@ -173,6 +173,7 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
         "mean_loss": mean,
         "perplexity": perplexity,
         "perplexity_available": perplexity is not None,
+        "correct_tokens": correct,
         "token_accuracy": correct / predicted_tokens,
         "seconds": round(time.monotonic() - w0, 1),
         **energy_fields(e0, e1),
@@ -181,10 +182,232 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
     return res
 
 
+MAX_BUNDLE_FILE_BYTES = 2 * 1024 * 1024
+
+
+def _strict_json(raw):
+    def unique(pairs):
+        obj = {}
+        for key, value in pairs:
+            if key in obj:
+                raise ValueError("duplicate JSON key")
+            obj[key] = value
+        return obj
+
+    def reject_constant(_):
+        raise ValueError("non-finite JSON value")
+
+    value = json.loads(raw, object_pairs_hook=unique, parse_constant=reject_constant)
+    if not isinstance(value, dict):
+        raise ValueError("bundle JSON must be an object")
+    return value
+
+
+def _read_bundle_file(directory, name):
+    path = directory / name
+    if directory.is_symlink() or path.is_symlink() or not path.is_file():
+        raise ValueError("bundle members must be regular non-symlink files")
+    if path.resolve().parent != directory.resolve():
+        raise ValueError("bundle member escapes its directory")
+    if path.stat().st_size > MAX_BUNDLE_FILE_BYTES:
+        raise ValueError("bundle member exceeds byte bound")
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_BUNDLE_FILE_BYTES + 1)
+    if len(raw) > MAX_BUNDLE_FILE_BYTES:
+        raise ValueError("bundle member exceeds byte bound")
+    return raw
+
+
+def _finite(value, minimum=None, maximum=None):
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValueError("measurement must be a finite number")
+    if minimum is not None and value < minimum:
+        raise ValueError("measurement below bound")
+    if maximum is not None and value > maximum:
+        raise ValueError("measurement above bound")
+    return value
+
+
+def _integer(value, minimum=0):
+    if type(value) is not int or value < minimum:
+        raise ValueError("measurement count must be an integer within bounds")
+    return value
+
+
+def _same(actual, expected):
+    if not math.isclose(_finite(actual), expected, rel_tol=1e-12, abs_tol=1e-12):
+        raise ValueError("inconsistent derived measurement")
+
+
+def _safe_prefix(prefix):
+    if (
+        not isinstance(prefix, str)
+        or not prefix
+        or any(
+            part in ("", ".", "..") or re.fullmatch(r"[A-Za-z0-9_.-]+", part) is None
+            for part in prefix.split("/")
+        )
+    ):
+        raise ValueError("unsafe receipt prefix")
+    return prefix
+
+
+def validate_completed_result(result, manifest):
+    """Check semantics and destination binding, NOT origin authenticity or model quality.
+
+    Hash consistency is not a signature or an independent execution witness.
+    Consumers still need an admitted run/generation and trusted source binding.
+    """
+    if (
+        result.get("schema") != SCHEMA
+        or result.get("status") != "OK"
+        or result.get("kind") != "MEASURED"
+    ):
+        raise ValueError("only completed v2 measurements may be published")
+    if manifest.get("receipt_schema") != SCHEMA or manifest.get("status") != "OK":
+        raise ValueError("manifest/receipt status or schema mismatch")
+    repo = manifest.get("repo_id")
+    if (
+        not isinstance(repo, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo)
+        is None
+    ):
+        raise ValueError("invalid receipt repository identity")
+    for receipt_field, manifest_field in (
+        ("receipts_repo", "repo_id"),
+        ("receipts_repo_type", "repo_type"),
+        ("receipt_prefix", "prefix"),
+    ):
+        if result.get(receipt_field) != manifest.get(manifest_field):
+            raise ValueError("preserved receipt destination mismatch")
+    run_id = result.get("run_id")
+    if (
+        not isinstance(run_id, str)
+        or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id) is None
+    ):
+        raise ValueError("missing or invalid attempt identity")
+    if _safe_prefix(manifest["prefix"]).rsplit("/", 1)[-1] != run_id:
+        raise ValueError("attempt/prefix identity mismatch")
+    for field in (
+        "base_revision",
+        "adapter_repo_revision",
+        "dataset_revision",
+        "receipt_target_preflight_revision",
+    ):
+        if (
+            not isinstance(result.get(field), str)
+            or re.fullmatch(r"[0-9a-f]{40}", result[field]) is None
+        ):
+            raise ValueError("missing immutable input identity")
+    for field in ("base", "adapter_repo", "adapter_dir", "dataset", "method"):
+        if not isinstance(result.get(field), str) or not result[field]:
+            raise ValueError("missing measurement contract")
+    stamps = []
+    for field in ("started_utc", "completed_utc"):
+        value = result.get(field)
+        if not isinstance(value, str):
+            raise ValueError("missing measurement timestamp")
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError("measurement timestamp must include timezone")
+        stamps.append(parsed)
+    if stamps[1] < stamps[0]:
+        raise ValueError("completion precedes start; clock reconciliation required")
+    _finite(result.get("wall_seconds"), 0)
+    max_length = _integer(result.get("max_length"), 2)
+    _integer(result.get("seed"), 0)
+    if result.get("heldout_quality_measured") is not False:
+        raise ValueError("this harness cannot qualify heldout quality")
+    pins = result.get("pins", {})
+    for split in ("eval", "train"):
+        observed = pins.get(split + "_sha256")
+        expected = pins.get(split + "_sha256_expected")
+        if (
+            not isinstance(observed, str)
+            or re.fullmatch(r"[0-9a-f]{64}", observed) is None
+        ):
+            raise ValueError("missing split byte identity")
+        if expected is not None and expected != observed:
+            raise ValueError("split identity mismatch")
+    for field, row_field in (
+        ("eval_base", "eval"),
+        ("eval_adapter", "eval"),
+        ("train_ref_adapter", "train_ref"),
+    ):
+        metrics = result.get(field)
+        if not isinstance(metrics, dict):
+            raise ValueError("incomplete benchmark measurements")
+        rows = _integer(metrics.get("rows"), 1)
+        offered = _integer(metrics.get("rows_offered"), rows)
+        skipped = _integer(metrics.get("rows_skipped"))
+        predicted = _integer(metrics.get("predicted_tokens"), rows)
+        tokens = _integer(metrics.get("tokens"), 2 * rows)
+        correct = _integer(metrics.get("correct_tokens"))
+        if (
+            offered != rows + skipped
+            or tokens != predicted + rows
+            or tokens > rows * max_length
+            or correct > predicted
+            or result.get("rows", {}).get(row_field) != offered
+        ):
+            raise ValueError("inconsistent benchmark coverage")
+        loss = _finite(metrics.get("mean_loss"), 0)
+        _same(_finite(metrics.get("token_accuracy"), 0, 1), correct / predicted)
+        _finite(metrics.get("seconds"), 0)
+        try:
+            expected_ppl = math.exp(loss)
+        except OverflowError:
+            expected_ppl = None
+        if metrics.get("perplexity_available") is not (expected_ppl is not None):
+            raise ValueError("inconsistent perplexity availability")
+        if expected_ppl is None:
+            if metrics.get("perplexity") is not None:
+                raise ValueError("unavailable perplexity must remain null")
+        else:
+            _same(metrics.get("perplexity"), expected_ppl)
+        start, end = (
+            metrics.get("energy_counter_start"),
+            metrics.get("energy_counter_end"),
+        )
+        for counter in (start, end):
+            if counter is not None:
+                _integer(counter)
+        expected_energy = energy_fields(start, end)
+        for name in (
+            "energy_j",
+            "energy_label",
+            "energy_unit",
+            "energy_counter_unit",
+            "energy_scope",
+        ):
+            if metrics.get(name) != expected_energy[name]:
+                raise ValueError("inconsistent energy units, scope or measurement")
+    for field in ("rows", "rows_offered", "rows_skipped", "tokens", "predicted_tokens"):
+        if result["eval_base"][field] != result["eval_adapter"][field]:
+            raise ValueError("base/adapter comparison coverage mismatch")
+    base = result["eval_base"]["mean_loss"]
+    adapter = result["eval_adapter"]["mean_loss"]
+    train = result["train_ref_adapter"]["mean_loss"]
+    criterion, improvement = (
+        result.get("criterion_1", {}),
+        result.get("improvement_vs_base", {}),
+    )
+    _same(criterion.get("eval_loss"), adapter)
+    _same(criterion.get("train_ref_loss"), train)
+    if criterion.get("pass") is not (adapter <= train + 1.0):
+        raise ValueError("inconsistent criterion verdict")
+    for key, value in (
+        ("eval_loss_base", base),
+        ("eval_loss_adapter", adapter),
+        ("delta", base - adapter),
+    ):
+        _same(improvement.get(key), value)
+
+
 def save_bundle(rec, directory, repo, repo_type, prefix):
     """Preserve computed evidence before any upload; never overwrite prior artifacts."""
     directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
+    rec.update(receipts_repo=repo, receipts_repo_type=repo_type, receipt_prefix=prefix)
     source = Path(__file__).read_bytes()
     rec["harness_sha256"] = hashlib.sha256(source).hexdigest()
     result = (
@@ -202,11 +425,16 @@ def save_bundle(rec, directory, repo, repo_type, prefix):
             name: hashlib.sha256(raw).hexdigest() for name, raw in entries.items()
         },
     }
+    directory.mkdir(parents=True, exist_ok=False)
     for name, raw in entries.items():
         with (directory / name).open("xb") as f:
             f.write(raw)
+            f.flush()
+            os.fsync(f.fileno())
     with (directory / "bundle.json").open("x", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2, sort_keys=True)
+        json.dump(manifest, f, indent=2, sort_keys=True, allow_nan=False)
+        f.flush()
+        os.fsync(f.fileno())
     return directory
 
 
@@ -220,30 +448,23 @@ def publish_bundle(directory, api, download):
     from huggingface_hub import CommitOperationAdd
 
     directory = Path(directory)
-    manifest = json.loads((directory / "bundle.json").read_text(encoding="utf-8"))
+    manifest = _strict_json(_read_bundle_file(directory, "bundle.json"))
     if manifest.get("schema") != "szl.bench-local-bundle/v1":
         raise ValueError("unrecognized local bundle")
     if manifest.get("repo_type") not in ("model", "dataset", "space"):
         raise ValueError("invalid receipt repository type")
-    prefix = manifest["prefix"].strip("/")
-    if (
-        not prefix
-        or any(x in ("", ".", "..") for x in prefix.split("/"))
-        or "\\" in prefix
-    ):
-        raise ValueError("unsafe receipt prefix")
+    prefix = _safe_prefix(manifest["prefix"])
     expected_names = {"result.json", "bench_eval.py"}
     if set(manifest.get("sha256", {})) != expected_names:
         raise ValueError("incomplete bundle manifest")
     entries = {}
     for name in sorted(expected_names):
-        raw = (directory / name).read_bytes()
+        raw = _read_bundle_file(directory, name)
         if hashlib.sha256(raw).hexdigest() != manifest["sha256"][name]:
             raise ValueError("local bundle hash mismatch")
         entries[prefix + "/" + name] = raw
-    result = json.loads(entries[prefix + "/result.json"])
-    if result.get("schema") != SCHEMA or result.get("status") != "OK":
-        raise ValueError("only completed v2 measurements may be published")
+    result = _strict_json(entries[prefix + "/result.json"])
+    validate_completed_result(result, manifest)
     if result.get("harness_sha256") != manifest["sha256"]["bench_eval.py"]:
         raise ValueError("receipt/harness binding mismatch")
     repo, repo_type = manifest["repo_id"], manifest["repo_type"]
