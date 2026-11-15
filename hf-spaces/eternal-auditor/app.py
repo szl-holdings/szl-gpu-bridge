@@ -100,13 +100,21 @@ def save_state(st):
     STATE.with_suffix(".tmp").replace(STATE)
 
 def remember(st, receipt):
-    """Keep the last 24 FULL receipts in state — the proof gallery.
-    Full bodies are required so /api/verify can re-check each one;
-    displaying a signature without verifying it is a known v2 defect."""
-    hist = st.setdefault("history", [])
-    hist.append(receipt)
-    del hist[:-24]
-    save_state(st)
+    """Persist the last 24 complete receipt envelopes, then expose the snapshot.
+
+    Full bodies (kind, officer, predecessor included) are required so
+    /api/verify can re-check each one and the stored digest can be recomputed.
+    Never reconstruct missing fields in old rows. Detach nested values so
+    later caller mutations cannot alter retained proof; expose the new history
+    only after save_state() succeeds.
+    """
+    snapshot = json.loads(json.dumps(receipt, allow_nan=False))
+    history = st.get("history", [])
+    if not isinstance(history, list):
+        raise ValueError("auditor history must be a list")
+    pending = {**st, "history": (history + [snapshot])[-24:]}
+    save_state(pending)
+    st["history"] = pending["history"]
 
 
 def get(url, timeout=20):
