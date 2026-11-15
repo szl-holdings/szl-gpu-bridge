@@ -444,3 +444,7 @@ the report file):
 Apache-2.0. Adapted public patterns are attributed in `NOTICE`; copyleft subtrees are not vendored into this repository.
 
 Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
+
+## Commercial support
+
+szl-gpu-bridge is open source under Apache-2.0. Commercial licensing, dedicated support, and governed-AI estate integration are available through SZL Holdings - contact stephenlutar2@gmail.com. Sponsor development at https://github.com/sponsors/stephenlutar2-hash.
