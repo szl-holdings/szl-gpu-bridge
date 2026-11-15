@@ -1,0 +1,40 @@
+{
+ "date": "2026-11-15",
+ "spaces": [
+  {
+   "space": "SZLHOLDINGS/frontier-showcase",
+   "ok": true,
+   "files": 7
+  },
+  {
+   "space": "SZLHOLDINGS/szl-research-council",
+   "ok": true,
+   "files": 4
+  },
+  {
+   "space": "SZLHOLDINGS/szl-infra-warden",
+   "ok": true,
+   "files": 4
+  },
+  {
+   "space": "SZLHOLDINGS/szl-receipts-chain",
+   "ok": true,
+   "files": 5
+  },
+  {
+   "space": "SZLHOLDINGS/szl-energy-hologram",
+   "ok": true,
+   "files": 7
+  },
+  {
+   "space": "SZLHOLDINGS/khipu-playground",
+   "ok": true,
+   "files": 4
+  },
+  {
+   "space": "SZLHOLDINGS/truth-router",
+   "ok": true,
+   "files": 6
+  }
+ ]
+}

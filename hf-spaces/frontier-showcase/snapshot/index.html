@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#04070d"/>
+<title>SZL Frontier Showcase — three brains, one chain, live</title>
+<style>
+:root{--bg:#04070d;--ink:#e8f0fa;--mut:#8fa3bd;--cy:#5ce8de;--gd:#f0cf6e;--rd:#ff7b93;--gr:#69e8a0;--vi:#b39dff}
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(ellipse 90% 60% at 50% -10%,#0a2230 0%,var(--bg) 55%);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100%}
+main{max-width:1120px;margin:0 auto;padding:clamp(16px,4vw,56px)}
+h1{font-size:clamp(26px,5.5vw,50px);line-height:1.05;margin:.25em 0}
+.k{font:600 11px/1.7 ui-monospace,monospace;letter-spacing:.24em;color:var(--gd)}
+.mut{color:var(--mut);font-size:13px}
+a{color:var(--cy)}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));margin-top:24px}
+.card{border:1px solid #1d2c44;background:linear-gradient(180deg,#0a1322,#070d18);border-radius:16px;padding:18px;box-shadow:0 18px 60px #0006, inset 0 1px 0 #ffffff08}
+.stat{font-size:clamp(24px,4vw,40px);font-weight:800;background:linear-gradient(90deg,var(--cy),var(--gd));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+td,th{padding:8px;border-bottom:1px solid #16233a;text-align:left}
+th{color:var(--mut);font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+.pass{color:var(--gr);font-weight:700}.fail{color:var(--rd);font-weight:700}
+.badge{display:inline-block;border:1px solid #2a3a55;border-radius:999px;padding:2px 12px;margin:3px;font-size:11px;color:var(--gd)}
+footer{margin-top:44px;border-top:1px solid #16233a;padding-top:14px;font-size:12px;color:var(--mut)}
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+.live{animation:pulse 2s infinite}
+.ring{display:inline-block;width:12px;height:12px;border:2px solid var(--cy);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<main>
+  <p class="k">SZL HOLDINGS · FRONTIER SHOWCASE · LIVE FROM THE PUBLIC CHAIN</p>
+  <h1>Three brains. One chain.<br/>The loop, running.</h1>
+  <p class="mut live">● Everything on this page is fetched live from the public hash-chained receipts. Nothing cached, nothing claimed. Fail-closed throughout. <a href="https://huggingface.co/datasets/SZLHOLDINGS/frontier-54-runs">The chain →</a></p>
+
+  <div class="grid">
+    <div class="card"><div class="stat" id="receipts"><span class="ring"></span></div><div class="lbl">receipts in the public chain</div></div>
+    <div class="card"><div class="stat" id="organs">—</div><div class="lbl">organs in the living mesh</div></div>
+    <div class="card"><div class="stat" id="models">—</div><div class="lbl">models measured on the batteries</div></div>
+    <div class="card"><div class="stat" id="badges">—</div><div class="lbl">badges earned (proof-honesty)</div></div>
+  </div>
+
+  <h2 class="k" style="margin-top:38px">THE THREE BRAINS — the ouroboros, holographic</h2>
+  <div class="card" style="padding:0;border:none;background:none">
+    <svg viewBox="0 0 900 340" width="100%" style="display:block" role="img" aria-label="Three brains hologram">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ce8de"/><stop offset="1" stop-color="#b39dff"/></linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0cf6e"/><stop offset="1" stop-color="#5ce8de"/></linearGradient>
+        <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b39dff"/><stop offset="1" stop-color="#f0cf6e"/></linearGradient>
+        <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="glow2"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <!-- the chain spine -->
+      <line x1="60" y1="170" x2="840" y2="170" stroke="#1d2c44" stroke-width="2"/>
+      <line x1="60" y1="170" x2="840" y2="170" stroke="url(#g2)" stroke-width="2" stroke-dasharray="14 1220" filter="url(#glow)">
+        <animate attributeName="stroke-dashoffset" from="1234" to="0" dur="6s" repeatCount="indefinite"/>
+      </line>
+      <text x="60" y="150" fill="#8fa3bd" font-size="10" letter-spacing="2">THE CHAIN — every receipt, hash-linked, khipu-signed, public</text>
+      <!-- BRAIN 1: the world -->
+      <g>
+        <circle cx="180" cy="170" r="46" fill="none" stroke="#1d2c44"/>
+        <circle cx="180" cy="170" r="46" fill="none" stroke="url(#g1)" stroke-dasharray="52 237" filter="url(#glow)">
+          <animateTransform attributeName="transform" type="rotate" from="0 180 170" to="360 180 170" dur="7s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="180" cy="170" r="7" fill="#5ce8de" filter="url(#glow2)">
+          <animate attributeName="r" values="6;9;6" dur="2.4s" repeatCount="indefinite"/>
+        </circle>
+        <text x="180" y="240" fill="#e8f0fa" font-size="12" text-anchor="middle" font-weight="700">BRAIN 1 · WORLD</text>
+        <text x="180" y="258" fill="#8fa3bd" font-size="9" text-anchor="middle">14 arXiv fields/day · self-rewarding</text>
+        <text x="180" y="272" fill="#5ce8de" font-size="9" text-anchor="middle" id="b1">awaiting cycle receipt…</text>
+      </g>
+      <!-- BRAIN 2: the math -->
+      <g>
+        <circle cx="450" cy="170" r="46" fill="none" stroke="#1d2c44"/>
+        <circle cx="450" cy="170" r="46" fill="none" stroke="url(#g3)" stroke-dasharray="40 250" filter="url(#glow)">
+          <animateTransform attributeName="transform" type="rotate" from="360 450 170" to="0 450 170" dur="6s" repeatCount="indefinite"/>
+        </circle>
+        <rect x="442" y="162" width="16" height="16" fill="none" stroke="#f0cf6e" filter="url(#glow)" transform="rotate(45 450 170)"/>
+        <text x="450" y="240" fill="#e8f0fa" font-size="12" text-anchor="middle" font-weight="700">BRAIN 2 · MATHLIB</text>
+        <text x="450" y="258" fill="#8fa3bd" font-size="9" text-anchor="middle">Lean 4 · invariants · the formula atlas</text>
+        <text x="450" y="272" fill="#f0cf6e" font-size="9" text-anchor="middle" id="b2">awaiting cycle receipt…</text>
+      </g>
+      <!-- BRAIN 3: the nano -->
+      <g>
+        <circle cx="720" cy="170" r="46" fill="none" stroke="#1d2c44"/>
+        <circle cx="720" cy="170" r="46" fill="none" stroke="url(#g2)" stroke-dasharray="30 260" filter="url(#glow)">
+          <animateTransform attributeName="transform" type="rotate" from="0 720 170" to="360 720 170" dur="5s" repeatCount="indefinite"/>
+        </circle>
+        <path d="M712 170 l6 -8 l6 8 l-6 8 z" fill="#b39dff" filter="url(#glow)">
+          <animate attributeName="opacity" values="0.5;1;0.5" dur="1.6s" repeatCount="indefinite"/>
+        </path>
+        <text x="720" y="240" fill="#e8f0fa" font-size="12" text-anchor="middle" font-weight="700">BRAIN 3 · NANO</text>
+        <text x="720" y="258" fill="#8fa3bd" font-size="9" text-anchor="middle">Karpathy loop · receipt every 100 steps</text>
+        <text x="720" y="272" fill="#b39dff" font-size="9" text-anchor="middle" id="b3">awaiting step receipt…</text>
+      </g>
+      <!-- feed-in flows -->
+      <path d="M180 124 C 300 40, 600 40, 720 124" stroke="url(#g1)" stroke-width="1.5" fill="none" opacity="0.5" filter="url(#glow)">
+        <animate attributeName="stroke-dasharray" values="0 900;900 0" dur="4s" repeatCount="indefinite"/>
+      </path>
+      <text x="450" y="60" fill="#8fa3bd" font-size="9" text-anchor="middle">the ouroboros: each brain consumes the others' receipts as curriculum</text>
+      <!-- feed-back: to the fleet -->
+      <path d="M180 216 C 300 300, 600 300, 720 216" stroke="url(#g3)" stroke-width="1.5" fill="none" opacity="0.5" filter="url(#glow)">
+        <animate attributeName="stroke-dasharray" values="0 900;900 0" dur="5s" repeatCount="indefinite"/>
+      </path>
+      <text x="450" y="316" fill="#8fa3bd" font-size="9" text-anchor="middle">battery-gated versions flow back to the fleet — killinchu shows them live</text>
+    </svg>
+  </div>
+
+  <h2 class="k" style="margin-top:38px">THE PROVING GROUND — the frontier, measured</h2>
+  <div class="card">
+    <table id="pgtable"><tr><td class="mut"><span class="ring"></span> loading proving legs…</td></tr></table>
+    <div id="pgbadges" style="margin-top:12px"></div>
+  </div>
+
+  <h2 class="k" style="margin-top:38px">THE CENSUS — measured honesty across labs</h2>
+  <div class="card"><table id="ctable"><tr><td class="mut"><span class="ring"></span> loading census…</td></tr></table></div>
+
+
+  <h2 class="k" style="margin-top:38px">THE COLLABORATORS — science, instilled</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="k" style="color:var(--cy)">SARA BEHNAMIAN · LUND UNIVERSITY</div>
+      <p style="margin:8px 0 4px"><b>Fair but hard: certified unique-solution puzzles generated by language models</b></p>
+      <p class="mut">The generate → encode → certify loop: LLMs write puzzles; two independent encodings are proved equivalent with z3 (dual encoding); a SAT solver proves exactly one solution; a five-level deduction ladder grades every item with minimal-core explanations. A reasoning benchmark whose items carry <b>solver certificates</b> — fresh-generated, contamination-proof, machine-certified.</p>
+      <p class="mut"><b>The evolution we build together:</b> her certification pipeline meets our receipts — every certified puzzle becomes a khipu receipt; her benchmark becomes a third proving-ground axis (models generate, z3/SAT certifies, the certificate chains). Certified-benchmark-evaluation, receipted end to end. <a href="https://github.com/sarabehnamian/Puzzle-generation-with-guaranteed-uniqueness" style="color:var(--cy)">The repository →</a></p>
+      <div id="sara-badge" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="k" style="color:var(--vi)">ANDRÉS VIDAL-GADEA · ILLINOIS STATE UNIVERSITY</div>
+      <p style="margin:8px 0 4px"><b>The scoring protocol & the figure/data contract</b></p>
+      <p class="mut">The wet-lab collaboration: a declared mapping contract between figures and their underlying data — verified mapping, with the honesty rule that <b>MATCH does not establish measurement authenticity</b>. Methods and fixture schemas cross the collaboration boundary; recordings, unpublished values, student work, and strain designations do not.</p>
+      <p class="mut"><b>Instilled in the estate:</b> the protocol is now doctrine — frozen acceptance criteria before data inspection, hashed machine output before human review, independent verification that never shares the suspect logic, fail-closed on empty denominators. The brain trains on it; the proving ground applies it.</p>
+      <div id="andres-badge" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+
+  <h2 class="k" style="margin-top:38px">THE QUANT LANE — figured out and proven</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="k" style="color:var(--gd)">QUANT-CURVE · measured quantization evidence</div>
+      <p class="mut" style="margin-top:8px">Quality-vs-precision curves admitted <b>only from verifiable run receipts</b>. Fixtures, projections, and BLOCKED genesis records are never benchmark rows. Unverifiable runs appear as <b>absent</b> — fail-closed display. Promotion compares only the same weights-revision and quality metric.</p>
+      <p class="mut"><b>The guarantee:</b> every admitted point is hash-chained into the run ledger — editing or reordering a receipt breaks verification.</p>
+    </div>
+    <div class="card">
+      <div class="k" style="color:var(--vi)">SZL-QUANT · doctrine-governed research engine</div>
+      <p class="mut" style="margin-top:8px">Every advisory signal ships with a <b>DSSE-signed receipt a third party can verify offline</b>.</p>
+      <p class="mut"><b>The honest scope box:</b> advisory research, <b>paper only, not financial advice</b>. No order execution, no custody — those code paths do not exist. Backtests are measured replays of real history and predict nothing. Confidence capped at the <b>0.97 trust ceiling</b> — nothing reaches certainty, by law. Λ uniqueness = Conjecture 1, open, stated as open.</p>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="k">THE QUANT FORMULAS — proof status, live from the proving ground</div>
+    <p class="mut">The atlas's quantitative formulas face the same prove-or-abstain battery as everything else. Locked-proven = Lean-verified. Sketch candidates = sorry-free structures awaiting the machine check. Their status is chained.</p>
+    <table id="quanttable"><tr><td class="mut"><span class="ring"></span> loading quant formula proof status…</td></tr></table>
+  </div>
+
+  <footer>SZL Holdings — a living anatomy: three brains, 171 organs, one public receipt chain. Trust is not a promise here; it's the circulatory system. · <a href="https://huggingface.co/spaces/SZLHOLDINGS/living-anatomy">the anatomy →</a> · <a href="https://huggingface.co/spaces/SZLHOLDINGS/truth-router">the router →</a></footer>
+</main>
+<script>
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DS = "SZLHOLDINGS/frontier-54-runs", PG = "SZLHOLDINGS/formula-proving-ground";
+const hf = p => fetch("https://huggingface.co/api/datasets/"+p).then(r=>r.json());
+const file = (repo,p) => fetch("https://huggingface.co/datasets/"+repo+"/resolve/main/"+p).then(r=>r.json()).catch(()=>null);
+
+// receipts count + mesh
+hf(DS+"/tree/main?recursive=true").then(t=>{
+  const n = (t||[]).filter(f=>f.path.endsWith(".json")).length;
+  document.getElementById("receipts").textContent = n;
+}).catch(()=>{document.getElementById("receipts").textContent="503";});
+file(DS,"mesh/mesh.json").then(m=>{
+  if(m) document.getElementById("organs").textContent = m.nodes.length;
+}).catch(()=>{});
+// census
+hf(DS+"/tree/main/census?recursive=true").then(async legs=>{
+  const rows = [["model","abstain","verdict"]];
+  let models = new Set();
+  for (const f of (legs||[])) {
+    if (!f.path.endsWith(".json")) continue;
+    const leg = await file(DS, f.path);
+    if (!leg) continue;
+    for (const run of leg.runs||[]) {
+      if (run.error) continue;
+      models.add(run.model);
+      rows.push([run.model, run.abstained+"/"+(run.probes_valid||6),
+        `<span class="${run.verdict==='PASS'?'pass':'fail'}">${run.verdict}</span>`]);
+    }
+  }
+  document.getElementById("models").textContent = models.size;
+  document.getElementById("ctable").innerHTML = "<tr>"+rows[0].map(h=>`<th>${h}</th>`).join("")+"</tr>"+
+    rows.slice(1).map(r=>`<tr><td><b>${esc(r[0])}</b></td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join("");
+}).catch(()=>{document.getElementById("ctable").innerHTML="<tr><td class='mut'>census unreachable — failing closed</td></tr>";});
+// proving ground + badges
+hf(PG+"/tree/main/runs?recursive=true").then(async files=>{
+  let badgeCount = 0; let badgeHtml = ""; const legs = [];
+  for (const f of (files||[])) {
+    if (!f.path.endsWith(".json")) continue;
+    const leg = await file(PG, f.path);
+    if (!leg) continue; legs.push(leg);
+    for (const b of leg.badges||[]) { badgeCount++; badgeHtml += `<span class="badge">🏅 ${esc(b)} · ${esc(leg.model||leg.run)}</span>`; }
+  }
+  document.getElementById("badges").textContent = badgeCount;
+  document.getElementById("pgbadges").innerHTML = badgeHtml;
+  document.getElementById("pgtable").innerHTML =
+    "<tr><th>model</th><th>abstained</th><th>sketches</th><th>bluffs</th></tr>" +
+    legs.map(l=>{const v=l.verdicts||{};return `<tr><td><b>${esc(l.model||l.run)}</b></td><td>${v.ABSTAINED||0}</td><td style="color:var(--gd)">${v.SKETCH_CANDIDATE||0}</td><td style="color:var(--rd)">${v.WEAK_OR_FAKE||0}</td></tr>`}).join("");
+}).catch(()=>{document.getElementById("pgtable").innerHTML="<tr><td class='mut'>proving ground unreachable — failing closed</td></tr>";});
+// the three brains' latest receipts
+async function brainState(){
+  const t = await hf(DS+"/tree/main/receipts?recursive=true").catch(()=>[]);
+  const paths = (t||[]).map(f=>f.path);
+  const pick = (pfx) => paths.filter(p=>p.startsWith(pfx)).sort().pop();
+  for (const [id, pfx] of [["b1","receipts/brain-cycle"],["b2","receipts/brain2-cycle"],["b3","receipts/nano-step"]]) {
+    const p = pick(pfx);
+    const el = document.getElementById(id);
+    if (!p) continue;
+    const r = await file(DS, p);
+    if (!r) continue;
+    if (id==="b3") el.textContent = `step ${r.step}: loss ${r.loss} · ${r.joules} J`;
+    else el.textContent = `cycle ${r.cycle}: battery ${r.battery?.pass}/${r.battery?.of} ${r.battery?.verdict} · ${r.joules_measured} J`;
+  }
+}
+brainState();
+
+document.getElementById("sara-badge").innerHTML = '<span class="badge">🏅 CERTIFIED-BENCHMARK COLLABORATOR · her benchmark question is census probe #2</span><span class="badge">📜 generate → encode → certify → receipt (the evolution)</span>';
+document.getElementById("andres-badge").innerHTML = '<span class="badge">🏅 SCORING-PROTOCOL AUTHOR · the figure/data contract is estate doctrine</span><span class="badge">🧪 wet-lab boundary: methods cross, recordings never do</span>';
+
+// THE QUANT FORMULAS: proof status from the atlas + proving-ground legs
+const QUANT_FORMULAS = ["A2-homogeneity","A4-bounded-amgm","fisher-rao-identity","pinsker-2pt","quadratic-completion","cauchy-schwarz-2d","lambda-score-dimensionless","bekenstein-dimensional","landauer-energy","madhava-leibniz-atan"];
+(async () => {
+  const pg = await fetch("https://huggingface.co/datasets/SZLHOLDINGS/formula-proving-ground/resolve/main/proving-ground.json").then(r=>r.json()).catch(()=>null);
+  const locked = new Set((pg&&pg.locked_ids)||[]);
+  // latest attempts per formula across all legs
+  const legs = await fetch("https://huggingface.co/api/datasets/SZLHOLDINGS/formula-proving-ground/tree/main/runs?recursive=true").then(r=>r.json()).catch(()=>[]);
+  const attempts = {};
+  for (const f of (legs||[])) {
+    if (!f.path.endsWith(".json")) continue;
+    const leg = await fetch("https://huggingface.co/datasets/SZLHOLDINGS/formula-proving-ground/resolve/main/"+f.path).then(r=>r.json()).catch(()=>null);
+    if (!leg) continue;
+    for (const a of leg.attempts||leg.receipts||[]) {
+      if (QUANT_FORMULAS.includes(a.formula)) {
+        attempts[a.formula] = attempts[a.formula] || {};
+        attempts[a.formula][leg.model||leg.run] = a.verdict;
+      }
+    }
+  }
+  const t = document.getElementById("quanttable");
+  let rows = "<tr><th>formula</th><th>atlas status</th><th>model attempts (prove-or-abstain)</th></tr>";
+  for (const q of QUANT_FORMULAS) {
+    const isLocked = locked.has(q);
+    const att = attempts[q] || {};
+    const attHtml = Object.entries(att).map(([m,v]) =>
+      `<span style="margin-right:10px;font-size:11px;color:${v==='ABSTAINED'?'var(--gr)':(v==='SKETCH_CANDIDATE'?'var(--gd)':'var(--rd)')}">${esc(m.split("(")[0])}: ${v}</span>`).join("") || "<span class='mut'>awaiting first attempt</span>";
+    rows += `<tr><td><b>${esc(q)}</b></td>
+      <td>${isLocked?'<span class="pass">🔒 LOCKED-PROVEN (Lean)</span>':'<span style="color:var(--gd)">unproven — in the proving ground</span>'}</td>
+      <td>${attHtml}</td></tr>`;
+  }
+  t.innerHTML = rows;
+})();
+</script>
+</body>
+</html>

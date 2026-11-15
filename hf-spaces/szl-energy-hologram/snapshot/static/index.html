@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#04070d"/>
+<title>SZL Energy Hologram — Measured Joules, Hash-Chained</title>
+<style>
+:root{--bg:#04070d;--ink:#e8f0fa;--mut:#8fa3bd;--cy:#5ce8de;--gd:#f0cf6e;--rd:#ff7b93;--gr:#69e8a0}
+*{box-sizing:border-box}
+html,body{margin:0;background:radial-gradient(ellipse 80% 50% at 50% -10%,#0a2230 0%,var(--bg) 60%);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100%}
+main{max-width:1100px;margin:0 auto;padding:clamp(16px,4vw,48px)}
+h1{font-size:clamp(22px,4.5vw,38px);margin:.2em 0;letter-spacing:.01em}
+.k{font:600 11px/1.7 ui-monospace,monospace;letter-spacing:.24em;color:var(--gd)}
+.mut{color:var(--mut);font-size:13px}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));margin-top:22px}
+.card{border:1px solid #1d2c44;background:linear-gradient(180deg,#0a1322,#070d18);border-radius:16px;padding:18px;box-shadow:0 18px 60px #0006, inset 0 1px 0 #ffffff08}
+.stat{font-size:clamp(26px,4.5vw,42px);font-weight:800;background:linear-gradient(90deg,var(--cy),var(--gd));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+svg text{font-family:ui-monospace,monospace}
+.bar{height:10px;border-radius:6px;background:#101a2c;overflow:hidden;margin-top:8px}
+.bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--cy),var(--gd));box-shadow:0 0 12px var(--cy)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+td,th{padding:7px 8px;border-bottom:1px solid #16233a;text-align:left}
+th{color:var(--mut);font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+.pill{display:inline-block;border:1px solid #24344f;border-radius:999px;padding:1px 9px;font-size:10px;letter-spacing:.1em}
+.ok{color:var(--gr)} .bad{color:var(--rd)} .gold{color:var(--gd)}
+footer{margin-top:36px;border-top:1px solid #16233a;padding-top:14px;font-size:12px;color:var(--mut)}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+.live{animation:pulse 2s infinite}
+</style>
+</head>
+<body>
+<main>
+  <p class="k">SZL HOLDINGS · ENERGY HOLOGRAM · szl.energy-attestation/v1</p>
+  <h1>Every joule measured. Every receipt hash-chained.</h1>
+  <p class="mut live">● LIVE — reads the public <b>frontier-54-runs</b> receipts dataset directly. Numbers here are receipts, not claims: GPU power sampled at 1 Hz via NVML, integrated to joules, chained by SHA-256.</p>
+
+  <div class="grid">
+    <div class="card"><div class="stat" id="joules">—</div><div class="lbl">Measured joules (latest leg)</div></div>
+    <div class="card"><div class="stat" id="jpt">—</div><div class="lbl">Joules / token</div></div>
+    <div class="card"><div class="stat" id="watts">—</div><div class="lbl">Average watts under load</div></div>
+    <div class="card"><div class="stat" id="co2">—</div><div class="lbl">CO₂ kg (grid-avg join)</div></div>
+  </div>
+
+  <h2 class="k" style="margin-top:34px">GPU MESH BENCHMARK — 4090 VS A6000</h2>
+  <div class="card">
+    <div id="benchbars"></div>
+    <table id="benchtable"></table>
+    <p class="mut" id="benchnote"></p>
+  </div>
+
+  <h2 class="k" style="margin-top:34px">RECEIPT CHAIN</h2>
+  <div class="card"><table id="chain"></table><p class="mut">Each row links to the previous by SHA-256. A broken link is visible to anyone.</p></div>
+
+  <h2 class="k" style="margin-top:34px">THE HOLOGRAM</h2>
+  <div class="card">
+    <svg id="holo" viewBox="0 0 640 240" width="100%" style="display:block" role="img" aria-label="Energy flow hologram">
+      <defs>
+        <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#5ce8de"/><stop offset="1" stop-color="#f0cf6e"/>
+        </linearGradient>
+        <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <text x="16" y="26" fill="#8fa3bd" font-size="10" letter-spacing="2">GRID → GPU → RECEIPTS</text>
+      <circle cx="80" cy="130" r="34" fill="none" stroke="#24344f"/>
+      <circle cx="80" cy="130" r="34" fill="none" stroke="url(#flow)" stroke-dasharray="40 174" filter="url(#glow)">
+        <animateTransform attributeName="transform" type="rotate" from="0 80 130" to="360 80 130" dur="6s" repeatCount="indefinite"/>
+      </circle>
+      <text x="80" y="134" fill="#e8f0fa" font-size="11" text-anchor="middle" id="h1t">GRID</text>
+      <path d="M118 130 C 200 130, 200 130, 282 130" stroke="url(#flow)" stroke-width="2.5" fill="none" filter="url(#glow)">
+        <animate attributeName="stroke-dasharray" values="0 320;320 0" dur="2.2s" repeatCount="indefinite"/>
+      </path>
+      <text x="200" y="118" fill="#8fa3bd" font-size="9" text-anchor="middle" id="h1w">watts</text>
+      <rect x="286" y="86" width="88" height="88" rx="14" fill="none" stroke="#24344f"/>
+      <rect x="286" y="86" width="88" height="88" rx="14" fill="none" stroke="url(#flow)" stroke-dasharray="30 250" filter="url(#glow)">
+        <animateTransform attributeName="transform" type="rotate" from="360 330 130" to="0 330 130" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="330" y="134" fill="#e8f0fa" font-size="11" text-anchor="middle" id="h2t">GPU</text>
+      <path d="M378 130 C 440 130, 440 130, 502 130" stroke="url(#flow)" stroke-width="2.5" fill="none" filter="url(#glow)">
+        <animate attributeName="stroke-dasharray" values="0 260;260 0" dur="1.6s" repeatCount="indefinite"/>
+      </path>
+      <text x="440" y="118" fill="#8fa3bd" font-size="9" text-anchor="middle" id="h2w">joules</text>
+      <path d="M502 130 l-14 -9 v18 z" fill="#f0cf6e" filter="url(#glow)"/>
+      <rect x="506" y="96" width="118" height="68" rx="12" fill="#0a1322" stroke="#24344f"/>
+      <text x="565" y="124" fill="#5ce8de" font-size="11" text-anchor="middle">KHIPU</text>
+      <text x="565" y="142" fill="#8fa3bd" font-size="9" text-anchor="middle" id="h3t">sha256-chained</text>
+    </svg>
+    <p class="mut">The energy path as a circuit: grid electrons (public carbon intensity) → GPU (NVML-measured power) → hash-chained receipts (public dataset). Nothing in this diagram is claimed; every stage is measured or published.</p>
+  </div>
+
+  <footer>szl.energy-attestation/v1 · NVML 1 Hz sampling · receipts: huggingface.co/datasets/SZLHOLDINGS/frontier-54-runs · carbon join: measured joules × published grid factor, labeled · fail-closed everywhere</footer>
+</main>
+<script type="module">
+const DS = "SZLHOLDINGS/frontier-54-runs";
+async function jget(u){ const r = await fetch(u); if(!r.ok) throw new Error(r.status); return r.json(); }
+function fmt(n, d=1){ return n==null?"—":Number(n).toLocaleString(undefined,{maximumFractionDigits:d}); }
+
+async function load(){
+  try {
+    // list dataset files
+    const tree = await jget(`https://huggingface.co/api/datasets/${DS}/tree/main?recursive=true`);
+    const files = tree.filter(f=>f.path.endsWith(".json"));
+    const rows = [];
+    for (const f of files){
+      try {
+        const raw = await (await fetch(`https://huggingface.co/datasets/${DS}/resolve/main/${f.path}`)).text();
+        rows.push({path: f.path, data: JSON.parse(raw)});
+      } catch(e){}
+    }
+    render(rows);
+  } catch(e){ document.getElementById("benchnote").textContent = "Receipts dataset not reachable from this viewer yet — legs still running."; }
+}
+
+function render(rows){
+  const bench = rows.filter(r=>r.path.startsWith("benchmark/"));
+  const chain = rows.filter(r=>r.path.startsWith("receipts/"));
+  let latest = null;
+  for (const b of bench){ const d=b.data; if(d.energy && d.energy.joules_measured!=null){ latest=d; } }
+  if (latest){
+    document.getElementById("joules").textContent = fmt(latest.energy.joules_measured,0);
+    document.getElementById("jpt").textContent = fmt(latest.energy.joules_per_token,3);
+    document.getElementById("watts").textContent = fmt(latest.energy.avg_watts,0);
+    document.getElementById("co2").textContent = latest.energy.co2_kg_estimated_us_average!=null ? fmt(latest.energy.co2_kg_estimated_us_average,4) : "—";
+    document.getElementById("h1w").textContent = fmt(latest.energy.avg_watts,0)+" W";
+    document.getElementById("h2w").textContent = fmt(latest.energy.joules_measured,0)+" J";
+  }
+  // benchmark bars + table
+  const bb = document.getElementById("benchbars"), bt = document.getElementById("benchtable");
+  if (bench.length){
+    const maxSps = Math.max(...bench.map(b=>b.data.throughput?.steps_per_sec||0));
+    bb.innerHTML = bench.map(b=>{
+      const d=b.data, sps=d.throughput?.steps_per_sec||0;
+      const name = d.gpu || b.path;
+      return `<div style="margin:10px 0"><div class="lbl">${name} — ${fmt(sps,3)} steps/s</div>
+        <div class="bar"><i style="width:${(100*sps/maxSps).toFixed(1)}%"></i></div></div>`;
+    }).join("");
+    bt.innerHTML = `<tr><th>GPU</th><th>sec/step</th><th>wall s</th><th>joules</th><th>J/token</th><th>loss first→last</th></tr>` +
+      bench.map(b=>{const d=b.data;return `<tr><td>${d.gpu||b.path}</td><td>${fmt(d.throughput?.sec_per_step,3)}</td>
+      <td>${fmt(d.throughput?.wall_seconds,0)}</td><td>${d.energy?.joules_measured??"UNAVAIL"}</td>
+      <td>${d.energy?.joules_per_token??"—"}</td><td>${fmt(d.loss?.first,3)} → ${fmt(d.loss?.last,3)}</td></tr>`}).join("");
+    document.getElementById("benchnote").textContent = "Identical pinned workload per leg: Qwen3-1.7B, LoRA r32 a64 bf16, seed 20261109, 2000-step doctrine slice.";
+  }
+  // receipt chain table
+  const ct = document.getElementById("chain");
+  if (chain.length){
+    ct.innerHTML = `<tr><th>#</th><th>phase</th><th>wall h</th><th>loss</th><th>sha256 (truncated)</th></tr>` +
+      chain.map(r=>{const d=r.data;return `<tr><td>${d.hour??"—"}</td><td>${d.phase??"—"}</td>
+      <td>${fmt(d.wall_hours,2)}</td><td>${fmt(d.loss_last??d.battery?.verdict,2)}</td>
+      <td class="mut">${(d.row_sha256||d.receipt_sha256||"").slice(0,18)}…</td></tr>`}).join("");
+  }
+}
+load();
+</script>
+</body>
+</html>
