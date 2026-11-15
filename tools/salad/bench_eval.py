@@ -105,7 +105,7 @@ def main():
         try:
             api.upload_file(path_or_fileobj=json.dumps(rec, indent=1).encode(),
                             path_in_repo=a.receipt_dir + "/result.json",
-                            repo_id=a.receipts_repo, repo_type="dataset")
+                            repo_id=a.receipts_repo, repo_type="model")
         except Exception as e:
             print("RECEIPT UPLOAD FAILED TOO:", repr(e), file=sys.stderr)
         print("FAIL-CLOSED:", msg, file=sys.stderr)
@@ -221,11 +221,11 @@ def main():
 
     api.upload_file(path_or_fileobj=json.dumps(rec, indent=1).encode(),
                     path_in_repo=a.receipt_dir + "/result.json",
-                    repo_id=a.receipts_repo, repo_type="dataset")
+                    repo_id=a.receipts_repo, repo_type="model")
     with open(__file__, "rb") as f:
         api.upload_file(path_or_fileobj=f.read(),
                         path_in_repo=a.receipt_dir + "/bench_eval.py",
-                        repo_id=a.receipts_repo, repo_type="dataset")
+                        repo_id=a.receipts_repo, repo_type="model")
     print("BENCH_OK " + json.dumps(rec["criterion_1"]), flush=True)
     return 0
 
