@@ -12,7 +12,7 @@ import hashlib, hmac, json, os, time, threading, urllib.request
 from pathlib import Path
 
 try:
-    from fastapi import FastAPI, Request
+    from fastapi import FastAPI
     from fastapi.staticfiles import StaticFiles
     _HAS_FASTAPI = True
 except ImportError:  # stdlib-only envs (CI contract tests): logic without server
@@ -41,25 +41,6 @@ def sha256_hex(s): return hashlib.sha256(s.encode()).hexdigest()
 
 def sign(body_sha, secret):
     return hmac.new(secret.encode(), body_sha.encode(), hashlib.sha256).hexdigest()
-
-
-def verify_receipt(receipt, secret):
-    """Fail-closed verification of a full receipt: canonical body re-hash,
-    full-length constant-time signature compare, kind check. Bare bool —
-    no partial credit (Law 8)."""
-    if not isinstance(receipt, dict):
-        return False
-    body = {k: v for k, v in receipt.items()
-            if k not in ("body_sha256", "signature", "signature_length")}
-    if body.get("kind") != "szl.auditor-receipt/v2":
-        return False
-    expected = sha256_hex(canonical(body))
-    sig = receipt.get("signature")
-    if not isinstance(sig, str) or len(sig) != 64:
-        return False
-    if receipt.get("body_sha256") != expected:
-        return False
-    return hmac.compare_digest(sign(expected, secret), sig)
 
 
 
@@ -100,11 +81,11 @@ def save_state(st):
     STATE.with_suffix(".tmp").replace(STATE)
 
 def remember(st, receipt):
-    """Keep the last 24 FULL receipts in state — the proof gallery.
-    Full bodies are required so /api/verify can re-check each one;
-    displaying a signature without verifying it is a known v2 defect."""
+    """Keep the last 24 receipts in state — the proof gallery."""
     hist = st.setdefault("history", [])
-    hist.append(receipt)
+    slim = {k: receipt.get(k) for k in
+            ("cycle", "ts", "body_sha256", "signature", "chain_state", "findings")}
+    hist.append(slim)
     del hist[:-24]
     save_state(st)
 
@@ -135,7 +116,7 @@ def audit_cycle():
         full = get("https://huggingface.co/api/spaces/" + s["id"])
         if full and (full.get("runtime") or {}).get("stage") == "RUNNING":
             running += 1
-    findings.append({"check": "spaces_running_sample", "sampled": min(len(spaces), 40) if spaces else 0,
+    findings.append({"check": "spaces_running_sample", "sampled": min(len(spaces, 40), len(spaces)) if spaces else 0,
                      "running": running,
                      "verdict": "MEASURED" if spaces else "UNAVAILABLE"})
     return findings
@@ -202,15 +183,6 @@ if _HAS_FASTAPI:
     @app.get("/api/history")
     def history():
         return {"service": ROLE, "receipts": list(reversed(state.get("history", [])))}
-
-    @app.post("/api/verify")
-    async def verify(request: "Request"):
-        try:
-            payload = await request.json()
-        except Exception:
-            return {"verified": False}
-        receipt = payload.get("receipt") if isinstance(payload, dict) else None
-        return {"verified": verify_receipt(receipt, SECRET)}
 
     _INDEX = os.path.join(_STATIC, "index.html")
     if not os.path.exists(_INDEX):

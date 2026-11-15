@@ -28,6 +28,3 @@ a provenance gap that made review impossible. This directory closes it.
 required, covering: dead-meter honesty (UNAVAILABLE, never zero), both NVML
 bindings, power-integral fallback, gardener append-only preservation, and
 auditor chain persistence across restarts.
-- szl-chief-engineer - 3D officer console + CI sweep + honesty bus + compute plane (v3 2026-11-14)
-- szl-cyber-shield - 3D officer console + estate surface probes + paywall integrity + secret-pattern scan (v3 2026-11-14)
-
