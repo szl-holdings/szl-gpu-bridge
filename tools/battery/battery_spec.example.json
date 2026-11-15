@@ -1,0 +1,17 @@
+{
+  "receipts_repo": "SZLHOLDINGS/frontier-54-runs",
+  "candidates": [
+    {
+      "repo": "SZLHOLDINGS/abstention-doctrine-r1-candidate",
+      "subfolder": "final",
+      "curriculum": "SZLHOLDINGS/abstention-doctrine-sft-v1",
+      "receipt_path": "benchmark/mass-battery-abstention_doctrine_r1_trained.json"
+    },
+    {
+      "repo": "SZLHOLDINGS/doctrine-corpus-r1-candidate",
+      "subfolder": "final",
+      "curriculum": "SZLHOLDINGS/doctrine-corpus-v2",
+      "receipt_path": "benchmark/mass-battery-doctrine_corpus_r1_trained.json"
+    }
+  ]
+}
