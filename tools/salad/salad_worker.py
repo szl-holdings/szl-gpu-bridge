@@ -34,6 +34,13 @@ global_step >= max_steps it emits an already-complete receipt (with the
 final adapter verified present), exits 0 without training, and never
 fabricates completion metrics.
 
+v3.2 adds a zeus-ml energy window - the ML.ENERGY-class measurement that
+sits alongside the v3 NVML cumulative counter. A ZeusMonitor window opens
+at boot and closes in the complete / already-complete receipts as its own
+receipt field (zeus_window). Same doctrine: if zeus-ml cannot import or the
+window cannot open/close, the field says UNAVAILABLE - joules are never
+fabricated, and the v3 NVML fields are left untouched.
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -214,6 +221,69 @@ def energy_delta(start: dict, end: dict) -> dict:
             "note": "energy counters unavailable at start or end; joules NOT fabricated"}
 
 
+_ZEUS_STATE = {"monitor": None, "window": False, "tried": False}
+
+
+def _ensure_zeus():
+    """Best-effort zeus-ml import (mirrors the pynvml fallback); None is honest."""
+    try:
+        from zeus.monitor import ZeusMonitor  # type: ignore
+        return ZeusMonitor
+    except Exception:
+        if not _ZEUS_STATE["tried"]:
+            _ZEUS_STATE["tried"] = True
+            try:
+                import subprocess as _sp
+                _sp.run([sys.executable, "-m", "pip", "install", "-q", "zeus-ml"],
+                        timeout=240, check=False)
+                from zeus.monitor import ZeusMonitor  # type: ignore
+                return ZeusMonitor
+            except Exception:
+                return None
+        return None
+
+
+def zeus_begin_window() -> dict:
+    """v3.2: open a ZeusMonitor window around training; UNAVAILABLE is honest."""
+    try:
+        ZeusMonitor = _ensure_zeus()
+        if ZeusMonitor is None:
+            return {"label": "UNAVAILABLE", "joules": None,
+                    "note": "zeus-ml unavailable; joules NOT fabricated"}
+        mon = ZeusMonitor(gpu_indices=[0])
+        mon.begin_window("szl_train")
+        _ZEUS_STATE["monitor"] = mon
+        _ZEUS_STATE["window"] = True
+        return {"label": "MEASURED", "window": "szl_train",
+                "method": "zeus-ml ZeusMonitor window (begin at boot)"}
+    except Exception as e:
+        _ZEUS_STATE["monitor"] = None
+        _ZEUS_STATE["window"] = False
+        return {"label": "UNAVAILABLE", "joules": None,
+                "note": f"zeus window could not open ({type(e).__name__}); joules NOT fabricated"}
+
+
+def zeus_end_window() -> dict:
+    """v3.2: close the window and report window joules; UNAVAILABLE is honest."""
+    mon = _ZEUS_STATE.get("monitor")
+    if mon is None or not _ZEUS_STATE.get("window"):
+        return {"label": "UNAVAILABLE", "joules": None,
+                "note": "no zeus window open; joules NOT fabricated"}
+    try:
+        m = mon.end_window("szl_train")
+        _ZEUS_STATE["window"] = False
+        j = getattr(m, "total_energy", None)
+        if isinstance(j, (int, float)) and j >= 0:
+            return {"label": "MEASURED", "joules": round(float(j), 1),
+                    "method": "zeus-ml ZeusMonitor window total_energy"}
+        return {"label": "UNAVAILABLE", "joules": None,
+                "note": "zeus window closed but total_energy unusable; NOT fabricated"}
+    except Exception as e:
+        _ZEUS_STATE["window"] = False
+        return {"label": "UNAVAILABLE", "joules": None,
+                "note": f"zeus window close failed ({type(e).__name__}); joules NOT fabricated"}
+
+
 def load_train_split(a, api: HfApi):
     """F2/F3: config-aware, split-safe train loading with train-only fallback."""
     kwargs = {"split": "train"}
@@ -281,13 +351,15 @@ def main() -> int:
         return 3
     resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
     energy_start = sample_energy_j()  # v3: cumulative counter at boot
+    zeus_start = zeus_begin_window()  # v3.2: ML.ENERGY-class window at boot
     receipt("boot", f"worker started — base={a.base} dataset={a.dataset}"
             + (f" config={a.dataset_config}" if a.dataset_config else ""),
             {"resume_from": resume or "GENESIS",
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.1-20261115",
-             "energy_start": energy_start})
+             "worker_version": "v3.2-20261115",
+             "energy_start": energy_start,
+             "zeus_window": zeus_start})
 
     cuda_arch_precheck()  # F4
 
@@ -312,6 +384,7 @@ def main() -> int:
                     + ("" if final_present else "; FINAL ADAPTER MISSING — investigate"),
                     {"resume_global_step": rgs, "max_steps": a.max_steps,
                      "final_adapter_present": final_present,
+                     "zeus_window": zeus_end_window(),
                      "energy_start": energy_start, "energy_end": energy_end,
                      "energy_j": energy_delta(energy_start, energy_end)})
             print(f"ALREADY-COMPLETE: global_step {rgs} >= max_steps {a.max_steps}; "
@@ -413,6 +486,7 @@ def main() -> int:
             {"steps": a.max_steps, "adapter": a.adapter_out,
              "energy_start": energy_start,
              "energy_end": energy_end,
+             "zeus_window": zeus_end_window(),
              "energy_j": energy_delta(energy_start, energy_end)})
     return 0
 
