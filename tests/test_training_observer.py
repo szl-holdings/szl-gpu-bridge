@@ -104,6 +104,10 @@ class ObserverTests(unittest.TestCase):
     def test_provider_running_never_proves_trainer_liveness(self):
         def opened(request, timeout):
             self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(
+                request.get_header("User-agent"), "szl-training-observer/1.0"
+            )
+            self.assertEqual(request.get_header("Accept"), "application/json")
             self.assertEqual(timeout, 12)
             return Response(b'{"instances":[{"state":"running","ready":true}]}')
 
@@ -113,6 +117,27 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(result["ready_count"], 1)
         self.assertFalse(result["trainer_process_liveness_verified"])
         self.assertNotIn("not-a-real-token", json.dumps(result))
+
+    def test_provider_body_budget_enforced(self):
+        result = observer.provider_observation(
+            "szl-example",
+            "not-a-real-token",
+            opener=lambda *a, **k: Response(b" " * 1_000_001),
+        )
+        self.assertEqual(result["state"], "UNAVAILABLE")
+        self.assertEqual(result["reason"], "PROVIDER_RESPONSE_BYTE_BUDGET")
+
+    def test_redirect_cannot_forward_provider_credentials(self):
+        handler = observer.NoRedirect()
+        request = observer.urllib.request.Request(
+            "https://api.salad.com/example",
+            headers={"Salad-Api-Key": "not-a-real-token"},
+        )
+        self.assertIsNone(
+            handler.redirect_request(
+                request, None, 302, "Found", {}, "https://example.invalid/elsewhere"
+            )
+        )
 
     def test_no_token_makes_no_request(self):
         result = observer.provider_observation(

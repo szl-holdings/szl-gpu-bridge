@@ -45,14 +45,21 @@ def provider_observation(group, token, *, opener=provider_open):
         return {**unavailable, "reason": "PROVIDER_OBSERVATION_NOT_CONFIGURED"}
     request = urllib.request.Request(
         SALAD_BASE + group + "/instances",
-        headers={"Salad-Api-Key": token},
+        headers={
+            "Salad-Api-Key": token,
+            "User-Agent": "szl-training-observer/1.0",
+            "Accept": "application/json",
+        },
         method="GET",
     )
     try:
         with opener(request, timeout=12) as response:
             if response.status != 200:
                 return {**unavailable, "reason": "PROVIDER_HTTP_ERROR"}
-            data = strict_object(response.read(1_000_001))
+            raw = response.read(1_000_001)
+            if len(raw) > 1_000_000:
+                return {**unavailable, "reason": "PROVIDER_RESPONSE_BYTE_BUDGET"}
+            data = strict_object(raw)
         items = data.get("instances")
         if not isinstance(items, list) or any(
             not isinstance(i, dict) or not isinstance(i.get("state"), str)
