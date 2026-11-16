@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.1, 2026-11-15).
+"""salad_worker.py — the resumable burst-training worker (v3.7, 2026-11-16).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -81,9 +81,19 @@ checkpoint with a missing/unobservable final adapter returns failure, not succes
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
+
+v3.7 requires receipt publication and byte readback at the returned Hub commit.
+The channel is explicit (the existing dataset, or an explicitly selected PRIVATE
+model repo); credentials are never widened and there is no destination fallback.
+Boot admission precedes model loading, heartbeat loss requests a checkpoint and
+stops training, and a missing final receipt returns exit 8 without claiming success.
+Local pending bytes are recovery evidence, not proof of publication.
 """
 from __future__ import annotations
 import argparse, datetime, hashlib, json, os, signal, sys, time
+from pathlib import Path
+import re
+import uuid
 
 os.environ.setdefault("HF_HOME", os.environ.get("HF_HOME", os.path.expanduser("~/hf-cache")))
 
@@ -96,41 +106,172 @@ from huggingface_hub import HfApi
 
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
 STOP = {"flag": False}
+RECEIPTS = None
 # Trainer resume state is pickle-based (torch.save / pickle). It may live in the PRIVATE
 # working repo for resume, but must never be part of a published adapter.
 PICKLE_PATTERNS = ["*.pt", "*.pth", "*.bin", "*.pkl", "*.pickle", "*.ckpt",
                    "optimizer.*", "scheduler.*", "rng_state*", "training_args.bin"]
 
 
-def receipt(kind: str, detail: str, extra: dict | None = None):
+class ReceiptError(RuntimeError):
+    """The current receipt cannot be proven published; never implies completion."""
+
+
+class ArtifactError(RuntimeError):
+    """A final adapter upload failed; provider exception bodies stay private."""
+
+
+def hub_revision(commit) -> str:
+    revision = getattr(commit, "oid", None)
+    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ReceiptError("Hub did not return an immutable commit revision")
+    return revision
+
+
+def transport_label(error: Exception) -> str:
+    # SDK exception strings can contain request headers or signed URLs.
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    return f"HTTP {status}" if type(status) is int else type(error).__name__
+
+
+def receipt_retry(operation, stage):
+    for attempt in range(3):
+        try:
+            return operation()
+        except ReceiptError:
+            raise
+        except Exception as error:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            # Permission/not-found/invalid-input failures require reconciliation,
+            # not retries with another repository or stronger credentials.
+            permanent = type(status) is int and 400 <= status < 500 and status not in (408, 429)
+            if permanent or attempt == 2:
+                raise ReceiptError(f"{stage} failed ({transport_label(error)})") from None
+            time.sleep(5 * (attempt + 1))
+
+
+class ReceiptChannel:
+    """Publish current-run evidence only; no replay or historical receipt invention."""
+
+    def __init__(self, api, token, repo_id, repo_type, outbox, adapter):
+        if not token:
+            raise ReceiptError("a receipt-channel token is required")
+        if not isinstance(repo_id, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo_id
+        ) is None:
+            raise ReceiptError("receipt repository must be an explicit owner/name")
+        if repo_type not in ("dataset", "model"):
+            raise ReceiptError("receipt repository type must be dataset or model")
+        self.api, self.token = api, token
+        self.repo_id, self.repo_type = repo_id, repo_type
+        self.run_id = uuid.uuid4().hex
+        self.adapter = adapter
+        self.outbox = Path(outbox) / self.run_id
+        self.verify_outbox()
+
+    def verify_outbox(self):
+        artifact_root = Path(os.path.expanduser("~/ckpt")).resolve()
+        if self.outbox.resolve().is_relative_to(artifact_root):
+            raise ReceiptError("receipt outbox must be outside the artifact directory tree")
+
+    def verify_channel(self):
+        if self.repo_type == "model":
+            try:
+                verify_private(self.api, self.repo_id, repo_type="model")
+            except VisibilityError:
+                raise ReceiptError("model receipt channel is not verified private") from None
+
+    def publish(self, value):
+        from huggingface_hub import hf_hub_download
+
+        raw = (json.dumps(value, indent=2, allow_nan=False) + "\n").encode()
+        digest = value["receipt_sha256"]
+        path = f"mesh/salad-{digest}.json"
+        self.verify_outbox()
+        # Retain the exact attempted bytes, even if the server accepts a write but
+        # its response is lost. A pending file is never a durable-publication claim.
+        try:
+            self.outbox.mkdir(parents=True, exist_ok=True)
+            pending = self.outbox / f"{digest}.pending.json"
+            with pending.open("xb") as stream:
+                stream.write(raw)
+        except FileExistsError:
+            if pending.read_bytes() != raw:
+                raise ReceiptError("local receipt candidate conflicts") from None
+        except OSError:
+            raise ReceiptError("cannot retain local receipt candidate") from None
+        self.verify_channel()
+        commit = receipt_retry(lambda: self.api.upload_file(
+            path_or_fileobj=raw, path_in_repo=path,
+            repo_id=self.repo_id, repo_type=self.repo_type,
+            commit_message=f"Record Salad {value['event']} {digest[:12]}",
+        ), "receipt upload")
+        revision = hub_revision(commit)
+
+        def readback():
+            local = hf_hub_download(
+                repo_id=self.repo_id, repo_type=self.repo_type, filename=path,
+                revision=revision, token=self.token, force_download=True,
+            )
+            with open(local, "rb") as stream:
+                observed = stream.read(len(raw) + 1)
+            if observed != raw:
+                raise ReceiptError("receipt byte readback does not match the attempted bytes")
+
+        # Read the exact returned commit, never the moving default branch or an
+        # unverified cached copy. A failed readback must not re-upload the receipt.
+        receipt_retry(readback, "receipt readback")
+        self.verify_channel()
+        publication = {
+            "kind": "szl.salad-receipt-publication/v1",
+            "receipt_event": value["event"], "receipt_sha256": digest,
+            "run_id": self.run_id, "repo_id": self.repo_id,
+            "repo_type": self.repo_type, "path": path, "revision": revision,
+            "file_sha256": hashlib.sha256(raw).hexdigest(),
+            "publication_verified": True,
+            "scope": "RECEIPT_BYTES_AT_COMMIT_NOT_MODEL_QUALITY_OR_FRESHNESS",
+        }
+        try:
+            acknowledgement = self.outbox / f"{digest}.publication.json"
+            temporary = acknowledgement.with_suffix(".tmp")
+            temporary.write_text(json.dumps(publication, indent=2) + "\n", encoding="utf-8")
+            os.replace(temporary, acknowledgement)
+        except OSError:
+            raise ReceiptError("cannot retain receipt publication acknowledgement") from None
+        return publication
+
+
+def build_receipt(kind: str, detail: str, extra: dict | None = None):
     # Extra measurements cannot replace the receipt envelope or inject an old hash.
     r = {**(extra or {}), "kind": "szl.salad-worker/v1", "event": kind,
          "detail": detail, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()}
     r.pop("receipt_sha256", None)
-    blob = json.dumps(r, sort_keys=True)
+    blob = json.dumps(r, sort_keys=True, allow_nan=False)
     r["receipt_sha256"] = hashlib.sha256(blob.encode()).hexdigest()
-    print(json.dumps(r), flush=True)
-    tok = os.environ.get("HF_TOKEN", "")
-    if tok:
-        for attempt in range(3):  # v3.4: a transient Hub 429 must not drop a proof receipt
-            try:
-                HfApi(token=tok).upload_file(
-                    path_or_fileobj=json.dumps(r, indent=2).encode(),
-                    path_in_repo=f"mesh/salad-{r['receipt_sha256'][:12]}.json",
-                    repo_id=DS_RECEIPTS, repo_type="dataset")
-                break
-            except Exception as e:
-                if attempt == 2:
-                    print(f"receipt upload failed after retries (training continues): {str(e)[:80]}", flush=True)
-                else:
-                    time.sleep(60)
     return r
+
+
+def receipt(kind: str, detail: str, extra: dict | None = None):
+    if RECEIPTS is None:
+        raise ReceiptError("receipt channel has not been configured")
+    value = build_receipt(kind, detail, {
+        **(extra or {}), "run_id": RECEIPTS.run_id, "adapter": RECEIPTS.adapter,
+        "receipt_destination": {"repo_id": RECEIPTS.repo_id, "repo_type": RECEIPTS.repo_type},
+    })
+    publication = RECEIPTS.publish(value)
+    # Successful event output follows verified publication. On failure only the
+    # local pending file exists; stdout cannot masquerade as a durable receipt.
+    print(json.dumps(publication), flush=True)
+    print(json.dumps(value), flush=True)
+    return value
 
 
 def on_term(signum, frame):
     if not STOP["flag"]:
         STOP["flag"] = True
-        receipt("preempted", "SIGTERM received — checkpointing at next save boundary")
+        # Signal handlers cannot safely perform blocking Hub I/O. The Trainer
+        # callback requests a save and emits terminal evidence in normal control.
+        print("PREEMPTED: checkpoint requested at next Trainer step boundary", flush=True)
 signal.signal(signal.SIGTERM, on_term)
 signal.signal(signal.SIGINT, on_term)
 
@@ -156,7 +297,10 @@ def verify_private(api, repo_id: str, repo_type: str = "model") -> None:
 
 
 def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model") -> None:
-    api.create_repo(repo_id, exist_ok=True, private=True, token=token, repo_type=repo_type)
+    try:
+        api.create_repo(repo_id, exist_ok=True, private=True, token=token, repo_type=repo_type)
+    except Exception as error:
+        raise VisibilityError(f"cannot prepare private repository ({transport_label(error)})") from None
     verify_private(api, repo_id, repo_type)
 
 
@@ -171,7 +315,7 @@ def latest_checkpoint(api: HfApi, repo: str) -> str | None:
     try:
         files = api.list_repo_files(repo_id=repo, repo_type="model")
     except Exception as e:
-        raise ResumeError(f"cannot list checkpoints of {repo}: {type(e).__name__}: {str(e)[:120]}") from None
+        raise ResumeError(f"cannot list checkpoints of {repo}: {transport_label(e)}") from None
     stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
                    if f.startswith("checkpoint-") and "/" in f
                    and f.split("/")[0].split("-")[-1].isdigit())
@@ -206,7 +350,7 @@ def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | Non
                 break
             except Exception as e:
                 if attempt == 2:
-                    raise ResumeError(f"download of {ck} failed after 3 attempts: {str(e)[:120]}") from None
+                    raise ResumeError(f"download of {ck} failed after 3 attempts: {transport_label(e)}") from None
                 time.sleep(60)
     gs = resume_global_step(local)
     if gs is None:
@@ -383,7 +527,7 @@ def load_train_split(a, api: HfApi):
         raise
     except Exception as e:
         # F3: split-schema mismatch — retry train-only from the Hub's train.jsonl
-        receipt("warn", f"dataset generation failed ({str(e)[:100]}); retrying train-only load")
+        receipt("warn", f"dataset generation failed ({transport_label(e)}); retrying train-only load")
         train_file = a.dataset_train_file or "train.jsonl"
         try:
             return load_dataset("json", data_files={"train": train_file},
@@ -435,10 +579,19 @@ def main() -> int:
     ap.add_argument("--dataset-train-file", default="",
                     help="F3: explicit train data file for split-schema-broken datasets")
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
+    ap.add_argument("--receipts-repo", default=os.environ.get("SZL_RECEIPTS_REPO", DS_RECEIPTS),
+                    help="existing authorized receipt repository; no automatic fallback")
+    ap.add_argument("--receipts-repo-type", choices=("dataset", "model"),
+                    default=os.environ.get("SZL_RECEIPTS_REPO_TYPE", "dataset"),
+                    help="model channels must be verified private before and after publication")
+    ap.add_argument("--receipt-outbox", default="~/salad-receipt-outbox",
+                    help="local pending receipt bytes and verified publication acknowledgements")
+    ap.add_argument("--heartbeat-seconds", type=int, default=300,
+                    help="publish at the first Trainer step boundary after this interval")
     ap.add_argument("--publish-final-to", default="",
                     help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
     a = ap.parse_args()
-    if min(a.max_steps, a.save_steps, a.max_examples, a.min_examples) < 1:
+    if min(a.max_steps, a.save_steps, a.max_examples, a.min_examples, a.heartbeat_seconds) < 1:
         ap.error("step, save, example and minimum-example bounds must be positive")
     if a.max_examples < a.min_examples:
         ap.error("max-examples cannot be smaller than min-examples")
@@ -447,6 +600,25 @@ def main() -> int:
         return 2
 
     api = HfApi(token=a.hf_token)
+    global RECEIPTS
+    try:
+        RECEIPTS = ReceiptChannel(
+            api, a.hf_token, a.receipts_repo, a.receipts_repo_type,
+            os.path.expanduser(a.receipt_outbox), a.adapter_out,
+        )
+        return run_training(a, api)
+    except ReceiptError as error:
+        print(f"FAIL-CLOSED: {error}; receipt publication unverified", file=sys.stderr, flush=True)
+        return 8
+    except ArtifactError as error:
+        print(f"FAIL-CLOSED: {error}; artifact publication unverified", file=sys.stderr, flush=True)
+        return 9
+    finally:
+        if _ZEUS_STATE.get("window"):
+            zeus_end_window()
+
+
+def run_training(a, api) -> int:
     # The working repo holds resumable (pickle-bearing) checkpoints, so it is created PRIVATE.
     # create_repo(exist_ok=True) leaves an EXISTING public repo public, so verify explicitly.
     try:
@@ -471,7 +643,8 @@ def main() -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.6-20261115",
+             "worker_version": "v3.7-20261116",
+             "target_steps": a.max_steps,
              "energy_start": energy_start,
              "zeus_window": zeus_start})
 
@@ -560,6 +733,37 @@ def main() -> int:
 
     from transformers import TrainerCallback
     class ReceiptCallback(TrainerCallback):
+        def __init__(self):
+            self.last_heartbeat = time.monotonic()
+
+        def publish_or_stop(self, event, detail, control, extra=None, request_save=False):
+            try:
+                receipt(event, detail, extra)
+                return True
+            except ReceiptError as error:
+                STOP["flag"] = True
+                STOP["receipts"] = True
+                control.should_training_stop = True
+                if request_save:
+                    control.should_save = True
+                print(f"FAIL-CLOSED: {error}; checkpoint requested before exit",
+                      file=sys.stderr, flush=True)
+                return False
+
+        def on_step_end(self, args, state, control, **kw):
+            if STOP["flag"]:
+                control.should_training_stop = True
+                control.should_save = True
+                return
+            now = time.monotonic()
+            if now - self.last_heartbeat >= a.heartbeat_seconds:
+                observed = state.global_step
+                actual = observed if type(observed) is int and observed >= 0 else None
+                self.publish_or_stop("heartbeat", "Trainer step boundary observed", control,
+                    {"actual_steps": actual, "target_steps": a.max_steps,
+                     "scope": "TRAINER_LIVENESS_NOT_CHECKPOINT_DURABILITY"}, request_save=True)
+                self.last_heartbeat = now
+
         def on_save(self, args, state, control, **kw):
             # push the checkpoint to durable storage immediately
             ck = f"checkpoint-{state.global_step}"
@@ -569,17 +773,31 @@ def main() -> int:
                     # re-check every time: visibility can change while training runs
                     verify_private(api, a.adapter_out)
                 except VisibilityError as e:
-                    receipt("checkpoint-blocked", f"upload refused: {str(e)[:120]}")
                     STOP["flag"] = True
                     STOP["visibility"] = True
                     control.should_training_stop = True
+                    self.publish_or_stop("checkpoint-blocked", f"upload refused: {e}", control)
                     return
                 try:
-                    api.upload_folder(folder_path=path, path_in_repo=ck,
+                    commit = api.upload_folder(folder_path=path, path_in_repo=ck,
                         repo_id=a.adapter_out, repo_type="model")
-                    receipt("checkpoint", f"checkpoint {ck} pushed to durable storage")
+                    revision = hub_revision(commit)
                 except Exception as e:
-                    receipt("checkpoint-fail", f"push failed: {str(e)[:80]}")
+                    STOP["flag"] = True
+                    STOP["checkpoint"] = True
+                    control.should_training_stop = True
+                    self.publish_or_stop("checkpoint-fail",
+                        f"checkpoint publication unverified ({transport_label(e)})", control)
+                else:
+                    self.publish_or_stop("checkpoint", f"checkpoint {ck} commit acknowledged", control,
+                        {"actual_steps": state.global_step, "checkpoint": ck,
+                         "checkpoint_revision": revision,
+                         "checkpoint_durability": "HUB_COMMIT_ACKNOWLEDGED_NOT_FULL_BYTE_READBACK"})
+            else:
+                STOP["flag"] = True
+                STOP["checkpoint"] = True
+                control.should_training_stop = True
+                self.publish_or_stop("checkpoint-fail", "local checkpoint directory missing", control)
             if STOP["flag"]:
                 control.should_training_stop = True
     trainer.add_callback(ReceiptCallback())
@@ -588,7 +806,7 @@ def main() -> int:
     trainer.train(resume_from_checkpoint=resume) if resume else trainer.train()
     observed_steps = getattr(getattr(trainer, "state", None), "global_step", None)
     actual_steps = observed_steps if type(observed_steps) is int and observed_steps >= 0 else None
-    if actual_steps != a.max_steps:
+    if actual_steps != a.max_steps or STOP.get("receipts") or STOP.get("checkpoint"):
         # Stop signals, early exits, invalid state and overshoot are not completion.
         # Do not overwrite final/ with a partial adapter. Checkpoint preservation
         # remains the callback's responsibility; this branch cannot prove durability.
@@ -597,13 +815,15 @@ def main() -> int:
                 "training did not reach the exact admitted target; final publication withheld",
                 {"actual_steps": actual_steps, "target_steps": a.max_steps,
                  "completion_qualified": False, "final_publication_attempted": False,
+                 "receipt_channel_failed": bool(STOP.get("receipts")),
+                 "checkpoint_publication_failed": bool(STOP.get("checkpoint")),
                  "checkpoint_durability": "UNVERIFIED_BY_TERMINAL_GUARD",
                  "energy_start": energy_start, "energy_end": energy_end,
                  "zeus_window": zeus_end_window(),
                  "energy_j": energy_delta(energy_start, energy_end)})
         print("FAIL-CLOSED: incomplete or unqualified trainer state; final adapter not published",
               file=sys.stderr, flush=True)
-        return 7
+        return 8 if STOP.get("receipts") else 7
     final = os.path.expanduser("~/ckpt/final")
     trainer.save_model(final)
     if STOP.get("visibility"):
@@ -615,22 +835,36 @@ def main() -> int:
     except VisibilityError as e:
         print(f"FAIL-CLOSED: {e}; final adapter kept local only", file=sys.stderr)
         return 3
-    api.upload_folder(folder_path=final, path_in_repo="final",
-        repo_id=a.adapter_out, repo_type="model", ignore_patterns=PICKLE_PATTERNS)
+    try:
+        final_commit = api.upload_folder(folder_path=final, path_in_repo="final",
+            repo_id=a.adapter_out, repo_type="model", ignore_patterns=PICKLE_PATTERNS)
+    except Exception as error:
+        raise ArtifactError(f"final adapter upload failed ({transport_label(error)})") from None
+    final_revision = hub_revision(final_commit)
+    published_revision = None
     if a.publish_final_to:
         try:
             ensure_private_repo(api, a.publish_final_to, a.hf_token)
         except VisibilityError as e:
             print(f"FAIL-CLOSED: {e}; final adapter not published", file=sys.stderr)
             return 3
-        api.upload_folder(folder_path=final, repo_id=a.publish_final_to, repo_type="model",
-                          ignore_patterns=PICKLE_PATTERNS)  # visibility change stays a human decision
+        try:
+            published_commit = api.upload_folder(folder_path=final, repo_id=a.publish_final_to, repo_type="model",
+                              ignore_patterns=PICKLE_PATTERNS)  # visibility change stays a human decision
+        except Exception as error:
+            raise ArtifactError(f"optional adapter upload failed ({transport_label(error)})") from None
+        published_revision = hub_revision(published_commit)
     energy_end = sample_energy_j()  # v3: cumulative counter at completion
     receipt("complete", f"training complete in {round(time.time()-t0,1)}s",
             {"steps": actual_steps, "actual_steps": actual_steps,
              "target_steps": a.max_steps, "completion_qualified": True,
              "completion_scope": "EXACT_TRAINER_STEP_TARGET_NOT_MODEL_QUALITY",
              "adapter": a.adapter_out,
+             "final_artifact": {"repo_id": a.adapter_out, "repo_type": "model",
+                                "revision": final_revision, "directory": "final",
+                                "verification": "HUB_COMMIT_ACKNOWLEDGED_NOT_FULL_BYTE_READBACK"},
+             "published_adapter": ({"repo_id": a.publish_final_to, "revision": published_revision}
+                                   if a.publish_final_to else None),
              "energy_start": energy_start,
              "energy_end": energy_end,
              "zeus_window": zeus_end_window(),
