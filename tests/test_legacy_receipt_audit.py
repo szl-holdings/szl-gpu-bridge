@@ -180,5 +180,117 @@ class LegacyAuditTests(unittest.TestCase):
             self.assertEqual((root / "audit.json").read_text(), "keep original")
 
 
+def proving_fixture():
+    return {
+        "schema": "szl.proving-ground/v1",
+        "status": "OK",
+        "kind": "MEASURED",
+        "energy_label": "MEASURED",
+        "energy_j": 179593466,
+        "unproven_tested": 2,
+        "counts_declared": {"total": 2, "locked": 0, "unproven": 2},
+        "verdicts": {"ABSTAINED": 0, "SKETCH_CANDIDATE": 1, "WEAK_OR_FAKE": 1},
+        "receipts": [
+            {"verdict": "SKETCH_CANDIDATE"},
+            {"verdict": "WEAK_OR_FAKE"},
+        ],
+    }
+
+
+def run_proving_audit(data):
+    with patch.dict(M.PROFILES, {FAKE_SHA: "provingground-v1"}):
+        return M.audit(json.dumps(data).encode(), FAKE_SOURCE)
+
+
+class ProvingGroundAuditTests(unittest.TestCase):
+    def test_raw_nvml_millijoules_are_derived_joules_not_new_measurement(self):
+        result = run_proving_audit(proving_fixture())
+        correction = result["unit_corrections"]["provingground_window"]
+        self.assertEqual(correction["legacy_value"], 179593466)
+        self.assertEqual(correction["derived_energy_j"], 179593.466)
+        self.assertEqual(correction["actual_counter_unit"], "mJ")
+        self.assertEqual(
+            correction["classification"], "UNIT_CORRECTION_NOT_NEW_MEASUREMENT"
+        )
+        self.assertFalse(result["gpu_rerun_performed"])
+        self.assertFalse(result["promotion_authorized"])
+
+    def test_all_sketch_candidates_still_establish_no_kernel_proof(self):
+        data = proving_fixture()
+        data["receipts"] = [{"verdict": "SKETCH_CANDIDATE"}] * 2
+        data["verdicts"].update(SKETCH_CANDIDATE=2, WEAK_OR_FAKE=0)
+        result = run_proving_audit(data)
+        self.assertFalse(result["kernel_verification_performed"])
+        self.assertFalse(result["receipt_chain_verification_performed"])
+        self.assertEqual(result["quality_qualification"], "NOT_ESTABLISHED")
+        self.assertTrue(any("NO_KERNEL_VERIFICATION" in x for x in result["findings"]))
+
+    def test_declared_unproven_coverage_mismatch_is_not_hidden(self):
+        data = proving_fixture()
+        data["counts_declared"] = {"total": 2, "locked": 1, "unproven": 1}
+        result = run_proving_audit(data)
+        self.assertFalse(result["probe_count_matches_declared_unproven"])
+        self.assertTrue(any("PROBE_COUNT_MISMATCH" in x for x in result["findings"]))
+
+    def test_inconsistent_row_count_is_rejected(self):
+        data = proving_fixture()
+        data["unproven_tested"] = 1
+        with self.assertRaises(ValueError):
+            run_proving_audit(data)
+
+    def test_inconsistent_verdict_counts_are_rejected(self):
+        data = proving_fixture()
+        data["verdicts"].update(SKETCH_CANDIDATE=2, WEAK_OR_FAKE=0)
+        with self.assertRaises(ValueError):
+            run_proving_audit(data)
+
+    def test_unknown_verdict_cannot_be_promoted_to_proof(self):
+        data = proving_fixture()
+        data["receipts"][0]["verdict"] = "KERNEL_VERIFIED"
+        with self.assertRaises(ValueError):
+            run_proving_audit(data)
+
+    def test_boolean_counts_are_not_observations(self):
+        for field in ("unproven_tested", "energy_j"):
+            data = proving_fixture()
+            data[field] = True
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                run_proving_audit(data)
+        data = proving_fixture()
+        data["verdicts"]["SKETCH_CANDIDATE"] = True
+        with self.assertRaises(ValueError):
+            run_proving_audit(data)
+
+    def test_empty_probe_set_never_qualifies(self):
+        data = proving_fixture()
+        data.update(unproven_tested=0, receipts=[])
+        data["verdicts"] = dict.fromkeys(data["verdicts"], 0)
+        result = run_proving_audit(data)
+        self.assertTrue(any("EMPTY_PROBE_SET" in x for x in result["findings"]))
+        self.assertEqual(result["quality_qualification"], "NOT_ESTABLISHED")
+
+    def test_changed_archived_source_gets_no_unit_correction(self):
+        with patch.dict(M.PROFILES, {FAKE_SHA: "provingground-v1"}):
+            result = M.audit(json.dumps(proving_fixture()).encode(), FAKE_SOURCE + b"x")
+        self.assertEqual(result["status"], "UNAVAILABLE")
+        self.assertNotIn("unit_corrections", result)
+
+    def test_unmeasured_legacy_energy_is_not_relabelled(self):
+        data = proving_fixture()
+        data["energy_label"] = "NOT_MEASURED"
+        with self.assertRaises(ValueError):
+            run_proving_audit(data)
+
+    def test_original_receipt_bytes_are_preserved_and_hash_bound(self):
+        raw = json.dumps(proving_fixture()).encode()
+        before = hashlib.sha256(raw).hexdigest()
+        with patch.dict(M.PROFILES, {FAKE_SHA: "provingground-v1"}):
+            result = M.audit(raw, FAKE_SOURCE)
+        self.assertEqual(result["receipt_sha256"], before)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), before)
+        self.assertTrue(result["original_receipt_unchanged"])
+        self.assertFalse(result["source_match_is_execution_attestation"])
+
+
 if __name__ == "__main__":
     unittest.main()
