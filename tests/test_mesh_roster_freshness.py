@@ -7,9 +7,8 @@ from pathlib import Path
 import tempfile
 import time
 import types
-import unittest
 import urllib.error
-from unittest import mock
+from unittest import TestCase, main, mock
 
 SOURCE = Path(__file__).resolve().parents[1] / "tools/mesh/mesh_daemon.py"
 T0 = 1794860000
@@ -23,7 +22,7 @@ def stamp(epoch):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch))
 
 
-class RosterFreshnessTests(unittest.TestCase):
+class RosterFreshnessTests(TestCase):
     def run_roster(self, frames, step=60, initial_offset=0.0):
         spec = importlib.util.spec_from_file_location("mesh_freshness_subject", SOURCE)
         mesh = importlib.util.module_from_spec(spec)
@@ -148,4 +147,4 @@ class RosterFreshnessTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    main()
