@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check officer Space runtimes (public API, no token needed)
         id: spaces
@@ -84,7 +84,7 @@ jobs:
 
       - name: File or update the drift issue (fail closed, never silent)
         if: ${{ steps.spaces.outputs.bad != '[]' || steps.receipts.outputs.fresh != 'true' }}
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const title = "Wiring witness: estate drift detected";
