@@ -1,0 +1,28 @@
+{
+  "card_sha256": "0ede6e4a4fbc64bc51b74c87cfabd6e62dc8efafaaa0ff2fe71f4f41e27e1013",
+  "evaluation_rerun": false,
+  "kind": "szl.card-claim-reconciliation/v1",
+  "prior_card_sha256": "58d7fccf3528122e9e0d4df7fb80496393f1851e487f6270a598e1fd344b33e4",
+  "prior_revision": "9e871cd23c53c3a701ded418b2e3dd0a466e9dbb",
+  "private_at_observation": false,
+  "receipt_bytes": 5315,
+  "receipt_mutated": false,
+  "receipt_path": "receipts/eval_battery.json",
+  "receipt_sha256": "d2aa05e7308316bd679eb98757a705ef1d16b174714ea884a4ca1c36e735822f",
+  "repo": "SZLHOLDINGS/SZL-Khipu-1.5B-abstain-laptop-lora",
+  "summary": {
+    "abstained_or_refused": 0,
+    "current_weight_binding_verified": false,
+    "energy_independently_verified": false,
+    "metric": "recorded abstention/refusal count, not answer accuracy",
+    "model_qualified": false,
+    "probe_count": 6,
+    "recorded_meter_fields": {
+      "avg_watts": 0.0,
+      "joules_measured": 0.0,
+      "wall_hours": 1.71
+    },
+    "subgroup_scope": "explicit labels only; unavailable is not 0/0",
+    "subgroups": null
+  }
+}
