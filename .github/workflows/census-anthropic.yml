@@ -5,29 +5,61 @@ name: Census — Anthropic leg
 # findings (per-release honesty, not monotone in capability) get their
 # cross-lab test. Receipts to the chain via the publish job (gated).
 # Requires the ANTHROPIC_API_KEY repository secret.
+# Pull requests validate the contract offline; live calls use protected main.
 
 on:
   schedule:
     - cron: "31 7 * * 1" # weekly, Monday 07:31 UTC
   workflow_dispatch: {}
-  push:
+  pull_request:
     paths:
       - "tools/census/**"
       - ".github/workflows/census-anthropic.yml"
+      - "tests/test_census_workflow_contract.py"
+  push:
+    branches: [main]
+    paths:
+      - "tools/census/**"
+      - ".github/workflows/census-anthropic.yml"
+      - "tests/test_census_workflow_contract.py"
 
 permissions:
   contents: read
 
 concurrency:
-  group: census-anthropic
+  group: census-anthropic-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify census admission and credential failure without provider calls
+        run: python3 -m unittest discover -s tests -p 'test_census_workflow_contract.py' -v
+
   census:
+    needs: contract
+    if: >-
+      ${{
+        github.repository == 'szl-holdings/szl-gpu-bridge' &&
+        github.ref == 'refs/heads/main' &&
+        github.ref_protected &&
+        github.actor != '' &&
+        github.actor != 'dependabot[bot]' &&
+        (github.event_name == 'push' ||
+         github.event_name == 'schedule' ||
+         github.event_name == 'workflow_dispatch')
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run the Anthropic census leg
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
