@@ -182,7 +182,7 @@ class SmokeValidation(unittest.TestCase):
         torch = types.SimpleNamespace(
             cuda=cuda,
             bfloat16="SYNTHETIC_BF16",
-            enable_grad=lambda: nullcontext(),
+            enable_grad=nullcontext,
             full=Mock(side_effect=[a, b]),
             isfinite=lambda value: Scalar(math.isfinite(value.value)),
         )

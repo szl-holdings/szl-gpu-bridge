@@ -79,6 +79,7 @@ def stop_child(child, grace_seconds):
     try:
         os.killpg(child.pid, signal.SIGTERM)
     except ProcessLookupError:
+        # The owned child can exit between poll() and signal delivery; reap it below.
         pass
     try:
         return child.wait(timeout=grace_seconds), False
@@ -86,6 +87,7 @@ def stop_child(child, grace_seconds):
         try:
             os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # It completed during the grace-period race; wait() still reaps it.
             pass
         return child.wait(), True
 
@@ -169,6 +171,7 @@ def supervise(args):
                 )
                 return returncode if returncode >= 0 else 128 - returncode
             reason = None
+            # Native signal callbacks can mutate this list between any two bytecodes.
             if requested_signal:
                 reason = "supervisor_interrupted"
             elif time.monotonic() - started >= args.max_seconds:

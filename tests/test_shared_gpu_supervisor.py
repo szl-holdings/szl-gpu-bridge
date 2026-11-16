@@ -195,6 +195,31 @@ class SupervisorTests(unittest.TestCase):
         )
 
     @unittest.skipUnless(sys.platform == "linux", "Linux process groups")
+    def test_real_sigterm_to_supervisor_stops_owned_group(self):
+        self.args.command = [sys.executable, "-c", "import time; time.sleep(30)"]
+        self.args.poll_seconds = 0.01
+        self.args.max_seconds = 2
+        calls = 0
+
+        def health(url):
+            nonlocal calls
+            calls += 1
+            if calls == 2:  # The child has been admitted; interrupt its supervisor.
+                os.kill(os.getpid(), signal.SIGTERM)
+            return True
+
+        with (
+            patch.object(g, "free_mib", return_value=40000),
+            patch.object(g, "health_responds", side_effect=health),
+        ):
+            self.assertEqual(g.supervise(self.args), 75, self.state())
+        state = self.state()
+        self.assertEqual(state["reason"], "supervisor_interrupted")
+        self.assertEqual(state["child_returncode"], -signal.SIGTERM)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(state["child_pid"], 0)
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux process groups")
     def test_real_termination_preserves_unrelated_process(self):
         self.args.command = [sys.executable, "-c", "import time; time.sleep(30)"]
         self.args.poll_seconds = 0.01
