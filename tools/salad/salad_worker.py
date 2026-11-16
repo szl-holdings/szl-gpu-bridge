@@ -70,6 +70,14 @@ re-downloaded from the Hub, downloads retry (3 attempts, 60s apart) then
 fail closed with a receipt, and the boot receipt says resume_from
 "checkpoint-N (verified)" vs "GENESIS (no checkpoints on hub)".
 
+v3.6 adds exact terminal-step evidence. A preempted or early-stopped Trainer
+must not publish a final adapter or report the requested budget as completed
+work. Only an integer TrainerState.global_step equal to max_steps qualifies
+this worker's completion branch. Existing checkpoint uploads remain available
+for resumption; their durability is not asserted by this terminal guard.
+Receipts retain the v1 kind and add a distinct event field. A resumed complete
+checkpoint with a missing/unobservable final adapter returns failure, not success.
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -95,9 +103,10 @@ PICKLE_PATTERNS = ["*.pt", "*.pth", "*.bin", "*.pkl", "*.pickle", "*.ckpt",
 
 
 def receipt(kind: str, detail: str, extra: dict | None = None):
-    r = {"kind": "szl.salad-worker/v1", "detail": detail,
-         "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-         **(extra or {})}
+    # Extra measurements cannot replace the receipt envelope or inject an old hash.
+    r = {**(extra or {}), "kind": "szl.salad-worker/v1", "event": kind,
+         "detail": detail, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+    r.pop("receipt_sha256", None)
     blob = json.dumps(r, sort_keys=True)
     r["receipt_sha256"] = hashlib.sha256(blob.encode()).hexdigest()
     print(json.dumps(r), flush=True)
@@ -429,6 +438,10 @@ def main() -> int:
     ap.add_argument("--publish-final-to", default="",
                     help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
     a = ap.parse_args()
+    if min(a.max_steps, a.save_steps, a.max_examples, a.min_examples) < 1:
+        ap.error("step, save, example and minimum-example bounds must be positive")
+    if a.max_examples < a.min_examples:
+        ap.error("max-examples cannot be smaller than min-examples")
     if not a.hf_token:
         print("FAIL-CLOSED: HF_TOKEN required (env or --hf-token)", file=sys.stderr)
         return 2
@@ -458,7 +471,7 @@ def main() -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.5-20261115",
+             "worker_version": "v3.6-20261115",
              "energy_start": energy_start,
              "zeus_window": zeus_start})
 
@@ -479,15 +492,22 @@ def main() -> int:
                     a.adapter_out, repo_type="model")
             except Exception:
                 final_present = False
-            receipt("already-complete",
+            receipt("already-complete" if final_present else "incomplete",
                     f"resumed checkpoint global_step={rgs} >= max_steps={a.max_steps} — "
                     "training already complete on this lane; no new steps this boot"
                     + ("" if final_present else "; FINAL ADAPTER MISSING — investigate"),
                     {"resume_global_step": rgs, "max_steps": a.max_steps,
                      "final_adapter_present": final_present,
+                     "new_steps_this_boot": 0,
+                     "completion_qualified": False,
+                     "scope": "RESUME_TERMINAL_METADATA_NOT_NEW_TRAINING",
                      "zeus_window": zeus_end_window(),
                      "energy_start": energy_start, "energy_end": energy_end,
                      "energy_j": energy_delta(energy_start, energy_end)})
+            if not final_present:
+                print("FAIL-CLOSED: terminal checkpoint has no verified-present final adapter; "
+                      "refusing completion or automatic retraining", file=sys.stderr, flush=True)
+                return 7
             print(f"ALREADY-COMPLETE: global_step {rgs} >= max_steps {a.max_steps}; "
                   "exiting without training", flush=True)
             return 0
@@ -566,6 +586,24 @@ def main() -> int:
 
     t0 = time.time()
     trainer.train(resume_from_checkpoint=resume) if resume else trainer.train()
+    observed_steps = getattr(getattr(trainer, "state", None), "global_step", None)
+    actual_steps = observed_steps if type(observed_steps) is int and observed_steps >= 0 else None
+    if actual_steps != a.max_steps:
+        # Stop signals, early exits, invalid state and overshoot are not completion.
+        # Do not overwrite final/ with a partial adapter. Checkpoint preservation
+        # remains the callback's responsibility; this branch cannot prove durability.
+        energy_end = sample_energy_j()
+        receipt("interrupted" if STOP["flag"] else "incomplete",
+                "training did not reach the exact admitted target; final publication withheld",
+                {"actual_steps": actual_steps, "target_steps": a.max_steps,
+                 "completion_qualified": False, "final_publication_attempted": False,
+                 "checkpoint_durability": "UNVERIFIED_BY_TERMINAL_GUARD",
+                 "energy_start": energy_start, "energy_end": energy_end,
+                 "zeus_window": zeus_end_window(),
+                 "energy_j": energy_delta(energy_start, energy_end)})
+        print("FAIL-CLOSED: incomplete or unqualified trainer state; final adapter not published",
+              file=sys.stderr, flush=True)
+        return 7
     final = os.path.expanduser("~/ckpt/final")
     trainer.save_model(final)
     if STOP.get("visibility"):
@@ -589,7 +627,10 @@ def main() -> int:
                           ignore_patterns=PICKLE_PATTERNS)  # visibility change stays a human decision
     energy_end = sample_energy_j()  # v3: cumulative counter at completion
     receipt("complete", f"training complete in {round(time.time()-t0,1)}s",
-            {"steps": a.max_steps, "adapter": a.adapter_out,
+            {"steps": actual_steps, "actual_steps": actual_steps,
+             "target_steps": a.max_steps, "completion_qualified": True,
+             "completion_scope": "EXACT_TRAINER_STEP_TARGET_NOT_MODEL_QUALITY",
+             "adapter": a.adapter_out,
              "energy_start": energy_start,
              "energy_end": energy_end,
              "zeus_window": zeus_end_window(),
