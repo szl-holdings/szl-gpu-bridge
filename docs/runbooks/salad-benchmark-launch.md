@@ -107,6 +107,10 @@ absent split audit remains absent; publication retry does not fabricate a clean
 audit, add a measurement classification or upgrade historical evidence. Consumers
 requiring the new audit must explicitly require it, rather than treating any v2
 receipt or successful publication as disjointness evidence.
+The publisher also binds the declared split-audit schema in the archived source
+to the receipt without executing that source. Stripping all audit fields from a
+current-source receipt cannot make it a pre-audit archive. This remains a
+consistency check; rehashable source bytes are not origin authentication.
 
 ## Acceptance bounds
 
@@ -120,3 +124,67 @@ status, accepted receipt/source bytes, required archives and drained instance co
 This launcher has no Salad control API calls and cannot waive that gate.
 
 Validation: `python -m unittest discover -s tests -p 'test_salad_bench*.py' -v`.
+
+## Per-item evidence and complete comparison energy
+
+New benchmark receipts declare `szl.salad-bench-integrity/v1`. Every offered row
+has an ordered index and SHA-256 of its sorted compact JSON representation, plus
+either scored token counts and loss or an explicit skip reason. The receipt does
+not include row text, generated answers, or per-token logits. These hashes support
+input comparison; they do not anonymize a known dataset or prove independent
+execution.
+
+The evaluator measures the base before PEFT attaches the adapter. A CPU regression
+uses an attachment that mutates the base object, so evaluating a supposedly bare
+base after attachment fails the regression. Base and adapter evidence must identify
+the same ordered eval rows, token lengths, and skip outcomes. Publication recomputes
+the row-weighted loss and coverage totals and refuses inconsistent results, even if
+their file hashes were recomputed. Actual adapter-file bytes have a separate
+SHA-256 in addition to the existing immutable repository revision.
+
+The full comparison energy window starts before base evaluation and ends after the
+final train-reference adapter pass. It includes time between those passes, including
+adapter attachment/weight loading, and excludes initial base-model hydration.
+The receipt records "includes_adapter_attachment: true" and
+"includes_initial_base_hydration: false" explicitly. Its unit is joules,
+derived once from raw NVML millijoule counters. Every component boundary must be
+available and nondecreasing. A counter reset between otherwise valid passes makes
+the total unavailable. Adding separate pass deltas is not an equivalent full window.
+The scope remains GPU-0 device-total, not isolated-process or whole-node energy.
+This loss benchmark performs no final baseline-refusal pass; such a pass belongs
+to the separate heldout evaluator described below.
+
+Each pass is bounded to 10,000 offered rows before base hydration. Results use
+compact JSON with a 16 MiB maximum; archived source and manifest retain their
+2 MiB maximum. The per-item bound prevents an unexpectedly large evaluation from
+silently omitting evidence. Exceeding a bound fails closed rather than truncating
+rows. Original v2 bundles without the new source declaration retain their original
+contract. A new source's profile cannot be removed from its receipt during a
+publication retry. This source/receipt consistency check is not admission,
+signature verification, or an execution attestation.
+
+## Historical heldout evidence remains unqualified
+
+The archived `heldout_eval.py` for `SZLHOLDINGS/salad-frontier-v5-r1` is historical
+evidence under its pinned model revision; it is not tracked executable source in
+this repository. Its `all_pass` result is not a qualification for promotion.
+The audit in `tools/salad/legacy_receipt_audit.py` identifies baseline contamination,
+a vacuous neutral bound, missing per-item responses, incomplete energy coverage,
+and missing immutable bindings. This benchmark does not repair those historical
+results or satisfy heldout-quality criteria.
+
+A separately admitted replacement must define its acceptance policy before scoring,
+use independent benchmark data with immutable source/model/adapter/dataset bindings,
+and either evaluate a verified bare base before attachment or use a tested
+adapter-disable context for every base pass. It must preserve per-item answer,
+parse/truncation outcome, and score evidence in the appropriate controlled output
+destination; distinguish format failure from incorrect answers; and include all
+comparison passes in the ending energy read. It must reject a threshold that
+accepts every possible score, state what its contamination test actually measures,
+and record a new attempt and new GPU measurements. This is a specification for
+future work, not a claim that a corrected heldout run or independent reproduction
+has occurred.
+
+Historical source: [pinned integrity amendment](https://huggingface.co/SZLHOLDINGS/salad-frontier-v5-r1/blob/f84a7ecec15e31429c966e378d3e5b77efd01417/receipts/integrity-amendment-20261116T181433Z/AMENDMENT.md)
+and its [input/source hash manifest](https://huggingface.co/SZLHOLDINGS/salad-frontier-v5-r1/blob/f84a7ecec15e31429c966e378d3e5b77efd01417/receipts/integrity-amendment-20261116T181433Z/manifest.json).
+These private model records require the owner's existing access.

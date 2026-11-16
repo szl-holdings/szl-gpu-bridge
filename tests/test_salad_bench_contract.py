@@ -761,21 +761,43 @@ class BenchContract(unittest.TestCase):
                 self.rewrite_result(bundle, corrupt)
                 self.assert_no_publication(bundle)
 
-    def test_legacy_v2_shape_can_be_archived_without_inventing_audit(self):
+    @staticmethod
+    def drop_split_scope(result):
+        for field in (
+            "split_audit",
+            "measurement_class",
+            "generalization_assessed",
+            "overfitting_absence_established",
+        ):
+            result.pop(field)
+        for name in ("eval_base", "eval_adapter", "train_ref_adapter"):
+            result[name].pop("measurement_class")
+
+    def test_current_source_cannot_publish_a_receipt_with_all_audit_fields_stripped(
+        self,
+    ):
         bundle = self.make_bundle()
+        self.rewrite_result(bundle, self.drop_split_scope)
+        self.assert_no_publication(bundle)
 
-        def legacy_shape(result):
-            for field in (
-                "split_audit",
-                "measurement_class",
-                "generalization_assessed",
-                "overfitting_absence_established",
-            ):
-                result.pop(field)
-            for name in ("eval_base", "eval_adapter", "train_ref_adapter"):
-                result[name].pop("measurement_class")
+    def test_legacy_v2_shape_can_be_archived_without_inventing_audit(self):
+        import hashlib
 
-        self.rewrite_result(bundle, legacy_shape)
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, self.drop_split_scope)
+        # Synthetic pre-audit source declaration for archive-compatibility testing.
+        # This fixture is never executed and makes no execution-authenticity claim.
+        source_path = bundle / "bench_eval.py"
+        raw = source_path.read_bytes().replace(
+            b"SPLIT_AUDIT_SCHEMA =", b"LEGACY_FIXTURE_UNUSED_SCHEMA =", 1
+        )
+        source_path.write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        manifest_path = bundle / "bundle.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["sha256"]["bench_eval.py"] = digest
+        manifest_path.write_text(json.dumps(manifest))
+        self.rewrite_result(bundle, lambda r: r.update(harness_sha256=digest))
         original = (bundle / "result.json").read_bytes()
         self.assertEqual(
             self.bench.publish_bundle(bundle, self.fixture, self.fixture.download),
@@ -783,6 +805,9 @@ class BenchContract(unittest.TestCase):
         )
         self.assertEqual(
             self.fixture.uploads["receipts/test/unique/result.json"], original
+        )
+        self.assertEqual(
+            self.fixture.uploads["receipts/test/unique/bench_eval.py"], raw
         )
         self.assertNotIn("split_audit", self.receipt())
         self.assertNotIn("measurement_class", self.receipt())
@@ -881,6 +906,9 @@ class BenchContract(unittest.TestCase):
 
         def measured_failure(r):
             r["eval_adapter"].update(mean_loss=6.0, perplexity=math.exp(6.0))
+            for row in r["eval_adapter"]["row_evidence"]:
+                if row["status"] == "SCORED":
+                    row["mean_loss"] = 6.0
             r["criterion_1"].update(eval_loss=6.0, **{"pass": False})
             r["improvement_vs_base"].update(eval_loss_adapter=6.0, delta=-2.5)
 

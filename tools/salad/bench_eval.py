@@ -17,6 +17,7 @@ the receipt and never claimed to be TRL's internal loss verbatim.
 """
 
 import argparse
+import ast
 from collections import Counter
 import datetime
 import hashlib
@@ -36,6 +37,9 @@ SPLIT_AUDIT_SCOPE = (
     "exact input-token sequences after chat templating and truncation; "
     "not semantic, benchmark, or pretraining contamination detection"
 )
+INTEGRITY_PROFILE = "szl.salad-bench-integrity/v1"
+MAX_EVIDENCE_ROWS_PER_PASS = 10000
+MEASUREMENT_FIELDS = ("eval_base", "eval_adapter", "train_ref_adapter")
 
 
 def utcnow():
@@ -197,18 +201,41 @@ def resolve_revision(api, repo, repo_type, revision=None):
 
 
 def measure(model, rows, label, tok, en, max_length, torch_module):
+    if len(rows) > MAX_EVIDENCE_ROWS_PER_PASS:
+        raise ValueError("per-item evidence row bound exceeded")
     e0 = en.read()
     w0 = time.monotonic()
+    row_evidence = []
     total_loss, input_tokens, predicted_tokens, correct, count = 0.0, 0, 0, 0, 0
     model.eval()
     with torch_module.no_grad():
-        for ex in rows:
+        for index, ex in enumerate(rows):
+            row = {
+                "index": index,
+                "row_sha256": hashlib.sha256(
+                    json.dumps(
+                        ex,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        allow_nan=False,
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
             enc = encode_row(ex, tok, max_length)
             if enc is None:
+                row_evidence.append({**row, "status": "SKIPPED_NO_MESSAGES"})
                 continue
             enc = enc.to(model.device)
             length = enc["input_ids"].shape[1]
             if length < 2:
+                row_evidence.append(
+                    {
+                        **row,
+                        "status": "SKIPPED_TOO_SHORT",
+                        "input_tokens": length,
+                    }
+                )
                 continue
             out = model(**enc, labels=enc["input_ids"])
             loss = float(out.loss.item())
@@ -226,6 +253,16 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
                 raise ValueError("invalid correct-token count")
             correct += row_correct
             count += 1
+            row_evidence.append(
+                {
+                    **row,
+                    "status": "SCORED",
+                    "input_tokens": length,
+                    "predicted_tokens": targets_n,
+                    "mean_loss": loss,
+                    "correct_tokens": row_correct,
+                }
+            )
             if count % 200 == 0:
                 print(
                     f"[{label}] {count}/{len(rows)} loss={total_loss / predicted_tokens:.4f}",
@@ -246,6 +283,7 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
         "rows": count,
         "rows_offered": len(rows),
         "rows_skipped": len(rows) - count,
+        "row_evidence": row_evidence,
         "tokens": input_tokens,
         "predicted_tokens": predicted_tokens,
         "mean_loss": mean,
@@ -256,11 +294,14 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
         "seconds": round(time.monotonic() - w0, 1),
         **energy_fields(e0, e1),
     }
-    print(f"[{label}] DONE {json.dumps(res, allow_nan=False)}", flush=True)
+    summary = {key: value for key, value in res.items() if key != "row_evidence"}
+    print(f"[{label}] DONE {json.dumps(summary, allow_nan=False)}", flush=True)
     return res
 
 
 MAX_BUNDLE_FILE_BYTES = 2 * 1024 * 1024
+# Only result evidence grows; manifest and source limits remain unchanged.
+MAX_RESULT_FILE_BYTES = 16 * 1024 * 1024
 
 
 def _strict_json(raw):
@@ -287,11 +328,12 @@ def _read_bundle_file(directory, name):
         raise ValueError("bundle members must be regular non-symlink files")
     if path.resolve().parent != directory.resolve():
         raise ValueError("bundle member escapes its directory")
-    if path.stat().st_size > MAX_BUNDLE_FILE_BYTES:
+    limit = MAX_RESULT_FILE_BYTES if name == "result.json" else MAX_BUNDLE_FILE_BYTES
+    if path.stat().st_size > limit:
         raise ValueError("bundle member exceeds byte bound")
     with path.open("rb") as stream:
-        raw = stream.read(MAX_BUNDLE_FILE_BYTES + 1)
-    if len(raw) > MAX_BUNDLE_FILE_BYTES:
+        raw = stream.read(limit + 1)
+    if len(raw) > limit:
         raise ValueError("bundle member exceeds byte bound")
     return raw
 
@@ -402,6 +444,148 @@ def _safe_prefix(prefix):
     ):
         raise ValueError("unsafe receipt prefix")
     return prefix
+
+
+def comparison_energy(result):
+    """Cover all three completed passes and transition gaps, excluding hydration.
+
+    A reset between individually valid passes invalidates the total observation.
+    Missing/interrupted windows stay unavailable; never sum partial observations
+    and call them complete energy.
+    """
+    counters = [
+        result[field][key]
+        for field in MEASUREMENT_FIELDS
+        for key in ("energy_counter_start", "energy_counter_end")
+    ]
+    known = all(type(value) is int and value >= 0 for value in counters)
+    monotonic = all(a <= b for a, b in zip(counters, counters[1:])) if known else None
+    observed = known and monotonic
+    fields = (
+        energy_fields(counters[0], counters[-1])
+        if observed
+        else energy_fields(None, None)
+    )
+    if not observed:
+        fields["energy_reason"] = (
+            "component counter unavailable, invalid, or nonmonotonic"
+        )
+    return {
+        **fields,
+        "covered_measurements": list(MEASUREMENT_FIELDS),
+        "window": "before base evaluation through after train-reference evaluation, including transition gaps",
+        "counter_sequence_monotonic": monotonic,
+        "includes_initial_base_hydration": False,
+        "includes_adapter_attachment": True,
+    }
+
+
+def _validate_row_evidence(metrics, max_length):
+    items = metrics.get("row_evidence")
+    if (
+        not isinstance(items, list)
+        or len(items) != metrics["rows_offered"]
+        or len(items) > MAX_EVIDENCE_ROWS_PER_PASS
+    ):
+        raise ValueError("missing, excessive, or incomplete per-item evidence")
+    tokens = predicted = correct = scored = 0
+    weighted_losses = []
+    identities = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError("per-item evidence must be an object")
+        if _integer(item.get("index")) != index:
+            raise ValueError("per-item order or coverage mismatch")
+        row_sha = item.get("row_sha256")
+        if (
+            not isinstance(row_sha, str)
+            or re.fullmatch(r"[0-9a-f]{64}", row_sha) is None
+        ):
+            raise ValueError("missing per-item input identity")
+        common = {"index", "row_sha256", "status"}
+        status = item.get("status")
+        if status == "SKIPPED_NO_MESSAGES":
+            if set(item) != common:
+                raise ValueError("unexpected skipped-item fields")
+            length = None
+        elif status == "SKIPPED_TOO_SHORT":
+            if set(item) != common | {"input_tokens"}:
+                raise ValueError("unexpected short-item fields")
+            length = _integer(item.get("input_tokens"))
+            if length >= 2:
+                raise ValueError("scorable row cannot be marked too short")
+        elif status == "SCORED":
+            if set(item) != common | {
+                "input_tokens",
+                "predicted_tokens",
+                "mean_loss",
+                "correct_tokens",
+            }:
+                raise ValueError("unexpected scored-item fields")
+            length = _integer(item.get("input_tokens"), 2)
+            targets = _integer(item.get("predicted_tokens"), 1)
+            row_correct = _integer(item.get("correct_tokens"))
+            loss = _finite(item.get("mean_loss"), 0)
+            if length > max_length or targets != length - 1 or row_correct > targets:
+                raise ValueError("invalid per-item scoring coverage")
+            tokens += length
+            predicted += targets
+            correct += row_correct
+            scored += 1
+            weighted_losses.append(loss * targets)
+        else:
+            raise ValueError("unknown per-item status")
+        identities.append((index, row_sha, status, length))
+    if (
+        scored != metrics["rows"]
+        or tokens != metrics["tokens"]
+        or predicted != metrics["predicted_tokens"]
+        or correct != metrics["correct_tokens"]
+    ):
+        raise ValueError("per-item totals disagree with aggregate metrics")
+    _same(metrics["mean_loss"], math.fsum(weighted_losses) / predicted)
+    return identities
+
+
+def validate_integrity_profile(result, max_length):
+    """Validate consistency of the declared profile, not execution authenticity."""
+    names = (
+        "integrity_profile",
+        "baseline_isolation",
+        "adapter_file_sha256",
+        "evaluation_energy",
+    )
+    present = any(name in result for name in names) or any(
+        "row_evidence" in result[field] for field in MEASUREMENT_FIELDS
+    )
+    if not present:
+        # Older original v2 bundles remain publishable under their original
+        # contract; they acquire no new integrity-profile claim.
+        return
+    if result.get("integrity_profile") != INTEGRITY_PROFILE:
+        raise ValueError("missing or unsupported integrity profile")
+    if result.get("baseline_isolation") != "BASE_MEASURED_BEFORE_ADAPTER_ATTACHMENT":
+        raise ValueError("missing baseline isolation contract")
+    adapter_sha = result.get("adapter_file_sha256")
+    if (
+        not isinstance(adapter_sha, str)
+        or re.fullmatch(r"[0-9a-f]{64}", adapter_sha) is None
+    ):
+        raise ValueError("missing immutable adapter-byte identity")
+    identities = {
+        field: _validate_row_evidence(result[field], max_length)
+        for field in MEASUREMENT_FIELDS
+    }
+    if identities["eval_base"] != identities["eval_adapter"]:
+        raise ValueError("base/adapter per-item identity or coverage mismatch")
+    expected = comparison_energy(result)
+    observed = result.get("evaluation_energy")
+    if not isinstance(observed, dict) or set(observed) != set(expected):
+        raise ValueError("incomplete full evaluation energy observation")
+    if json.dumps(observed, sort_keys=True, allow_nan=False) != json.dumps(
+        expected, sort_keys=True, allow_nan=False
+    ):
+        raise ValueError("inconsistent full evaluation energy observation")
 
 
 def validate_completed_result(result, manifest):
@@ -565,6 +749,7 @@ def validate_completed_result(result, manifest):
         ("delta", base - adapter),
     ):
         _same(improvement.get(key), value)
+    validate_integrity_profile(result, max_length)
 
 
 def save_bundle(rec, directory, repo, repo_type, prefix):
@@ -574,9 +759,15 @@ def save_bundle(rec, directory, repo, repo_type, prefix):
     source = Path(__file__).read_bytes()
     rec["harness_sha256"] = hashlib.sha256(source).hexdigest()
     result = (
-        json.dumps(rec, indent=2, sort_keys=True, allow_nan=False) + "\n"
+        json.dumps(rec, separators=(",", ":"), sort_keys=True, allow_nan=False) + "\n"
     ).encode()
     entries = {"result.json": result, "bench_eval.py": source}
+    if any(
+        len(raw)
+        > (MAX_RESULT_FILE_BYTES if name == "result.json" else MAX_BUNDLE_FILE_BYTES)
+        for name, raw in entries.items()
+    ):
+        raise ValueError("bundle member exceeds byte bound before storage")
     manifest = {
         "schema": "szl.bench-local-bundle/v1",
         "receipt_schema": rec["schema"],
@@ -627,6 +818,44 @@ def publish_bundle(directory, api, download):
             raise ValueError("local bundle hash mismatch")
         entries[prefix + "/" + name] = raw
     result = _strict_json(entries[prefix + "/result.json"])
+    # Bind the claimed profile to the archived source without executing it.
+    # Original v2 sources without a profile remain original v2 evidence.
+    try:
+        tree = ast.parse(entries[prefix + "/bench_eval.py"])
+    except (SyntaxError, UnicodeError) as exc:
+        raise ValueError("archived harness is not parseable Python") from exc
+    profiles = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "INTEGRITY_PROFILE"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Constant)
+    ]
+    if profiles not in ([], [INTEGRITY_PROFILE]) or result.get("integrity_profile") != (
+        profiles[0] if profiles else None
+    ):
+        raise ValueError("receipt/source integrity profile mismatch")
+    split_profiles = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "SPLIT_AUDIT_SCHEMA"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Constant)
+    ]
+    split_audit = result.get("split_audit")
+    reported_schema = (
+        split_audit.get("schema") if isinstance(split_audit, dict) else None
+    )
+    if split_profiles not in ([], [SPLIT_AUDIT_SCHEMA]) or reported_schema != (
+        split_profiles[0] if split_profiles else None
+    ):
+        raise ValueError("receipt/source split audit profile mismatch")
     validate_completed_result(result, manifest)
     if result.get("harness_sha256") != manifest["sha256"]["bench_eval.py"]:
         raise ValueError("receipt/harness binding mismatch")
@@ -767,6 +996,8 @@ def main():
         "generalization_assessed": False,
         "overfitting_absence_established": False,
         "kind": "UNAVAILABLE",
+        "integrity_profile": INTEGRITY_PROFILE,
+        "baseline_isolation": "BASE_MEASURED_BEFORE_ADAPTER_ATTACHMENT",
         "run_id": run_id,
         "started_utc": started,
         "base": a.base,
@@ -864,6 +1095,8 @@ def main():
                 "empty split after load",
                 {"eval_rows": len(eval_rows), "train_ref_rows": len(train_rows)},
             )
+        if max(len(eval_rows), len(train_rows)) > MAX_EVIDENCE_ROWS_PER_PASS:
+            return fail("per-item evidence row bound exceeded")
         rec["rows"] = {
             "eval": len(eval_rows),
             "train_ref": len(train_rows),
@@ -891,6 +1124,10 @@ def main():
         if not os.path.isfile(os.path.join(adapter_path, "adapter_model.safetensors")):
             return fail("adapter_model.safetensors missing under " + a.adapter_dir, rec)
 
+        rec["adapter_file_sha256"] = sha256_file(
+            os.path.join(adapter_path, "adapter_model.safetensors")
+        )
+
         kw = {"dtype": torch.bfloat16, "device_map": "auto"}
         if a.base_revision:
             kw["revision"] = a.base_revision
@@ -907,6 +1144,7 @@ def main():
         rec["train_ref_adapter"] = measure(
             model, train_rows, "trainref/adapter", tok, en, a.max_length, torch
         )
+        rec["evaluation_energy"] = comparison_energy(rec)
 
     except Exception as exc:
         return fail("measurement unavailable: " + type(exc).__name__)
