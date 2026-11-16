@@ -1,0 +1,218 @@
+"""Bounded read-only training telemetry. Provider-running is not trainer liveness.
+
+No start/stop, signing, upload, completion flags, or promotion effects. One
+cycle by default; daemon mode is bounded and intended for an existing supervisor.
+"""
+
+import argparse
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import re
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+from tools.salad.artifact_qualification import strict_object
+from tools.salad.training_snapshot import (
+    EvidenceHold,
+    model_snapshot,
+    verified_trainer_state,
+)
+
+SALAD_BASE = "https://api.salad.com/api/public/organizations/alloyscape/projects/default/containers/"
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def provider_open(request, timeout):
+    # Never forward a provider credential through an HTTP redirect.
+    return urllib.request.build_opener(NoRedirect()).open(request, timeout=timeout)
+
+
+def provider_observation(group, token, *, opener=provider_open):
+    unavailable = {"state": "UNAVAILABLE", "trainer_process_liveness_verified": False}
+    if (
+        not isinstance(group, str)
+        or re.fullmatch(r"szl-[a-z0-9-]{1,58}", group) is None
+        or not token
+    ):
+        return {**unavailable, "reason": "PROVIDER_OBSERVATION_NOT_CONFIGURED"}
+    request = urllib.request.Request(
+        SALAD_BASE + group + "/instances",
+        headers={"Salad-Api-Key": token},
+        method="GET",
+    )
+    try:
+        with opener(request, timeout=12) as response:
+            if response.status != 200:
+                return {**unavailable, "reason": "PROVIDER_HTTP_ERROR"}
+            data = strict_object(response.read(1_000_001))
+        items = data.get("instances")
+        if not isinstance(items, list) or any(
+            not isinstance(i, dict) or not isinstance(i.get("state"), str)
+            for i in items
+        ):
+            return {**unavailable, "reason": "INVALID_PROVIDER_RESPONSE"}
+        return {
+            "state": "OBSERVED",
+            "instance_count": len(items),
+            "instance_states": [i["state"] for i in items],
+            "ready_count": sum(i.get("ready") is True for i in items),
+            "trainer_process_liveness_verified": False,
+        }
+    except urllib.error.HTTPError as exc:
+        return {**unavailable, "reason": "PROVIDER_HTTP_" + str(exc.code)}
+    except Exception as exc:
+        return {**unavailable, "reason": "PROVIDER_UNAVAILABLE:" + type(exc).__name__}
+
+
+def observe_training(api, fetch, candidate):
+    repo, target = candidate.get("repo"), candidate.get("target_steps")
+    result = {
+        "repo": repo,
+        "target_steps": target,
+        "state": "UNAVAILABLE",
+        "training_complete_verified": False,
+        "promotion_authorized": False,
+        "trainer_process_liveness_verified": False,
+    }
+    try:
+        if (
+            not isinstance(repo, str)
+            or re.fullmatch(r"SZLHOLDINGS/[A-Za-z0-9_.-]+", repo) is None
+            or type(target) is not int
+            or target < 1
+        ):
+            raise EvidenceHold("INVALID_OBSERVATION_CONTRACT")
+        _, snapshot, entries = model_snapshot(api, repo)
+        result["snapshot"] = snapshot
+        step = snapshot["latest_checkpoint"]
+        if step is None:
+            result["state"] = "NO_CHECKPOINT_OBSERVED"
+            return result
+        name = f"checkpoint-{step}/trainer_state.json"
+        if name not in entries:
+            raise EvidenceHold("TRAINER_STATE_MISSING")
+        if (
+            type(entries[name].size) is not int
+            or not 0 < entries[name].size <= 2_000_000
+        ):
+            raise EvidenceHold("TRAINER_JSON_BYTE_BUDGET")
+        with tempfile.TemporaryDirectory(prefix="szl-observe-") as temp:
+            path = Path(
+                fetch(
+                    repo_id=repo,
+                    filename=name,
+                    revision=snapshot["revision"],
+                    local_dir=temp,
+                    etag_timeout=12,
+                )
+            )
+            if path.is_symlink() or Path(temp).resolve() not in path.resolve().parents:
+                raise EvidenceHold("DOWNLOAD_PATH_ESCAPE")
+            with path.open("rb") as stream:
+                state = verified_trainer_state(
+                    stream.read(2_000_001), entries[name], step
+                )
+        result["trainer_state"] = state
+        if state["max_steps"] != target:
+            result["state"] = "TARGET_CONTRACT_MISMATCH"
+        elif step > target:
+            result["state"] = "TERMINAL_STEP_OVERSHOOT"
+        elif step < target:
+            result["state"] = "CHECKPOINT_PROGRESS_OBSERVED"
+        elif all(
+            snapshot[k] for k in ("final_adapter", "final_config", "final_tokenizer")
+        ):
+            result["state"] = "TERMINAL_METADATA_PRESENT"
+        else:
+            result["state"] = "TARGET_CHECKPOINT_WITHOUT_FINAL_BUNDLE"
+    except EvidenceHold as exc:
+        result["reason"] = str(exc)
+    except Exception as exc:
+        result["reason"] = "OBSERVATION_UNAVAILABLE:" + type(exc).__name__
+    return result
+
+
+def atomic_status(path, report):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        raise ValueError("status path must not be a symlink")
+    fd, tmp = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, allow_nan=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--spec", required=True)
+    parser.add_argument("--status", required=True)
+    parser.add_argument("--history", required=True)
+    parser.add_argument("--cycles", type=int, default=1)
+    parser.add_argument("--interval", type=int, default=300)
+    args = parser.parse_args()
+    if not 1 <= args.cycles <= 300 or not 60 <= args.interval <= 3600:
+        parser.error("cycles must be 1-300 and interval 60-3600 seconds")
+    candidates = strict_object(Path(args.spec).read_bytes()).get("candidates")
+    if (
+        not isinstance(candidates, list)
+        or not 1 <= len(candidates) <= 6
+        or any(not isinstance(c, dict) for c in candidates)
+    ):
+        parser.error("1-6 candidate objects required")
+    from huggingface_hub import HfApi, hf_hub_download
+
+    api = HfApi()
+    for cycle in range(1, args.cycles + 1):
+        report = {
+            "schema": "szl.training-observation/v1",
+            "cycle": cycle,
+            "started_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "candidates": [],
+            "promotion_authorized": False,
+            "training_complete_verified": False,
+        }
+        for candidate in candidates:
+            entry = observe_training(api, hf_hub_download, candidate)
+            entry["provider"] = provider_observation(
+                candidate.get("salad_group"), os.environ.get("SALAD_API_KEY")
+            )
+            entry["observed_at_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
+            report["candidates"].append(entry)
+        report["observed_at_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        report["stale_after_seconds"] = 2 * args.interval + 60
+        atomic_status(args.status, report)
+        with Path(args.history).open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(report, allow_nan=False) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        print(
+            json.dumps(
+                {
+                    "cycle": cycle,
+                    "states": {r["repo"]: r["state"] for r in report["candidates"]},
+                }
+            ),
+            flush=True,
+        )
+        if cycle < args.cycles:
+            time.sleep(args.interval)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
