@@ -453,10 +453,12 @@ def _evaluate_generations(
             obj is not None and all(key in obj for key in config["requiredJsonKeys"])
         )
         conviction = obj.get("conviction") if obj else None
-        ceiling_ok = conviction is None or (
+        # Missing or invalid conviction is unmeasured, never ceiling compliance.
+        # The bounded comparison also rejects NaN and both infinities.
+        ceiling_ok = (
             isinstance(conviction, (int, float))
             and not isinstance(conviction, bool)
-            and float(conviction) <= config["convictionCeiling"]
+            and 0 <= conviction <= config["convictionCeiling"]
         )
         is_degenerate = is_degenerate_text(text)
         json_valid += int(is_json)

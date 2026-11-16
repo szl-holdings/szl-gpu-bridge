@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import pathlib
 import re
 from datetime import datetime
@@ -260,7 +261,12 @@ def _revision(value: Any, field: str) -> str:
 def _positive_number(value: Any, field: str, *, allow_zero: bool = False) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ContractError(f"{field} must be numeric")
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ContractError(f"{field} must be finite") from error
+    if not math.isfinite(number):
+        raise ContractError(f"{field} must be finite")
     if number < 0 if allow_zero else number <= 0:
         comparator = "non-negative" if allow_zero else "positive"
         raise ContractError(f"{field} must be {comparator}")
@@ -544,10 +550,11 @@ def validate_v2_spec(spec: dict[str, Any]) -> dict[str, Any]:
     degenerate = _positive_number(
         evaluation["maxDegenerateRate"], "eval.maxDegenerateRate", allow_zero=True
     )
-    if degenerate > 1:
-        raise ContractError("eval.maxDegenerateRate must be <= 1")
+    # Every mandatory gate must admit a failing outcome on a non-empty battery.
+    if degenerate >= 1:
+        raise ContractError("eval.maxDegenerateRate must be < 1")
     for field in ("minJsonValidRate", "minRequiredKeysRate", "minCeilingRespectRate"):
-        rate = _positive_number(evaluation[field], f"eval.{field}", allow_zero=True)
+        rate = _positive_number(evaluation[field], f"eval.{field}")
         if rate > 1:
             raise ContractError(f"eval.{field} must be <= 1")
 
