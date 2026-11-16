@@ -57,11 +57,17 @@ jobs:
           python -m pip install --disable-pip-version-check
           --require-hashes -r requirements/ci/contract.txt
       - name: Compile Python
-        run: python -m py_compile laptop/*.py tests/*.py
+        run: >-
+          python -m py_compile laptop/*.py tests/*.py
+          tools/salad/artifact_qualification.py tools/salad/training_observer.py
       - name: Verify deterministic Python formatting
-        run: ruff format --check laptop tests
+        run: >-
+          ruff format --check laptop tests
+          tools/salad/artifact_qualification.py tools/salad/training_observer.py
       - name: Lint Python
-        run: ruff check laptop tests
+        run: >-
+          ruff check laptop tests
+          tools/salad/artifact_qualification.py tools/salad/training_observer.py
       - name: Validate Node entrypoints
         run: |
           node --check cloud/sign-job.mjs

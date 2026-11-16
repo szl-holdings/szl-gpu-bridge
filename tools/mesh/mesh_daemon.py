@@ -32,7 +32,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import calendar
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import itertools
@@ -121,9 +121,14 @@ def gpu_state():
     return {"state": "UNAVAILABLE"}
 
 
-def age_s(ts: str, now: float) -> int:
-    """Seconds since a chain timestamp, which is UTC whatever this host's timezone."""
-    return int(now - calendar.timegm(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")))
+def age_s(ts: str, now: float) -> float:
+    """Exact producer UTC timestamp; preserve negative ages for future rejection."""
+    if not isinstance(ts, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", ts
+    ):
+        raise ValueError("INVALID_HEARTBEAT_TIMESTAMP")
+    parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    return now - parsed.timestamp()
 
 
 # ============ JOB ADMISSION ============
@@ -304,18 +309,29 @@ def brain_loop(api):
                     try:
                         hb = chain_read(f["path"], repo=repo)
                         age = age_s(hb["ts"], time.time())
+                        if age < 0:
+                            raise ValueError("FUTURE_HEARTBEAT_TIMESTAMP")
                     except Exception as e:
                         print(f"brain: unreadable heartbeat {repo}/{f['path']}: {type(e).__name__}", flush=True)
                         continue
                     if wid not in newest or age < newest[wid]["age_s"]:
                         newest[wid] = {"age_s": age, "gpu": hb.get("gpu"),
-                                       "alive": age < HEARTBEAT_S * 3}
+                                       "heartbeat_ts": hb["ts"]}
         workers.update(newest)
+        # Remember inventory, never remember a successful health verdict. A lost
+        # listing/read is UNOBSERVED, not proof the physical worker stopped.
+        checked_at = time.time()
+        for wid, value in workers.items():
+            age = age_s(value["heartbeat_ts"], checked_at)
+            value["alive"] = wid in newest and 0 <= age < HEARTBEAT_S * 3
 
         state = receipt("szl.mesh-brain-state/v1", {
             "workers": {k: {"alive": v["alive"], "gpu": v["gpu"]} for k, v in workers.items()},
             "alive_count": sum(1 for v in workers.values() if v["alive"]),
-            "total_known": len(workers)})
+            "total_known": len(workers),
+            "observed_this_cycle": sorted(newest),
+            "unobserved_workers": sorted(set(workers) - set(newest)),
+            "liveness_scope": "HEARTBEAT_FRESHNESS_NOT_PROCESS_OR_EXECUTION_PROOF"})
         try:
             liveness_write(api, "mesh/brain/state.json", state)
             print(f"brain: {state['alive_count']} of {state['total_known']} alive", flush=True)

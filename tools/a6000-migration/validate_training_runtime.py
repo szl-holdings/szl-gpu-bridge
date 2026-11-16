@@ -7,6 +7,7 @@ A matching manifest proves neither source admission nor model qualification.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.metadata
 import json
@@ -133,6 +134,87 @@ def verify_versions(pins: dict, getter: Callable = importlib.metadata.version) -
     return observed
 
 
+def recipe_config_fields(recipe: bytes) -> frozenset[str]:
+    """Parse the supported quoted-heredoc recipe; never execute its Python.
+
+    This binds explicit API keywords, not shell semantics or source authority.
+    Unsupported/ambiguous forms require separately reviewed support.
+    """
+    if not isinstance(recipe, bytes) or not 0 < len(recipe) <= 200000:
+        raise RuntimeHold("RECIPE_BYTE_BUDGET")
+    try:
+        lines = recipe.decode("utf-8").splitlines()
+    except UnicodeError as exc:
+        raise RuntimeHold("RECIPE_ENCODING_UNSUPPORTED") from exc
+    pattern = re.compile(
+        r"python3?[ \t]+-[ \t]+<<(['\"])([A-Z][A-Z0-9_]{0,31})\1[ \t]*"
+    )
+    starts = [(i, pattern.fullmatch(line)) for i, line in enumerate(lines)]
+    starts = [(i, match) for i, match in starts if match is not None]
+    if len(starts) != 1:
+        raise RuntimeHold("RECIPE_PYTHON_BLOCK_UNRESOLVED")
+    start, match = starts[0]
+    delimiter = match.group(2)
+    endings = [i for i in range(start + 1, len(lines)) if lines[i] == delimiter]
+    if len(endings) != 1:
+        raise RuntimeHold("RECIPE_PYTHON_BLOCK_UNRESOLVED")
+    try:
+        tree = ast.parse("\n".join(lines[start + 1 : endings[0]]))
+    except (SyntaxError, ValueError, RecursionError) as exc:
+        raise RuntimeHold("RECIPE_PYTHON_PARSE_FAILED") from exc
+    nodes = list(ast.walk(tree))
+    if len(nodes) > 20000:
+        raise RuntimeHold("RECIPE_AST_BUDGET")
+    imports = []
+    for node in nodes:
+        if isinstance(node, ast.ImportFrom):
+            if any(alias.name == "*" for alias in node.names):
+                raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+            for alias in node.names:
+                if alias.name == "SFTConfig" or alias.asname == "SFTConfig":
+                    if (
+                        node.module != "trl"
+                        or node.level
+                        or alias.name != "SFTConfig"
+                        or alias.asname
+                    ):
+                        raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+                    imports.append(node)
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "SFTConfig"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        ):
+            raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+        if isinstance(node, ast.arg) and node.arg == "SFTConfig":
+            raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and node.name == "SFTConfig"
+        ):
+            raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+        if isinstance(node, ast.Import) and any(
+            (a.asname or a.name.split(".")[0]) == "SFTConfig" for a in node.names
+        ):
+            raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+    calls = [
+        n
+        for n in nodes
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Name)
+        and n.func.id == "SFTConfig"
+    ]
+    if len(imports) != 1 or imports[0] not in tree.body or len(calls) != 1:
+        raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+    call = calls[0]
+    if call.args or any(keyword.arg is None for keyword in call.keywords):
+        raise RuntimeHold("RECIPE_CONFIG_DYNAMIC_ARGUMENTS")
+    fields = frozenset(keyword.arg for keyword in call.keywords)
+    if not fields or len(fields) != len(call.keywords) or len(fields) > 128:
+        raise RuntimeHold("RECIPE_CONFIG_BINDING_UNRESOLVED")
+    return fields
+
+
 SMOKE = r"""
 import dataclasses, importlib.util, json
 import torch
@@ -146,11 +228,15 @@ from peft import LoraConfig
 from trl import SFTConfig, SFTTrainer
 import pynvml
 assert callable(pynvml.nvmlDeviceGetPowerUsage)
-print(json.dumps({"sft_config_fields": sorted(f.name for f in dataclasses.fields(SFTConfig))}))
+print(json.dumps({"sft_config_fields": sorted(f.name for f in dataclasses.fields(SFTConfig) if f.init)}))
 """
 
 
-def run_checks(runner: Callable = subprocess.run) -> dict:
+def run_checks(
+    runner: Callable = subprocess.run,
+    *,
+    required_config_fields: frozenset[str] = CONFIG_FIELDS,
+) -> dict:
     env = dict(os.environ)
     for name in ("HF_TOKEN", "HF_TOKEN_INJECT", "HUGGING_FACE_HUB_TOKEN"):
         env.pop(name, None)
@@ -186,7 +272,7 @@ def run_checks(runner: Callable = subprocess.run) -> dict:
         if (
             not isinstance(fields, list)
             or not all(isinstance(v, str) for v in fields)
-            or not CONFIG_FIELDS <= set(fields)
+            or not required_config_fields <= set(fields)
         ):
             raise RuntimeHold("TRAINER_CONFIG_API_MISMATCH")
     except subprocess.TimeoutExpired as exc:
@@ -223,8 +309,9 @@ def main() -> int:
         pins = validate_contract(
             contract, recipe, f"{sys.version_info.major}.{sys.version_info.minor}"
         )
+        actual_fields = recipe_config_fields(recipe)
         versions = verify_versions(pins)
-        report = run_checks()
+        report = run_checks(required_config_fields=actual_fields)
         report.update(
             schema=SCHEMA,
             status="RUNTIME_PREFLIGHT_PASSED",
@@ -233,6 +320,8 @@ def main() -> int:
             runtime_contract_sha256=hashlib.sha256(raw).hexdigest(),
             recipe_sha256=hashlib.sha256(recipe).hexdigest(),
             distributions=versions,
+            recipe_config_fields=sorted(actual_fields),
+            recipe_api_binding="STATIC_EXPLICIT_KEYWORDS_NOT_EXECUTION_PROOF",
         )
         print(json.dumps(report, sort_keys=True))
         return 0
