@@ -52,6 +52,7 @@ class TerminalContract(unittest.TestCase):
         self.trained = []
         self.api_calls = []
         self.trainer_configs = []
+        self.trainer_inputs = []
         self.callbacks = []
         self.actual = 200
         self.interrupted = False
@@ -86,6 +87,7 @@ class TerminalContract(unittest.TestCase):
             def __init__(self, **kwargs):
                 self.state = types.SimpleNamespace(global_step=fixture.actual)
                 fixture.trainer_configs.append(kwargs["args"])
+                fixture.trainer_inputs.append(kwargs)
 
             def add_callback(self, callback):
                 self.callback = callback
@@ -342,6 +344,9 @@ class TerminalContract(unittest.TestCase):
             self.assertEqual(self.run_worker("--base-revision", revision), 0)
         self.assertEqual(tokenizer.call_args.kwargs["revision"], revision)
         self.assertEqual(model.call_args.kwargs["revision"], revision)
+        self.assertIs(
+            self.trainer_inputs[0]["processing_class"], tokenizer.return_value
+        )
         self.assertIn("torch_dtype", model.call_args.kwargs)
         boot = next(event for event in self.events if event["event"] == "boot")
         self.assertEqual(boot["base_revision"], revision)

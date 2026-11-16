@@ -52,6 +52,17 @@ the child's exit status is returned. Child success is not proof of completed
 training: verify newly trained steps, checkpoint contents, final publication,
 dataset digest and the completion receipt independently.
 
+For the Lean v2 lane, invoke `complete_record.py` only after the supervisor exits.
+Supply `--launch-spec`, `--worker-log`, `--supervisor-state`, and `--output-dir`.
+The launch specification contains `run_id`, `host`, `source_commit`, a
+`source_files` mapping of file names to SHA-256 hashes, `base` and `dataset`
+objects containing repository and immutable revision, `adapter_repo`, and
+`max_steps` (200). The publisher binds the fresh log and terminal state, checks
+the private adapter's pinned checkpoint metadata, and verifies exact-commit
+publication to the existing Lean lane receipt path. Model quality, execution
+provenance, tensor verification, and promotion remain separate qualifications.
+It retains local evidence and returns failure if publication cannot be verified.
+
 This protects memory headroom and detected service availability. It does not
 partition GPU compute or guarantee serving latency. Record a short generation
 baseline, check generation during the first training steps, and stop the training

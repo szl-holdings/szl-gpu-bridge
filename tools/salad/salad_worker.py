@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.1, 2026-11-15).
+"""salad_worker.py — the resumable burst-training worker (v3.7, 2026-11-16).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -595,7 +595,7 @@ def main() -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.6-20261115",
+             "worker_version": "v3.7-20261116",
              "base_revision": a.base_revision or None,
              "dataset_revision": a.dataset_revision or None,
              "energy_start": energy_start,
@@ -695,7 +695,8 @@ def main() -> int:
         target_modules=["q_proj","k_proj","v_proj","o_proj"],
         task_type="CAUSAL_LM")
 
-    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
+    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft,
+                         processing_class=tok)
 
     from transformers import TrainerCallback
     class ReceiptCallback(TrainerCallback):
