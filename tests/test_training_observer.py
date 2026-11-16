@@ -39,6 +39,21 @@ class ObserverTests(unittest.TestCase):
             self.observe()["state"], "TARGET_CHECKPOINT_WITHOUT_FINAL_BUNDLE"
         )
 
+    def test_partial_final_tokenizer_is_not_complete_metadata(self):
+        for missing in ("final/tokenizer.json", "final/tokenizer_config.json"):
+            with self.subTest(missing=missing):
+                blobs = fixture()
+                del blobs[missing]
+                self.api = FakeApi(blobs)
+                result = self.observe()
+                self.assertTrue(result["snapshot"]["final_tokenizer"])
+                self.assertEqual(
+                    result["state"], "TARGET_CHECKPOINT_WITHOUT_FINAL_BUNDLE"
+                )
+                self.assertFalse(result["training_complete_verified"])
+                self.assertFalse(result["promotion_authorized"])
+                self.assertFalse(result["trainer_process_liveness_verified"])
+
     def test_training_progress_is_not_process_liveness(self):
         self.api = FakeApi(fixture(step=175))
         result = self.observe()
