@@ -682,6 +682,9 @@ class BenchContract(unittest.TestCase):
 
         def measured_failure(r):
             r["eval_adapter"].update(mean_loss=6.0, perplexity=math.exp(6.0))
+            for row in r["eval_adapter"]["row_evidence"]:
+                if row["status"] == "SCORED":
+                    row["mean_loss"] = 6.0
             r["criterion_1"].update(eval_loss=6.0, **{"pass": False})
             r["improvement_vs_base"].update(eval_loss_adapter=6.0, delta=-2.5)
 
