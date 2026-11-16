@@ -68,6 +68,32 @@ The direct harness also rejects an existing output bundle before model hydration
 This is local exclusivity, not a cross-node distributed lease or an off-node archive;
 the controller still owns fleet concurrency, retries, generation and archive checks.
 
+## Check effective inputs before loading weights
+
+The benchmark tokenizes every evaluation row and the **entire training file**
+with the pinned base tokenizer, the same chat template and the same truncation
+length used by the loss measurement. `train_ref_rows` limits only the train-loss
+reference sample; it never limits this overlap audit. SHA-256 fingerprints of the
+effective input-token sequences detect exact collisions even when JSON metadata,
+filenames or discarded suffixes differ.
+
+An exact train/evaluation overlap, an unscorable split or a change to the pinned
+file bytes during the audit fails before adapter download or model hydration.
+The local error bundle retains the available audit counts and bounded fingerprint
+sample. It is not published as a completed measurement. Clean audits record
+scanned, scorable, skipped, unique and duplicate counts for each split.
+
+`NO_EXACT_OVERLAP` has a narrow meaning. It does not detect semantic duplicates,
+shared benchmark answers, pretraining contamination or dependence between samples.
+It does not establish that the heldout set represents a different distribution.
+
+New receipts label each measurement `TOKEN_LOSS_FIT_ONLY` and explicitly record
+`generalization_assessed: false` and `overfitting_absence_established: false`.
+The classification restricts the permissible claim; the audit does not statistically
+prove how either dataset was sampled. A small train/evaluation loss gap cannot
+establish the absence of overfitting. Publication validation checks reported scope
+and arithmetic consistency, not an independent witness of actual execution.
+
 ## Recover publication, not measurements
 
 For a completed ORIGINAL v2 bundle, use the separately admitted harness's
@@ -75,6 +101,12 @@ For a completed ORIGINAL v2 bundle, use the separately admitted harness's
 That mode retains the original identity and does not hydrate models or repeat
 measurement. Do not reconstruct an original bundle from log summaries or relabel a
 legacy v1 receipt as a corrected v2 result.
+
+Earlier completed v2 bundles can still be archived with their original bytes. An
+absent split audit remains absent; publication retry does not fabricate a clean
+audit, add a measurement classification or upgrade historical evidence. Consumers
+requiring the new audit must explicitly require it, rather than treating any v2
+receipt or successful publication as disjointness evidence.
 
 ## Acceptance bounds
 
