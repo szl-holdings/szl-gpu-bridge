@@ -1,8 +1,11 @@
-
-set -e
-if [ -z "$HF_TOKEN_INJECT" ]; then echo "no token"; exit 2; fi
-export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME=${HF_HOME:-$HOME/szl-legs/hf-cache} PIP_BREAK_SYSTEM_PACKAGES=1
-pip install -q transformers datasets peft trl accelerate huggingface_hub safetensors pynvml
+#!/usr/bin/env bash
+set -euo pipefail
+if [ -z "${HF_TOKEN_INJECT:-}" ]; then echo "no token"; exit 2; fi
+export HF_TOKEN="$HF_TOKEN_INJECT" HF_HOME="${HF_HOME:-$HOME/szl-legs/hf-cache}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+: "${SZL_TRAINING_RUNTIME_CONTRACT:?an admitted prebuilt runtime contract is required}"
+python3 "$SCRIPT_DIR/../validate_training_runtime.py" \
+  --contract "$SZL_TRAINING_RUNTIME_CONTRACT" --recipe "${BASH_SOURCE[0]}"
 python3 - <<'CODE'
 import os, time, json, hashlib, threading, torch
 import pynvml
