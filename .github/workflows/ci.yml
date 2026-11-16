@@ -60,18 +60,21 @@ jobs:
         run: >-
           python -m py_compile laptop/*.py tests/*.py
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
           tools/a6000-migration/complete_record.py
       - name: Verify deterministic Python formatting
         run: >-
           ruff format --check laptop tests
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
           tools/a6000-migration/complete_record.py
       - name: Lint Python
         run: >-
           ruff check laptop tests
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
           tools/a6000-migration/complete_record.py
       - name: Validate Node entrypoints
@@ -87,7 +90,8 @@ jobs:
             tests/test_cloud_contract.mjs \
             tests/test_cloud_nemo_v3.mjs \
             tests/test_materialize_frontier_spec.mjs \
-            tests/test_tier0_automerge.mjs
+            tests/test_tier0_automerge.mjs \
+            tests/test_training_dashboard.mjs
       - name: Validate JSON schemas and queued specs
         run: |
           python - <<'PY'
