@@ -180,7 +180,13 @@ class TerminalContract(unittest.TestCase):
             from_pretrained=lambda *a, **k: fixture.loaded.append(True) or object()
         )
         modules["transformers"].TrainerCallback = object
-        modules["trl"].SFTConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
+        def config(*, max_seq_length, **kwargs):
+            # TRL 0.13 uses this required sequence-bound keyword. A permissive
+            # **kwargs-only double previously hid the worker's max_length bug.
+            fixture.config_kwargs = {"max_seq_length": max_seq_length, **kwargs}
+            return types.SimpleNamespace(**fixture.config_kwargs)
+
+        modules["trl"].SFTConfig = config
         modules["trl"].SFTTrainer = Trainer
         modules["peft"].LoraConfig = lambda **kwargs: kwargs
         modules["datasets"].load_dataset = lambda *a, **k: Dataset()
@@ -271,6 +277,11 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(terminal["event"], expected_event)
         self.assertEqual(terminal["target_steps"], 200)
         self.assertIs(terminal["completion_qualified"], False)
+
+    def test_pinned_recipe_keeps_the_supported_sequence_bound(self):
+        self.assertEqual(self.run_worker(), 0)
+        self.assertEqual(self.config_kwargs["max_seq_length"], 2048)
+        self.assertNotIn("max_length", self.config_kwargs)
 
     def test_interrupted_run_cannot_publish_final_or_claim_target(self):
         self.actual, self.interrupted = 50, True

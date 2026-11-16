@@ -717,7 +717,7 @@ def run_training(a, api) -> int:
 
     cfg = SFTConfig(
         output_dir=os.path.expanduser("~/ckpt"),
-        max_length=2048,
+        max_seq_length=2048,
         per_device_train_batch_size=1,          # spot-metal safe: fits 24GB cards
         gradient_accumulation_steps=16,
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,

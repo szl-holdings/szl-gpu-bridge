@@ -139,3 +139,28 @@ loss, heartbeat/checkpoint stop-and-save, final-receipt failure after real artif
 publication, and successful commit bindings. Positive controls retain exact-target
 completion, no-retrain behavior and private-upload checks. This is not
 hosted-runtime qualification.
+
+### Pinned TRL constructor compatibility
+
+The Dockerfile pins TRL 0.13.0, whose sequence-bound argument is
+`max_seq_length`. The worker passes `max_seq_length=2048`. Passing the newer
+`max_length` spelling raises `TypeError` before training can begin. The first
+local candidate built from source `2a648b34a86ecf4e9ea2994efb16655872c890eb`
+exposed that failure despite passing import, CLI and synthetic terminal checks.
+That candidate is rejected for rollout; its existing immutable image and logs
+are retained as failure evidence.
+
+`tests/test_salad_worker_runtime_api.py` must run with
+`SZL_TEST_PINNED_RUNTIME=1` inside the candidate's installed dependency image,
+with networking disabled and no credentials or GPU. It verifies the pinned
+core versions, binds every actual SFTConfig, SFTTrainer and LoraConfig call's
+keywords to the installed API, and constructs the worker's full SFTConfig with
+only temporary output and CPU hardware overrides. A negative control confirms
+that the previous `max_length` keyword is rejected. The ordinary terminal
+test double also requires the supported sequence-bound keyword.
+
+These are CPU constructor and terminal-contract checks. They do not instantiate
+a model or Trainer, load weights/data, execute CUDA, measure throughput, verify
+a GPU kernel, qualify a model, or authorize deployment. The source correction
+requires a separately identified rebuilt image; passing checks on a mounted
+source file does not change an already-built image.
