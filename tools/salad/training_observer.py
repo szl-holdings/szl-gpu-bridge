@@ -45,7 +45,12 @@ def provider_observation(group, token, *, opener=provider_open):
         return {**unavailable, "reason": "PROVIDER_OBSERVATION_NOT_CONFIGURED"}
     request = urllib.request.Request(
         SALAD_BASE + group + "/instances",
-        headers={"Salad-Api-Key": token},
+        headers={
+            "Salad-Api-Key": token,
+            # Identify this client: the provider edge rejects urllib's default UA.
+            "User-Agent": "szl-training-observer/1.0",
+            "Accept": "application/json",
+        },
         method="GET",
     )
     try:

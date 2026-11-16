@@ -73,6 +73,43 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(result["state"], "OBSERVED")
         self.assertEqual(result["instance_count"], 0)
 
+    def test_provider_identifies_observer_at_edge(self):
+        def edge(request, timeout):
+            headers = {key.lower(): value for key, value in request.header_items()}
+            if headers.get("user-agent") != "szl-training-observer/1.0":
+                raise urllib.error.HTTPError(
+                    request.full_url, 403, "client identification required", {}, None
+                )
+            self.assertEqual(headers.get("accept"), "application/json")
+            self.assertEqual(headers.get("salad-api-key"), "not-a-real-token")
+            self.assertEqual(
+                request.full_url, observer.SALAD_BASE + "szl-example/instances"
+            )
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(timeout, 12)
+            return Response(b'{"instances":[]}')
+
+        result = observer.provider_observation(
+            "szl-example", "not-a-real-token", opener=edge
+        )
+        self.assertEqual(result["state"], "OBSERVED")
+        self.assertEqual(result["instance_count"], 0)
+        self.assertNotIn("not-a-real-token", json.dumps(result))
+
+    def test_provider_redirect_cannot_forward_credentials(self):
+        request = observer.urllib.request.Request(
+            observer.SALAD_BASE + "szl-example/instances",
+            headers={"Salad-Api-Key": "not-a-real-token"},
+        )
+        handler = observer.NoRedirect()
+        for code in [301, 302, 303, 307, 308]:
+            with self.subTest(code=code):
+                self.assertIsNone(
+                    handler.redirect_request(
+                        request, None, code, "redirect", {}, "https://example.invalid/"
+                    )
+                )
+
     def test_provider_unauthorized_is_unavailable_not_empty(self):
         def denied(*args, **kwargs):
             raise urllib.error.HTTPError(
