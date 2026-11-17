@@ -90,3 +90,41 @@ test('canonical JSON and PAE are deterministic', () => {
   assert.equal(body.toString(), '{"a":["x",true],"z":1}');
   assert.equal(pae('type', body).toString(), 'DSSEv1 4 type 22 {"a":["x",true],"z":1}');
 });
+
+test('v2 mandatory evaluation gates require a failing outcome', () => {
+  for (const [field, value] of [
+    ['minJsonValidRate', 0], ['minRequiredKeysRate', 0],
+    ['minCeilingRespectRate', 0], ['maxDegenerateRate', 1],
+  ]) {
+    const spec = v2();
+    spec.eval[field] = value;
+    assert.throws(() => validateSpec(spec), new RegExp(field));
+  }
+});
+
+test('v2 evaluation thresholds reject nonfinite and nonnumeric values', () => {
+  for (const field of [
+    'convictionCeiling', 'maxDegenerateRate', 'minJsonValidRate',
+    'minRequiredKeysRate', 'minCeilingRespectRate',
+  ]) {
+    for (const value of [NaN, Infinity, -Infinity, true, '0.5', null]) {
+      const spec = v2();
+      spec.eval[field] = value;
+      assert.throws(() => validateSpec(spec), new RegExp(field));
+    }
+  }
+});
+
+test('v2 nonvacuous evaluation boundaries remain valid', () => {
+  const spec = v2();
+  Object.assign(spec.eval, {
+    convictionCeiling: 0, maxDegenerateRate: 0,
+    minJsonValidRate: 1, minRequiredKeysRate: 1, minCeilingRespectRate: 1,
+  });
+  assert.equal(validateSpec(spec), PAYLOAD_TYPES['unsloth-frontier-sft-v2']);
+  Object.assign(spec.eval, {
+    convictionCeiling: 1, maxDegenerateRate: 0.999,
+    minJsonValidRate: 0.001, minRequiredKeysRate: 0.001, minCeilingRespectRate: 0.001,
+  });
+  assert.equal(validateSpec(spec), PAYLOAD_TYPES['unsloth-frontier-sft-v2']);
+});

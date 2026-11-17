@@ -20,10 +20,14 @@ SHA_BASE, SHA_ADAPTER, SHA_DATA, SHA_PARENT, SHA_COMMIT = [c * 40 for c in "abcd
 
 
 class Tensor:
-    def __init__(self, length, correct=None):
+    def __init__(self, length, correct=None, ids=None):
         self.length = length
         self.shape = (1, length)
         self.correct = length if correct is None else correct
+        self.ids = list(range(length)) if ids is None else ids
+
+    def tolist(self):
+        return [self.ids]
 
     def __getitem__(self, index):
         return Tensor(max(0, self.length - 1), self.correct)
@@ -44,10 +48,15 @@ class Tokenizer:
     chat_template = "synthetic-test-only"
 
     def apply_chat_template(self, messages, tokenize=False):
-        return int(messages[0]["content"])
+        return messages[0]["role"] + ":" + messages[0]["content"]
 
-    def __call__(self, text, **_):
-        return Encoding(input_ids=Tensor(int(text)))
+    def __call__(self, text, max_length, **_):
+        role, content = text.split(":", 1)
+        length = min(int(content), max_length)
+        offset = 100 if role == "assistant" else 200
+        return Encoding(
+            input_ids=Tensor(length, ids=list(range(offset, offset + length)))
+        )
 
 
 class Model:
@@ -80,6 +89,10 @@ class Fixture:
             {"messages": [{"role": "user", "content": "2"}]},
             {"messages": [{"role": "user", "content": "4"}]},
         ]
+        self.train_rows = [
+            {"messages": [{"role": "assistant", "content": "2"}]},
+            {"messages": [{"role": "assistant", "content": "4"}]},
+        ]
         self.write_rows()
         (root / "adapter/final").mkdir(parents=True)
         (root / "adapter/final/adapter_model.safetensors").write_bytes(
@@ -87,10 +100,14 @@ class Fixture:
         )
 
     def write_rows(self):
-        for name in ("eval.jsonl", "train.jsonl"):
+        for name, rows in (("eval.jsonl", self.rows), ("train.jsonl", self.train_rows)):
             (self.root / name).write_text(
-                "".join(json.dumps(r) + "\n" for r in self.rows), encoding="utf-8"
+                "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
             )
+
+    def load_model(self, *_, **__):
+        self.events.append(("model_load",))
+        return Model()
 
     def repo_info(self, repo_id, repo_type=None, revision=None):
         self.events.append(("repo_info", repo_id, repo_type, revision))
@@ -157,7 +174,7 @@ class Fixture:
             from_pretrained=lambda *a, **k: Tokenizer()
         )
         transformers.AutoModelForCausalLM = types.SimpleNamespace(
-            from_pretrained=lambda *a, **k: Model()
+            from_pretrained=self.load_model
         )
         peft = types.ModuleType("peft")
         peft.PeftModel = types.SimpleNamespace(from_pretrained=lambda base, _: base)
@@ -235,6 +252,18 @@ class BenchContract(unittest.TestCase):
                 v for k, v in self.fixture.uploads.items() if k.endswith("result.json")
             )
         )
+
+    def local_receipt(self):
+        return json.loads(
+            next(self.root.glob("bench-receipts/*/result.json")).read_text()
+        )
+
+    def assert_no_model_or_publication(self):
+        self.assertFalse(
+            any(e[0] in ("model_load", "snapshot") for e in self.fixture.events)
+        )
+        self.assertFalse(self.fixture.creates)
+        self.assertFalse(self.fixture.uploads)
 
     def make_bundle(self, status="OK"):
         # A complete synthetic measurement, not a status-only pseudo-receipt.
@@ -326,6 +355,118 @@ class BenchContract(unittest.TestCase):
     def test_holdout_quality_stays_false(self):
         self.assertEqual(self.run_main(), 0)
         self.assertIs(self.receipt()["heldout_quality_measured"], False)
+
+    def test_clean_split_classifies_each_measurement_as_fit_only(self):
+        self.assertEqual(self.run_main(), 0)
+        result = self.receipt()
+        self.assertEqual(result["measurement_class"], "TOKEN_LOSS_FIT_ONLY")
+        self.assertIs(result["generalization_assessed"], False)
+        self.assertIs(result["overfitting_absence_established"], False)
+        for name in ("eval_base", "eval_adapter", "train_ref_adapter"):
+            self.assertEqual(result[name]["measurement_class"], "TOKEN_LOSS_FIT_ONLY")
+        self.assertEqual(result["split_audit"]["status"], "NO_EXACT_OVERLAP")
+
+    def test_identical_inputs_fail_before_any_weight_download(self):
+        self.fixture.train_rows = list(self.fixture.rows)
+        self.fixture.write_rows()
+        self.assertEqual(self.run_main(), 7)
+        self.assert_no_model_or_publication()
+        result = self.local_receipt()
+        self.assertEqual(result["status"], "ERROR")
+        self.assertEqual(result["split_audit"]["status"], "OVERLAP_DETECTED")
+        self.assertEqual(result["split_audit"]["eval_rows_overlapping"], 2)
+
+    def test_overlap_after_first_n_train_reference_is_detected(self):
+        self.fixture.train_rows.append(self.fixture.rows[0])
+        self.fixture.write_rows()
+        self.assertEqual(self.run_main(("--train-ref-rows", "1")), 7)
+        self.assert_no_model_or_publication()
+        audit = self.local_receipt()["split_audit"]
+        self.assertEqual(audit["splits"]["train"]["rows_scanned"], 3)
+        self.assertEqual(audit["train_rows_overlapping"], 1)
+
+    def test_metadata_differences_do_not_hide_identical_model_inputs(self):
+        self.fixture.train_rows.append({**self.fixture.rows[0], "id": "different"})
+        self.fixture.write_rows()
+        self.assertNotEqual(
+            self.bench.sha256_file(self.root / "eval.jsonl"),
+            self.bench.sha256_file(self.root / "train.jsonl"),
+        )
+        self.assertEqual(self.run_main(), 7)
+        self.assert_no_model_or_publication()
+        self.assertEqual(
+            self.local_receipt()["split_audit"]["overlap_unique_inputs"], 1
+        )
+
+    def test_truncation_can_make_different_inputs_overlap(self):
+        self.fixture.rows = [{"messages": [{"role": "user", "content": "4"}]}]
+        self.fixture.train_rows = [{"messages": [{"role": "user", "content": "5"}]}]
+        self.fixture.write_rows()
+        self.assertEqual(self.run_main(("--max-length", "2")), 7)
+        self.assert_no_model_or_publication()
+        self.assertEqual(
+            self.local_receipt()["split_audit"]["overlap_unique_inputs"], 1
+        )
+
+    def test_unscorable_train_audit_is_unavailable(self):
+        self.fixture.train_rows = [{"messages": []}]
+        self.fixture.write_rows()
+        self.assertEqual(self.run_main(), 7)
+        self.assert_no_model_or_publication()
+        self.assertEqual(self.local_receipt()["split_audit"]["status"], "UNAVAILABLE")
+
+    def test_audit_counts_duplicate_and_unscorable_rows_explicitly(self):
+        self.fixture.train_rows += [self.fixture.rows[0], self.fixture.rows[0], {}]
+        self.fixture.rows += [self.fixture.rows[0], {}]
+        self.fixture.write_rows()
+        audit = self.bench.audit_split_overlap(
+            self.fixture.rows, self.root / "train.jsonl", Tokenizer(), 2048
+        )
+        self.assertEqual(
+            audit["splits"]["eval"],
+            {
+                "rows_scanned": 4,
+                "scorable_rows": 3,
+                "unscorable_rows": 1,
+                "unique_inputs": 2,
+                "duplicate_rows": 1,
+            },
+        )
+        self.assertEqual(
+            audit["splits"]["train"],
+            {
+                "rows_scanned": 5,
+                "scorable_rows": 4,
+                "unscorable_rows": 1,
+                "unique_inputs": 3,
+                "duplicate_rows": 1,
+            },
+        )
+        self.assertEqual(audit["overlap_unique_inputs"], 1)
+        self.assertEqual(audit["eval_rows_overlapping"], 2)
+        self.assertEqual(audit["train_rows_overlapping"], 2)
+        self.assertEqual(len(audit["overlap_fingerprints"]), 1)
+        self.assertEqual(len(audit["overlap_fingerprints"][0]), 64)
+
+    def test_changed_dataset_bytes_abort_before_model_hydration(self):
+        audit = self.bench.audit_split_overlap
+
+        def mutate(*args):
+            result = audit(*args)
+            with (self.root / "train.jsonl").open("a") as stream:
+                stream.write("\n")
+            return result
+
+        with patch.object(self.bench, "audit_split_overlap", side_effect=mutate):
+            self.assertEqual(self.run_main(), 7)
+        self.assert_no_model_or_publication()
+        self.assertIn("split files changed", self.output.getvalue())
+
+    def test_invalid_token_identities_abort_without_false_clean_report(self):
+        with patch.object(Tensor, "tolist", return_value=[[True, -1]]):
+            self.assertEqual(self.run_main(), 7)
+        self.assert_no_model_or_publication()
+        self.assertNotIn("split_audit", self.local_receipt())
 
     def test_non_finite_loss_refuses_publication(self):
         with patch.object(
@@ -587,6 +728,89 @@ class BenchContract(unittest.TestCase):
         bundle = self.make_bundle()
         self.rewrite_result(bundle, lambda r: r.update(heldout_quality_measured=True))
         self.assert_no_publication(bundle)
+
+    def test_rehashed_split_scope_or_coverage_cannot_qualify(self):
+        bundle = self.make_bundle()
+        original = json.loads((bundle / "result.json").read_text())
+        changes = {
+            "missing audit": lambda r: r.pop("split_audit"),
+            "overlap status": lambda r: r["split_audit"].update(
+                status="OVERLAP_DETECTED"
+            ),
+            "overlap count": lambda r: r["split_audit"].update(eval_rows_overlapping=1),
+            "bad eval coverage": lambda r: r["split_audit"]["splits"]["eval"].update(
+                rows_scanned=3
+            ),
+            "omitted train coverage": lambda r: r["split_audit"]["splits"].pop("train"),
+            "invalid split map": lambda r: r["split_audit"].update(splits=None),
+            "claimed generalization": lambda r: r.update(generalization_assessed=True),
+            "claimed no overfit": lambda r: r.update(
+                overfitting_absence_established=True
+            ),
+            "missing row class": lambda r: r["eval_base"].pop("measurement_class"),
+            "incorrect truncation": lambda r: r["split_audit"].update(max_length=2),
+        }
+        for name, change in changes.items():
+            with self.subTest(name=name):
+
+                def corrupt(result):
+                    result.clear()
+                    result.update(json.loads(json.dumps(original)))
+                    change(result)
+
+                self.rewrite_result(bundle, corrupt)
+                self.assert_no_publication(bundle)
+
+    @staticmethod
+    def drop_split_scope(result):
+        for field in (
+            "split_audit",
+            "measurement_class",
+            "generalization_assessed",
+            "overfitting_absence_established",
+        ):
+            result.pop(field)
+        for name in ("eval_base", "eval_adapter", "train_ref_adapter"):
+            result[name].pop("measurement_class")
+
+    def test_current_source_cannot_publish_a_receipt_with_all_audit_fields_stripped(
+        self,
+    ):
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, self.drop_split_scope)
+        self.assert_no_publication(bundle)
+
+    def test_legacy_v2_shape_can_be_archived_without_inventing_audit(self):
+        import hashlib
+
+        bundle = self.make_bundle()
+        self.rewrite_result(bundle, self.drop_split_scope)
+        # Synthetic pre-audit source declaration for archive-compatibility testing.
+        # This fixture is never executed and makes no execution-authenticity claim.
+        source_path = bundle / "bench_eval.py"
+        raw = source_path.read_bytes().replace(
+            b"SPLIT_AUDIT_SCHEMA =", b"LEGACY_FIXTURE_UNUSED_SCHEMA =", 1
+        )
+        source_path.write_bytes(raw)
+        digest = hashlib.sha256(raw).hexdigest()
+        manifest_path = bundle / "bundle.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["sha256"]["bench_eval.py"] = digest
+        manifest_path.write_text(json.dumps(manifest))
+        self.rewrite_result(bundle, lambda r: r.update(harness_sha256=digest))
+        original = (bundle / "result.json").read_bytes()
+        self.assertEqual(
+            self.bench.publish_bundle(bundle, self.fixture, self.fixture.download),
+            SHA_COMMIT,
+        )
+        self.assertEqual(
+            self.fixture.uploads["receipts/test/unique/result.json"], original
+        )
+        self.assertEqual(
+            self.fixture.uploads["receipts/test/unique/bench_eval.py"], raw
+        )
+        self.assertNotIn("split_audit", self.receipt())
+        self.assertNotIn("measurement_class", self.receipt())
 
     def test_rehashed_nonfinite_metric_is_rejected(self):
         bundle = self.make_bundle()
