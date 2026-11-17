@@ -196,7 +196,7 @@ SALAD_INSTANCE_COUNT_FIELDS = (
 SALAD_INSTANCE_STATES = ("allocating", "creating", "running", "stopping")
 
 
-def salad_group_page_evidence(groups, *, capture_limit=256, listing_complete=True):
+def salad_group_page_evidence(groups, *, capture_limit=256, listing_complete=False):
     """Safely summarize a bounded page and disclose every omitted group.
 
     Do not mistake the provider's group state 'running' for a running instance.
