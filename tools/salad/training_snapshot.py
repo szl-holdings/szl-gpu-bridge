@@ -184,3 +184,174 @@ def catalog_delta(previous_ids, current_ids, *, current_complete):
         "current_complete": current_complete,
         "interpretation": "Listing delta only; not deletion, permanent loss or model completion",
     }
+
+
+# Provider metadata is observation, not process liveness or training proof.
+SALAD_INSTANCE_COUNT_FIELDS = (
+    "allocating_count",
+    "creating_count",
+    "running_count",
+    "stopping_count",
+)
+SALAD_INSTANCE_STATES = ("allocating", "creating", "running", "stopping")
+
+
+def salad_group_page_evidence(groups, *, capture_limit=256, listing_complete=True):
+    """Safely summarize a bounded page and disclose every omitted group.
+
+    Do not mistake the provider's group state 'running' for a running instance.
+    All items are validated before any slice is applied, including omitted ones.
+    listing_complete is supplied from the transport's independently checked
+    pagination, not inferred from the presence of a group name.
+    """
+    if type(capture_limit) is not int or not 1 <= capture_limit <= 1000:
+        raise EvidenceHold("GROUP_CAPTURE_LIMIT_INVALID")
+    if type(listing_complete) is not bool or not isinstance(groups, list):
+        raise EvidenceHold("GROUP_LIST_UNOBSERVED")
+    if len(groups) > 1000:
+        raise EvidenceHold("GROUP_LIST_BOUND_EXCEEDED")
+    seen = set()
+    rows = []
+    for group in groups:
+        if not isinstance(group, dict):
+            raise EvidenceHold("GROUP_ITEM_NOT_OBJECT")
+        name = group.get("name")
+        if not isinstance(name, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", name
+        ):
+            raise EvidenceHold("GROUP_NAME_INVALID")
+        if name in seen:
+            raise EvidenceHold("DUPLICATE_GROUP_NAME")
+        seen.add(name)
+        state = group.get("current_state")
+        if state is not None and not isinstance(state, dict):
+            raise EvidenceHold("GROUP_STATE_INVALID")
+        state = state or {}
+        source_counts = state.get("instance_status_counts")
+        if source_counts is not None and not isinstance(source_counts, dict):
+            raise EvidenceHold("GROUP_COUNTS_INVALID")
+        source_counts = source_counts or {}
+        counts = {}
+        for field in SALAD_INSTANCE_COUNT_FIELDS:
+            value = source_counts.get(field)
+            counts[field] = value if type(value) is int and value >= 0 else None
+        desired = group.get("replicas")
+        if type(desired) is not int or desired < 0:
+            desired = None
+        rows.append(
+            {
+                "name": name,
+                "group_status": state.get("status")
+                if isinstance(state.get("status"), str)
+                else None,
+                "desired_replicas": desired,
+                "counts": counts,
+                "process_liveness_verified": False,
+            }
+        )
+    captured, omitted = rows[:capture_limit], rows[capture_limit:]
+    active_omitted = [
+        row["name"]
+        for row in omitted
+        if any(isinstance(v, int) and v > 0 for v in row["counts"].values())
+    ]
+    unknown_omitted = [
+        row["name"] for row in omitted if any(v is None for v in row["counts"].values())
+    ]
+    return {
+        "returned_count": len(rows),
+        "captured_count": len(captured),
+        "capture_limit": capture_limit,
+        "captured": captured,
+        "omitted_count": len(omitted),
+        "omitted_names": [row["name"] for row in omitted],
+        "omitted_with_nonzero_provider_counts": active_omitted,
+        "omitted_with_unknown_counts": unknown_omitted,
+        "listing_complete": listing_complete,
+        "coverage_complete": listing_complete and not omitted,
+        "interpretation": "Provider group metadata only; no trainer-process proof",
+    }
+
+
+def salad_instance_evidence(payload, *, capture_limit=12):
+    """Parse the actual Salad instance 'state' string and older nested shape.
+
+    The state field takes precedence only when it agrees with other present
+    representations. Missing or contradictory status is UNOBSERVED, never 0.
+    """
+    if type(capture_limit) is not int or not 1 <= capture_limit <= 100:
+        raise EvidenceHold("INSTANCE_CAPTURE_LIMIT_INVALID")
+    if isinstance(payload, list):
+        instances, pagination = payload, True
+    elif isinstance(payload, dict):
+        instances = payload.get("instances", payload.get("items"))
+        nxt = payload.get("next") or (payload.get("pagination") or {}).get("next")
+        pagination = not bool(nxt)
+    else:
+        raise EvidenceHold("INSTANCE_LIST_UNOBSERVED")
+    if not isinstance(instances, list) or len(instances) > 10000:
+        raise EvidenceHold("INSTANCE_LIST_INVALID")
+    normalized = []
+    mismatched = 0
+    for inst in instances:
+        if not isinstance(inst, dict):
+            raise EvidenceHold("INSTANCE_NOT_OBJECT")
+        nested = inst.get("current_state")
+        if nested is not None and not isinstance(nested, dict):
+            raise EvidenceHold("INSTANCE_NESTED_STATE_INVALID")
+        states = [
+            inst.get("state"),
+            inst.get("status"),
+            nested.get("status") if isinstance(nested, dict) else None,
+        ]
+        known = [s.lower() for s in states if isinstance(s, str) and s]
+        if len(set(known)) > 1:
+            mismatched += 1
+        status = (
+            known[0]
+            if known and len(set(known)) == 1 and known[0] in SALAD_INSTANCE_STATES
+            else "UNOBSERVED"
+        )
+        normalized.append(status)
+    captured = normalized[:capture_limit]
+    state_counts = {s: captured.count(s) for s in SALAD_INSTANCE_STATES}
+    return {
+        "returned_count": len(instances),
+        "captured_count": len(captured),
+        "capture_limit": capture_limit,
+        "captured_statuses": captured,
+        "state_counts": state_counts,
+        "unobserved_status_count": captured.count("UNOBSERVED"),
+        "conflicting_status_fields": mismatched,
+        "capture_truncated": len(instances) > capture_limit,
+        "listing_complete": pagination,
+        "coverage_complete": pagination and len(instances) <= capture_limit,
+        "trainer_process_liveness_verified": False,
+        "interpretation": "Only provider-reported instance state; not a heartbeat",
+    }
+
+
+def reconcile_salad_group_instance_counts(group, instances):
+    """Compare provider group counts with independently returned instance rows."""
+    if not isinstance(group, dict) or not isinstance(instances, dict):
+        raise EvidenceHold("PROVIDER_COUNT_INPUT_INVALID")
+    counts = group.get("counts")
+    if not isinstance(counts, dict):
+        raise EvidenceHold("GROUP_COUNTS_UNOBSERVED")
+    if (
+        not instances.get("coverage_complete")
+        or instances.get("unobserved_status_count")
+        or instances.get("conflicting_status_fields")
+    ):
+        return "UNOBSERVED"
+    if any(
+        type(counts.get(name)) is not int or counts[name] < 0
+        for name in SALAD_INSTANCE_COUNT_FIELDS
+    ):
+        return "UNOBSERVED"
+    if any(
+        counts[field] != instances["state_counts"].get(field.removesuffix("_count"))
+        for field in SALAD_INSTANCE_COUNT_FIELDS
+    ):
+        return "PROVIDER_COUNT_DRIFT"
+    return "PROVIDER_COUNTS_AGREE_NOT_TRAINER_LIVENESS"
