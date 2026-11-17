@@ -223,6 +223,18 @@ class CaptureTests(unittest.TestCase):
             "ADJUDICATION_INVALID",
         )
 
+    def test_unhashable_callback_verdict_returns_fixed_hold(self):
+        for malformed in (["PASS"], {"value": "PASS"}):
+            with self.subTest(kind=type(malformed).__name__):
+                result = _capture(
+                    adjudicate=lambda _case, _result: {
+                        "abstained": False,
+                        "verdict": malformed,
+                    },
+                )
+                self.held(result, "ADJUDICATION_INVALID")
+                self.assertEqual(result["model_executed"], "CALLBACK_INVOKED_UNVERIFIED")
+
     def test_contradictory_adjudication_does_not_publish_receipts(self):
         def incorrect(case, _result):
             return {"abstained": case["kind"] == "answerable", "verdict": "PASS"}
