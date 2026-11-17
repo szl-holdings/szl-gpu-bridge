@@ -7,6 +7,31 @@ const OBSERVATIONS = new Set(["UNAVAILABLE", "NO_CHECKPOINT_OBSERVED", "TARGET_C
   "TERMINAL_STEP_OVERSHOOT", "CHECKPOINT_PROGRESS_OBSERVED", "TERMINAL_METADATA_PRESENT",
   "TARGET_CHECKPOINT_WITHOUT_FINAL_BUNDLE"]);
 const PROVIDER_OBSERVATIONS = new Set(["OBSERVED", "UNAVAILABLE"]);
+const QUALIFICATION_LABELS = {
+  NOT_CONFIGURED: "Artifact check not configured",
+  UNAVAILABLE: "Artifact check unavailable",
+  INVALID: "Artifact record invalid",
+  NOT_ASSESSED: "Candidate not assessed",
+  REVISION_MISMATCH: "Artifact revision mismatch",
+  ARTIFACT_OBSERVATION_MATCHED: "Recorded artifact observation matched",
+  ARTIFACT_HOLD: "Artifact check held"
+};
+const QUALIFICATION_REASONS = {
+  QUALIFICATION_NOT_CONFIGURED: "Artifact qualification is not configured.",
+  QUALIFICATION_UNAVAILABLE: "Artifact qualification could not be read.",
+  QUALIFICATION_INVALID: "Artifact qualification failed validation.",
+  QUALIFICATION_CANDIDATE_NOT_ASSESSED: "This candidate is absent from the qualification record.",
+  QUALIFICATION_REVISION_MISMATCH: "The recorded revision differs from the candidate observation.",
+  QUALIFICATION_ARTIFACT_HELD: "The artifact check recorded a hold.",
+  QUALIFICATION_TARGET_MISMATCH: "The recorded target differs from the candidate observation."
+};
+const RELEASE_BLOCKERS = {
+  TRAINING_PROVENANCE_AND_SIGNATURE_NOT_VERIFIED: "Training provenance and signature remain unverified.",
+  HELDOUT_QUALITY_AND_CONTAMINATION_NOT_ASSESSED: "Held-out quality and contamination remain unassessed.",
+  SAFETY_AND_NEUTRAL_CAPABILITY_NOT_ASSESSED: "Safety and neutral capability remain unassessed.",
+  SERVING_AUTH_ISOLATION_LATENCY_ROLLBACK_NOT_ASSESSED: "Serving authorization, isolation, latency and rollback remain unassessed.",
+  OWNER_PROMOTION_APPROVAL_NOT_BOUND: "Owner promotion approval remains unbound."
+};
 const INSTANCE_STATES = new Set(["allocating", "allocated", "creating", "running", "stopping",
   "stopped", "failed", "error", "downloading", "starting", "pending", "queued",
   "provisioning", "succeeded", "unknown"]);
@@ -27,6 +52,44 @@ export function unavailable(reason = "STATUS_READ_FAILED", now = Date.now()) {
     training_complete_verified: false, promotion_authorized: false, trainer_process_liveness_verified: false, reason};
 }
 
+function missingQualification() {
+  return {state: "NOT_CONFIGURED", revision: null, observed_at_utc: null,
+    qualification_sha256: null, artifact_sha256: null, target_steps: null, base_repo: null,
+    hold_reasons: ["QUALIFICATION_NOT_CONFIGURED"], release_blockers: Object.keys(RELEASE_BLOCKERS),
+    artifact_observation_bound: false, authenticity_verified: false,
+    quality_qualification: "NOT_ESTABLISHED", compute_authorized: false, promotion_authorized: false};
+}
+
+function validateQualification(row, fail) {
+  const q = row.qualification === undefined ? missingQualification() : row.qualification;
+  const digest = value => text(value, 64) && /^[0-9a-f]{64}$/.test(value);
+  const revision = value => text(value, 64) && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value);
+  const codes = (values, allowed) => Array.isArray(values) && values.length <= Object.keys(allowed).length &&
+    values.every(code => typeof code === "string" && Object.hasOwn(allowed, code)) &&
+    new Set(values).size === values.length;
+  if (!object(q) || !Object.hasOwn(QUALIFICATION_LABELS, q.state) ||
+      !(q.revision === null || revision(q.revision)) ||
+      !(q.observed_at_utc === null || utc(q.observed_at_utc)) ||
+      !(q.qualification_sha256 === null || digest(q.qualification_sha256)) ||
+      !(q.artifact_sha256 === null || digest(q.artifact_sha256)) ||
+      !(q.target_steps === null || count(q.target_steps) && q.target_steps > 0) ||
+      !(q.base_repo === null || text(q.base_repo, 260) && q.base_repo.length > 0) ||
+      !codes(q.hold_reasons, QUALIFICATION_REASONS) ||
+      !codes(q.release_blockers, RELEASE_BLOCKERS) ||
+      q.release_blockers.length !== Object.keys(RELEASE_BLOCKERS).length ||
+      typeof q.artifact_observation_bound !== "boolean" || q.authenticity_verified !== false ||
+      q.quality_qualification !== "NOT_ESTABLISHED" ||
+      q.compute_authorized !== false || q.promotion_authorized !== false) fail();
+  const matched = q.state === "ARTIFACT_OBSERVATION_MATCHED";
+  // A record's validity is never permission. A binding also needs this exact observed revision and target.
+  if (q.artifact_observation_bound !== matched ||
+      (matched && (!revision(q.revision) || q.revision !== row.revision ||
+        q.target_steps !== row.target_steps || !utc(q.observed_at_utc) ||
+        !digest(q.qualification_sha256) || !digest(q.artifact_sha256) ||
+        q.base_repo === null || q.hold_reasons.length !== 0))) fail();
+  return q;
+}
+
 export function validateReport(report) {
   const fail = () => { throw new Error("RESPONSE_CONTRACT_INVALID"); };
   if (!object(report) || report.schema !== SCHEMA || !STATES.has(report.status) ||
@@ -44,6 +107,7 @@ export function validateReport(report) {
       !count(source.stale_after_seconds) || source.stale_after_seconds < 1 || source.stale_after_seconds > 7260 ||
       report.candidates.length < 1 || report.candidates.length > 6) fail();
   const repos = new Set();
+  const candidates = [];
   for (const row of report.candidates) {
     if (!object(row) || !text(row.repo, 140) || !/^SZLHOLDINGS\/[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(row.repo) ||
         repos.has(row.repo) || !OBSERVATIONS.has(row.observed_state) ||
@@ -70,8 +134,9 @@ export function validateReport(report) {
           !count(provider.ready_count) || provider.ready_count > provider.instance_count) fail();
     } else if (provider.instance_count !== null || provider.ready_count !== null ||
         provider.instance_states.length !== 0) fail();
+    candidates.push({...row, qualification: validateQualification(row, fail)});
   }
-  return report;
+  return {...report, candidates};
 }
 
 export function snapshotView(report, receivedAt, now = Date.now()) {
@@ -141,6 +206,52 @@ function ageLabel(seconds) {
 const label = value => String(value ?? "UNAVAILABLE").replaceAll("_", " ");
 const value = number => number === null || number === undefined ? "Unavailable" : String(number);
 
+function renderQualification(node, item) {
+  const q = item.qualification ?? missingQualification();
+  const bound = q.state === "ARTIFACT_OBSERVATION_MATCHED" && q.artifact_observation_bound === true &&
+    q.revision !== null && q.revision === item.revision && q.target_steps === item.target_steps;
+  const section = node("section", "", "qualification");
+  section.append(node("h3", "Recorded artifact check"));
+  section.append(node("div", q.state === "ARTIFACT_OBSERVATION_MATCHED" && !bound
+    ? "Artifact record does not match this observation" : QUALIFICATION_LABELS[q.state], "qualification-state"));
+  section.append(node("div", bound ? "Bound to recorded revision" : "Unbound to this candidate observation", "detail"));
+  if (item.freshness === "STALE") {
+    section.append(node("div", "Historical candidate observation; current revision is unestablished.", "detail stale"));
+  }
+  section.append(node("div", "Quality not established · compute and promotion unauthorized", "detail"));
+  const details = node("details", "", "detail");
+  details.id = "qualification-" + item.repo;
+  details.append(node("summary", "Record and 5 release requirements"));
+  const metadata = node("dl", "", "record-details");
+  for (const [name, content] of [
+    ["Record state", q.state], ["Recorded revision", q.revision],
+    ["Artifact observed at (UTC)", q.observed_at_utc], ["Recorded target steps", q.target_steps],
+    ["Recorded base model", q.base_repo], ["Qualification record SHA-256", q.qualification_sha256],
+    ["Artifact SHA-256", q.artifact_sha256]
+  ]) {
+    const pair = node("div", "");
+    pair.append(node("dt", name), node("dd", value(content), "mono"));
+    metadata.append(pair);
+  }
+  details.append(metadata);
+  if (q.hold_reasons.length) {
+    const reasons = node("ul", "", "qualification-reasons");
+    for (const code of q.hold_reasons) reasons.append(node("li", QUALIFICATION_REASONS[code]));
+    details.append(reasons);
+  }
+  details.append(node("p", "Authenticity remains unverified. This immutable record describes an artifact check, without establishing model quality or release authority."));
+  details.append(node("h4", "Release remains blocked"));
+  const blockers = node("ul", "", "release-blockers");
+  for (const code of q.release_blockers) {
+    const blocker = node("li", RELEASE_BLOCKERS[code]);
+    blocker.append(node("div", code, "mono"));
+    blockers.append(blocker);
+  }
+  details.append(blockers);
+  section.append(details);
+  return section;
+}
+
 export function renderDashboard(document, report) {
   const set = (id, content) => { document.getElementById(id).textContent = content; };
   const node = (tag, content, className = "") => {
@@ -167,6 +278,9 @@ export function renderDashboard(document, report) {
       : "Evidence unavailable. " + label(report.reason) + ". Refresh evidence to retry.";
   set("status-message", message);
   const body = document.getElementById("candidates");
+  const openDetails = new Set(Array.from(body.querySelectorAll("details[open]"), entry => entry.id));
+  const focusedDetailId = document.activeElement?.tagName === "SUMMARY"
+    ? document.activeElement.closest("details")?.id : null;
   body.replaceChildren();
   if (!hasSource || !report.candidates.length) {
     const row = node("tr", "");
@@ -178,6 +292,7 @@ export function renderDashboard(document, report) {
     const candidate = node("td", "");
     candidate.append(node("div", item.repo, "repo"));
     candidate.append(node("div", "Revision: " + value(item.revision), "detail mono"));
+    candidate.append(renderQualification(node, item));
     const checkpoint = node("td", "");
     checkpoint.append(node("div", label(item.observed_state)));
     checkpoint.append(node("div", "Checkpoint: " + value(item.latest_checkpoint) + " · target: " + value(item.target_steps), "detail"));
@@ -185,6 +300,7 @@ export function renderDashboard(document, report) {
     checkpoint.append(node("div", "Reported trainer-state integrity: " + label(item.trainer_state_integrity), "detail"));
     if (item.trainer_state_sha256 !== null) {
       const digest = node("details", "", "detail");
+      digest.id = "trainer-state-" + item.repo;
       digest.append(node("summary", "Trainer-state SHA-256"));
       digest.append(node("p", item.trainer_state_sha256, "mono"));
       checkpoint.append(digest);
@@ -201,6 +317,10 @@ export function renderDashboard(document, report) {
     if (item.freshness === "STALE") fresh.append(node("div", "Historical observation", "detail"));
     row.append(candidate, checkpoint, provider, observed, fresh);
     body.append(row);
+  }
+  for (const details of body.querySelectorAll("details")) {
+    details.open = openDetails.has(details.id);
+    if (details.id === focusedDetailId) details.querySelector("summary").focus({preventScroll: true});
   }
 }
 

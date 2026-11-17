@@ -13,7 +13,7 @@ header,main,footer{max-width:1440px;margin:auto;padding:24px 5%}header{display:f
 h1{font-size:clamp(1.6rem,4vw,2.35rem);font-weight:650;letter-spacing:-.035em;margin:5px 0 8px}h2{font-size:1.05rem;margin:0 0 8px}
 p{margin:8px 0}.muted,.note{color:var(--muted)}.note{font-size:.82rem}.header-copy{max-width:720px}
 button{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 16px;white-space:nowrap;cursor:pointer}
-button:hover{border-color:var(--accent)}button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+button:hover{border-color:var(--accent)}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
 button:disabled{opacity:.6;cursor:wait}a{color:var(--accent)}main{padding-top:28px;padding-bottom:40px}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px}
 .key{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.value{font-size:1.45rem;font-weight:650;margin-top:8px;overflow-wrap:anywhere}
@@ -26,6 +26,9 @@ th,td{padding:17px 18px;border-bottom:1px solid var(--border);vertical-align:top
 tr:last-child td{border-bottom:0}.repo{font-weight:600;overflow-wrap:anywhere;min-width:225px}.detail{font-size:.76rem;color:var(--muted);margin-top:7px;overflow-wrap:anywhere}
 .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.76rem;overflow-wrap:anywhere}
 .badge{display:inline-block;border:1px solid currentColor;border-radius:6px;padding:3px 7px;font-size:.69rem;font-weight:650;letter-spacing:.025em}
+.qualification{border-top:1px solid var(--border);margin-top:14px;padding-top:10px;max-width:25em}.qualification h3,.qualification h4{font-size:.76rem;margin:0 0 6px}.qualification h3{color:var(--muted);font-weight:500}.qualification h4{margin-top:14px;color:var(--text)}
+.qualification-state{font-size:.8rem}.record-details{margin:12px 0;max-width:25em}.record-details div{margin:9px 0}.record-details dt{color:var(--muted)}.record-details dd{margin:3px 0 0;color:var(--text)}
+.qualification ul{padding-left:18px;margin:12px 0;max-width:25em}.qualification li{margin-bottom:10px}.release-blockers .mono{font-size:.68rem;margin-top:3px}
 .evidence{display:grid;grid-template-columns:1fr 1fr;gap:20px 30px}.evidence div{min-width:0}.evidence .wide{grid-column:1/-1}
 details summary{cursor:pointer;color:var(--accent)}details p{max-width:22em}.evidence dd{margin:5px 0 0}.evidence dt{color:var(--muted);font-size:.75rem}.notice{border-left:3px solid var(--accent);padding:0 0 0 15px;margin-top:18px}
 footer{border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
@@ -39,7 +42,7 @@ footer{border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;dis
   <div class="header-copy">
     <div class="eyebrow">SZL / Evidence console</div>
     <h1>Training observations</h1>
-    <p class="muted">Checkpoint evidence for the candidates selected by the observer.</p>
+    <p class="muted">Checkpoint observations and recorded artifact checks for the selected candidates.</p>
   </div>
   <button id="refresh-button" type="button">Refresh evidence</button>
 </header>
@@ -48,14 +51,14 @@ footer{border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;dis
     <div class="card"><div class="key">Evidence freshness</div><div id="report-status" class="value unavailable">UNAVAILABLE</div><p class="note">Source and candidate freshness</p></div>
     <div class="card"><div class="key">Selected candidates</div><div id="candidate-count" class="value">Unavailable</div><p class="note">Coverage is limited to this selection</p></div>
     <div class="card"><div class="key">Source age</div><div id="source-age" class="value">Unavailable</div><p id="freshness-window" class="note">Freshness window unavailable</p></div>
-    <div class="card"><div class="key">Authority</div><div class="value small">Observation only</div><p class="note">Promotion remains unauthorized</p></div>
+    <div class="card"><div class="key">Authority</div><div class="value small">Observation only</div><p class="note">Compute and promotion remain unauthorized</p></div>
   </section>
   <p id="status-message" class="status-line" role="status" aria-live="polite">Waiting for the local observation service.</p>
   <div class="section-head"><h2>Selected candidate evidence</h2><span class="note">Provider state and trainer progress are separate observations</span></div>
   <section class="card table-wrap" aria-label="Selected candidate evidence">
     <table>
-      <caption>Completion and trainer process liveness remain unverified for every candidate shown here.</caption>
-      <thead><tr><th scope="col">Candidate / exact revision</th><th scope="col">Checkpoint evidence</th><th scope="col">Provider observation</th><th scope="col">Observation time</th><th scope="col">Freshness</th></tr></thead>
+      <caption>Artifact records bind to an exact observed revision and step target. Their recorded checks do not establish model quality, completion, trainer liveness or release authority.</caption>
+      <thead><tr><th scope="col">Candidate / artifact record</th><th scope="col">Checkpoint evidence</th><th scope="col">Provider observation</th><th scope="col">Observation time</th><th scope="col">Freshness</th></tr></thead>
       <tbody id="candidates"><tr><td colspan="5">Candidate evidence unavailable.</td></tr></tbody>
     </table>
   </section>
@@ -68,7 +71,7 @@ footer{border-top:1px solid var(--border);color:var(--muted);font-size:.8rem;dis
       <div><dt>Coverage</dt><dd>Selected candidates; whole-fleet coverage unverified</dd></div>
       <div class="wide"><dt>SHA-256 of the source observation bytes</dt><dd id="source-hash" class="mono">Unavailable</dd></div>
     </dl>
-    <p class="note notice">The digest identifies the observed bytes. Signature verification is unavailable in this view. Terminal metadata, provider readiness and a reached step each need independent qualification before any release decision.</p>
+    <p class="note notice">Digests identify recorded bytes; authenticity remains unverified. Training observation freshness is separate from the immutable artifact record. A record may match a historical revision while the current revision is unestablished. Each candidate keeps five release requirements open, including quality assessment and bound owner approval.</p>
   </section>
   <noscript><p class="notice">JavaScript is required to read the observation endpoint. All evidence remains unavailable.</p></noscript>
 </main>

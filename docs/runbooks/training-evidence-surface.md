@@ -61,6 +61,55 @@ make an earlier candidate observation newer. The browser must expire a displayed
 observation between fetches and surface fetch errors rather than retain green
 freshness indefinitely. Listener health and observation freshness are separate.
 
+## Pinned artifact observations
+
+The optional artifact view consumes an existing qualification bundle from
+`tools.salad.artifact_qualification`. Configure both
+`--qualification-bundle <directory>` and
+`--qualification-sha256 <reviewed-qualification-json-sha256>`.
+The SHA-256 must be the independently selected digest of the exact
+`qualification.json` bytes. Selecting a directory alone cannot select new
+evidence implicitly.
+
+On every status request, the backend validates the pinned report, its manifest,
+and the two archived verifier source hashes using
+`tools.salad.evaluation_binding`. It does not execute those archived sources or
+download models. The qualification report and its file members have bounded reads;
+symlinks and nonregular paths are rejected. Raw diagnostic messages and local
+paths are not exposed to the browser.
+
+A row's qualification is independent of the checkpoint and provider observation:
+
+| Qualification state | Meaning |
+| --- | --- |
+| `NOT_CONFIGURED` | This view has no selected qualification bundle. |
+| `UNAVAILABLE` | The selected local bundle or a required member cannot be read. |
+| `INVALID` | Content, hashes, timestamp order, scope, or target contract failed validation. |
+| `NOT_ASSESSED` | This candidate is absent from the selected qualification report. |
+| `REVISION_MISMATCH` | The report describes a different immutable revision. |
+| `ARTIFACT_HOLD` | The report records an artifact hold; no match is asserted. |
+| `ARTIFACT_OBSERVATION_MATCHED` | The report's exact repo, revision, and terminal target match this observer row. |
+
+A matched row exposes its recorded revision, adapter SHA-256, report SHA-256,
+base repository, target, and observation time. The match establishes consistency
+with that unsigned local record. It does not re-inspect the artifact, authenticate
+the observer, verify the base revision, establish independent held-out quality,
+or authorize compute or promotion. All five remaining release blockers are
+retained in the expandable details.
+
+An immutable artifact observation does not become invalid merely because time
+has elapsed. Live observer freshness remains a separate requirement: when the
+observer is stale, the UI labels the match as attached to the *recorded* revision
+and says that the current revision is unestablished. A later revision cannot
+inherit the prior match. Missing, invalid, or changed qualification data cannot
+fall back to the last successful match.
+
+This additive dashboard contract is `szl.training-dashboard/v1`. An older
+response that omits qualification is displayed as `NOT_CONFIGURED`, never as an
+artifact pass. Paired evaluation execution uses the same verifier and archives
+the binding in a version 3 evaluation bundle; see
+[paired held-out measurements](paired-heldout-measurements.md).
+
 ## Start and verify
 
 From the reviewed repository root, with Python available:
