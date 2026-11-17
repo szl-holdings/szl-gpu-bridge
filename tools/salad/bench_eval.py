@@ -18,6 +18,7 @@ the receipt and never claimed to be TRL's internal loss verbatim.
 
 import argparse
 import ast
+from collections import Counter
 import datetime
 import hashlib
 import json
@@ -30,6 +31,12 @@ import time
 import uuid
 
 SCHEMA = "szl.salad-bench/v2"
+FIT_CLASS = "TOKEN_LOSS_FIT_ONLY"
+SPLIT_AUDIT_SCHEMA = "szl.scored-token-split-audit/v1"
+SPLIT_AUDIT_SCOPE = (
+    "exact input-token sequences after chat templating and truncation; "
+    "not semantic, benchmark, or pretraining contamination detection"
+)
 INTEGRITY_PROFILE = "szl.salad-bench-integrity/v1"
 MAX_EVIDENCE_ROWS_PER_PASS = 10000
 MEASUREMENT_FIELDS = ("eval_base", "eval_adapter", "train_ref_adapter")
@@ -83,17 +90,90 @@ class Energy:
             return None
 
 
-def load_jsonl(path, max_rows=None):
-    rows = []
+def iter_jsonl(path):
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            rows.append(json.loads(line))
-            if max_rows and len(rows) >= max_rows:
-                break
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError("dataset rows must be objects")
+            yield row
+
+
+def load_jsonl(path, max_rows=None):
+    rows = []
+    for row in iter_jsonl(path):
+        rows.append(row)
+        if max_rows and len(rows) >= max_rows:
+            break
     return rows
+
+
+def encode_row(row, tok, max_length):
+    """One input pipeline for the preflight audit and measured model forwards."""
+    msgs = row.get("messages")
+    if not msgs:
+        return None
+    text = tok.apply_chat_template(msgs, tokenize=False)
+    return tok(text, truncation=True, max_length=max_length, return_tensors="pt")
+
+
+def audit_split_overlap(eval_rows, train_path, tok, max_length):
+    """Scan the entire train file, even when train loss uses only a first-N sample.
+
+    Matching effective token sequences catch metadata-only changes and collisions
+    introduced by truncation. Fingerprints retain no prompt text. This establishes
+    a narrow identity check, never independent sampling or model generalization.
+    """
+    summaries, fingerprints = {}, {}
+    for name, source in (("eval", eval_rows), ("train", iter_jsonl(train_path))):
+        seen = Counter()
+        offered = 0
+        for row in source:
+            offered += 1
+            enc = encode_row(row, tok, max_length)
+            if enc is None or enc["input_ids"].shape[1] < 2:
+                continue
+            ids = enc["input_ids"].tolist()
+            if (
+                not isinstance(ids, list)
+                or len(ids) != 1
+                or not isinstance(ids[0], list)
+                or len(ids[0]) != enc["input_ids"].shape[1]
+                or any(type(x) is not int or x < 0 for x in ids[0])
+            ):
+                raise ValueError("tokenizer returned invalid input-token identities")
+            raw = json.dumps(ids[0], separators=(",", ":")).encode("ascii")
+            seen[hashlib.sha256(raw).hexdigest()] += 1
+        scorable = sum(seen.values())
+        summaries[name] = {
+            "rows_scanned": offered,
+            "scorable_rows": scorable,
+            "unscorable_rows": offered - scorable,
+            "unique_inputs": len(seen),
+            "duplicate_rows": scorable - len(seen),
+        }
+        fingerprints[name] = seen
+    common = fingerprints["train"].keys() & fingerprints["eval"].keys()
+    available = all(s["scorable_rows"] > 0 for s in summaries.values())
+    return {
+        "schema": SPLIT_AUDIT_SCHEMA,
+        "scope": SPLIT_AUDIT_SCOPE,
+        "max_length": max_length,
+        "status": "UNAVAILABLE"
+        if not available
+        else "OVERLAP_DETECTED"
+        if common
+        else "NO_EXACT_OVERLAP",
+        "splits": summaries,
+        "overlap_unique_inputs": len(common),
+        "eval_rows_overlapping": sum(fingerprints["eval"][x] for x in common),
+        "train_rows_overlapping": sum(fingerprints["train"][x] for x in common),
+        "overlap_fingerprints": sorted(common)[:20],
+        "overlap_fingerprint_limit": 20,
+    }
 
 
 def energy_fields(start_mj, end_mj):
@@ -142,14 +222,11 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
                     ).encode("utf-8")
                 ).hexdigest(),
             }
-            msgs = ex.get("messages")
-            if not msgs:
+            enc = encode_row(ex, tok, max_length)
+            if enc is None:
                 row_evidence.append({**row, "status": "SKIPPED_NO_MESSAGES"})
                 continue
-            text = tok.apply_chat_template(msgs, tokenize=False)
-            enc = tok(
-                text, truncation=True, max_length=max_length, return_tensors="pt"
-            ).to(model.device)
+            enc = enc.to(model.device)
             length = enc["input_ids"].shape[1]
             if length < 2:
                 row_evidence.append(
@@ -202,6 +279,7 @@ def measure(model, rows, label, tok, en, max_length, torch_module):
     except OverflowError:
         perplexity = None
     res = {
+        "measurement_class": FIT_CLASS,
         "rows": count,
         "rows_offered": len(rows),
         "rows_skipped": len(rows) - count,
@@ -279,6 +357,80 @@ def _integer(value, minimum=0):
 def _same(actual, expected):
     if not math.isclose(_finite(actual), expected, rel_tol=1e-12, abs_tol=1e-12):
         raise ValueError("inconsistent derived measurement")
+
+
+def validate_split_audit(result):
+    """Validate reported coverage, not the truth of self-reported execution.
+
+    Older v2 bundles may still be archived unchanged. They do not acquire an
+    overlap audit or a new measurement-class field during publication retry.
+    """
+    if not any(
+        key in result
+        for key in (
+            "split_audit",
+            "measurement_class",
+            "generalization_assessed",
+            "overfitting_absence_established",
+        )
+    ):
+        if any(
+            "measurement_class" in result[name]
+            for name in ("eval_base", "eval_adapter", "train_ref_adapter")
+        ):
+            raise ValueError("incomplete measurement scope")
+        return
+    if (
+        result.get("measurement_class") != FIT_CLASS
+        or result.get("generalization_assessed") is not False
+        or result.get("overfitting_absence_established") is not False
+    ):
+        raise ValueError(
+            "fit measurement cannot establish generalization or no overfit"
+        )
+    for name in ("eval_base", "eval_adapter", "train_ref_adapter"):
+        if result[name].get("measurement_class") != FIT_CLASS:
+            raise ValueError("each measurement must carry its fit classification")
+    audit = result.get("split_audit")
+    if (
+        not isinstance(audit, dict)
+        or audit.get("schema") != SPLIT_AUDIT_SCHEMA
+        or audit.get("status") != "NO_EXACT_OVERLAP"
+        or audit.get("scope") != SPLIT_AUDIT_SCOPE
+        or _integer(audit.get("max_length"), 2) != result["max_length"]
+    ):
+        raise ValueError("completed measurement requires a usable split audit")
+    splits = audit.get("splits")
+    if not isinstance(splits, dict):
+        raise ValueError("missing split audit coverage")
+    for name in ("eval", "train"):
+        entry = splits.get(name)
+        if not isinstance(entry, dict):
+            raise ValueError("missing split audit coverage")
+        offered = _integer(entry.get("rows_scanned"), 1)
+        scorable = _integer(entry.get("scorable_rows"), 1)
+        skipped = _integer(entry.get("unscorable_rows"))
+        unique = _integer(entry.get("unique_inputs"), 1)
+        duplicates = _integer(entry.get("duplicate_rows"))
+        if offered != scorable + skipped or scorable != unique + duplicates:
+            raise ValueError("split audit coverage is inconsistent")
+        measured = result["eval_base" if name == "eval" else "train_ref_adapter"]
+        if name == "eval":
+            if offered != measured["rows_offered"] or scorable != measured["rows"]:
+                raise ValueError("audited and measured evaluation coverage differ")
+        elif offered < measured["rows_offered"] or scorable < measured["rows"]:
+            raise ValueError("train audit cannot cover less than the reference sample")
+    for key in (
+        "overlap_unique_inputs",
+        "eval_rows_overlapping",
+        "train_rows_overlapping",
+    ):
+        if _integer(audit.get(key)) != 0:
+            raise ValueError("overlapping inputs cannot qualify a disjoint split")
+    if audit.get("overlap_fingerprints") != []:
+        raise ValueError("clean split audit carries overlapping fingerprints")
+    if _integer(audit.get("overlap_fingerprint_limit"), 1) != 20:
+        raise ValueError("unsupported split fingerprint sample bound")
 
 
 def _safe_prefix(prefix):
@@ -579,6 +731,7 @@ def validate_completed_result(result, manifest):
     for field in ("rows", "rows_offered", "rows_skipped", "tokens", "predicted_tokens"):
         if result["eval_base"][field] != result["eval_adapter"][field]:
             raise ValueError("base/adapter comparison coverage mismatch")
+    validate_split_audit(result)
     base = result["eval_base"]["mean_loss"]
     adapter = result["eval_adapter"]["mean_loss"]
     train = result["train_ref_adapter"]["mean_loss"]
@@ -685,6 +838,24 @@ def publish_bundle(directory, api, download):
         profiles[0] if profiles else None
     ):
         raise ValueError("receipt/source integrity profile mismatch")
+    split_profiles = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "SPLIT_AUDIT_SCHEMA"
+            for target in node.targets
+        )
+        and isinstance(node.value, ast.Constant)
+    ]
+    split_audit = result.get("split_audit")
+    reported_schema = (
+        split_audit.get("schema") if isinstance(split_audit, dict) else None
+    )
+    if split_profiles not in ([], [SPLIT_AUDIT_SCHEMA]) or reported_schema != (
+        split_profiles[0] if split_profiles else None
+    ):
+        raise ValueError("receipt/source split audit profile mismatch")
     validate_completed_result(result, manifest)
     if result.get("harness_sha256") != manifest["sha256"]["bench_eval.py"]:
         raise ValueError("receipt/harness binding mismatch")
@@ -821,6 +992,9 @@ def main():
     t0 = time.monotonic()
     rec = {
         "schema": SCHEMA,
+        "measurement_class": FIT_CLASS,
+        "generalization_assessed": False,
+        "overfitting_absence_established": False,
         "kind": "UNAVAILABLE",
         "integrity_profile": INTEGRITY_PROFILE,
         "baseline_isolation": "BASE_MEASURED_BEFORE_ADAPTER_ATTACHMENT",
@@ -907,20 +1081,6 @@ def main():
         if a.train_sha256 and tr_sha != a.train_sha256:
             return fail("train file sha256 mismatch", rec)
 
-        try:
-            adir = snapshot_download(
-                a.adapter_repo,
-                revision=adapter_revision,
-                allow_patterns=[a.adapter_dir + "/*"],
-            )
-        except Exception as e:
-            return fail("adapter snapshot failed: " + repr(e)[:200], rec)
-        adapter_path = os.path.join(adir, a.adapter_dir)
-        if not os.path.isfile(os.path.join(adapter_path, "adapter_model.safetensors")):
-            return fail("adapter_model.safetensors missing under " + a.adapter_dir, rec)
-        rec["adapter_file_sha256"] = sha256_file(
-            os.path.join(adapter_path, "adapter_model.safetensors")
-        )
         from transformers import AutoTokenizer, AutoModelForCausalLM
         from peft import PeftModel
 
@@ -942,6 +1102,31 @@ def main():
             "train_ref": len(train_rows),
             "train_ref_note": "first-N deterministic rows of train file",
         }
+
+        rec["split_audit"] = audit_split_overlap(
+            eval_rows, train_path, tok, a.max_length
+        )
+        if sha256_file(eval_path) != ev_sha or sha256_file(train_path) != tr_sha:
+            return fail("split files changed during the overlap audit")
+        if rec["split_audit"]["status"] != "NO_EXACT_OVERLAP":
+            return fail("train/eval split audit: " + rec["split_audit"]["status"])
+
+        # Only hydrate model weights after the entire split audit has succeeded.
+        try:
+            adir = snapshot_download(
+                a.adapter_repo,
+                revision=adapter_revision,
+                allow_patterns=[a.adapter_dir + "/*"],
+            )
+        except Exception as e:
+            return fail("adapter snapshot failed: " + repr(e)[:200], rec)
+        adapter_path = os.path.join(adir, a.adapter_dir)
+        if not os.path.isfile(os.path.join(adapter_path, "adapter_model.safetensors")):
+            return fail("adapter_model.safetensors missing under " + a.adapter_dir, rec)
+
+        rec["adapter_file_sha256"] = sha256_file(
+            os.path.join(adapter_path, "adapter_model.safetensors")
+        )
 
         kw = {"dtype": torch.bfloat16, "device_map": "auto"}
         if a.base_revision:
