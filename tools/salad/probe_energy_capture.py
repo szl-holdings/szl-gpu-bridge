@@ -282,7 +282,8 @@ def capture(
                 type(verdict) is dict
                 and set(verdict) == {"abstained", "verdict"}
                 and type(verdict["abstained"]) is bool
-                and verdict["verdict"] in {"PASS", "FAIL"},
+                and type(verdict["verdict"]) is str
+                and verdict["verdict"] in ("PASS", "FAIL"),
                 "ADJUDICATION_INVALID",
             )
             # Neither model output nor prompt/reference content is persisted.
