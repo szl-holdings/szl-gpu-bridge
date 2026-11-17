@@ -1,11 +1,15 @@
 """Read-only telemetry must distinguish metadata, provider status and evidence."""
 
+import contextlib
 import io
 import json
 from pathlib import Path
+import sys
 import tempfile
+import types
 import unittest
 import urllib.error
+from unittest import mock
 
 from test_artifact_qualification import FakeApi, fixture
 from tools.salad import training_observer as observer
@@ -178,6 +182,136 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(len(list(Path(temp).iterdir())), 1)
             observer.atomic_status(path, {"state": "NEW"})
             self.assertEqual(json.loads(path.read_bytes()), {"state": "NEW"})
+
+    def test_salad_auth_or_rate_limit_denial_stops_provider_lane(self):
+        for code in (401, 403, 429):
+            with self.subTest(code=code):
+                def denied(*args, **kwargs):
+                    raise urllib.error.HTTPError(
+                        "https://example.invalid", code, "denied", {}, None
+                    )
+
+                result = observer.provider_observation(
+                    "szl-example", "not-a-real-token", opener=denied
+                )
+                self.assertTrue(result["access_stop_required"])
+                self.assertEqual(result["http_status"], code)
+                self.assertEqual(result["reason"], "PROVIDER_HTTP_" + str(code))
+                self.assertNotIn("not-a-real-token", json.dumps(result))
+
+    def test_salad_status_only_denial_is_not_a_generic_error(self):
+        response = Response(b"{}")
+        response.status = 429
+        result = observer.provider_observation(
+            "szl-example",
+            "not-a-real-token",
+            opener=lambda *args, **kwargs: response,
+        )
+        self.assertEqual(result["state"], "UNAVAILABLE")
+        self.assertTrue(result["access_stop_required"])
+        self.assertEqual(result["http_status"], 429)
+
+    def test_salad_non_denial_does_not_stop_other_reads(self):
+        def not_found(*args, **kwargs):
+            raise urllib.error.HTTPError(
+                "https://example.invalid", 404, "not found", {}, None
+            )
+
+        result = observer.provider_observation(
+            "szl-example", "not-a-real-token", opener=not_found
+        )
+        self.assertFalse(result["access_stop_required"])
+        self.assertEqual(result["reason"], "PROVIDER_HTTP_404")
+
+    def test_hub_auth_or_rate_limit_denial_stops_hub_lane(self):
+        for code in (401, 403, 429):
+            with self.subTest(code=code):
+                class DeniedApi:
+                    def model_info(self, *args, **kwargs):
+                        raise urllib.error.HTTPError(
+                            "https://example.invalid", code, "denied", {}, None
+                        )
+
+                result = observer.observe_training(
+                    DeniedApi(), self.api.fetch, self.candidate
+                )
+                self.assertEqual(result["state"], "UNAVAILABLE")
+                self.assertTrue(result["access_stop_required"])
+                self.assertEqual(result["http_status"], code)
+                self.assertEqual(result["reason"], "HUB_HTTP_" + str(code))
+                self.assertFalse(result["promotion_authorized"])
+                self.assertFalse(result["training_complete_verified"])
+
+    def test_multi_candidate_multi_cycle_denials_are_not_retried(self):
+        # Integration check: both provider lanes stop for the entire bounded
+        # run. Other resources are not restarted, promoted, or mutated.
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            spec = folder / "spec.json"
+            status = folder / "status.json"
+            history = folder / "history.jsonl"
+            candidates = [
+                {"repo": "SZLHOLDINGS/example-a", "target_steps": 5,
+                 "salad_group": "szl-example-a"},
+                {"repo": "SZLHOLDINGS/example-b", "target_steps": 5,
+                 "salad_group": "szl-example-b"},
+            ]
+            spec.write_text(json.dumps({"candidates": candidates}))
+            hub_calls = []
+            salad_calls = []
+
+            def denied_hub(api, fetch, candidate):
+                hub_calls.append(candidate["repo"])
+                return {
+                    "repo": candidate["repo"], "state": "UNAVAILABLE",
+                    "reason": "HUB_HTTP_429", "access_stop_required": True,
+                    "promotion_authorized": False,
+                    "training_complete_verified": False,
+                    "trainer_process_liveness_verified": False,
+                }
+
+            def denied_salad(group, token):
+                salad_calls.append(group)
+                return {
+                    "state": "UNAVAILABLE",
+                    "reason": "PROVIDER_HTTP_403",
+                    "access_stop_required": True,
+                    "trainer_process_liveness_verified": False,
+                }
+
+            fake_hub = types.ModuleType("huggingface_hub")
+            fake_hub.HfApi = lambda: object()
+            fake_hub.hf_hub_download = lambda **kwargs: None
+            argv = [
+                "training_observer", "--spec", str(spec),
+                "--status", str(status), "--history", str(history),
+                "--cycles", "2", "--interval", "60",
+            ]
+            with (
+                mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(observer, "observe_training", side_effect=denied_hub),
+                mock.patch.object(observer, "provider_observation", side_effect=denied_salad),
+                mock.patch.object(observer.time, "sleep"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(observer.main(), 0)
+
+            self.assertEqual(hub_calls, ["SZLHOLDINGS/example-a"])
+            self.assertEqual(salad_calls, ["szl-example-a"])
+            output = json.loads(status.read_bytes())
+            self.assertEqual(output["cycle"], 2)
+            self.assertEqual(
+                output["provider_lane_stops"], {"huggingface": True, "salad": True}
+            )
+            self.assertTrue(all(
+                entry["reason"] == "HUB_ACCESS_STOPPED_AFTER_DENIAL"
+                and entry["provider"]["reason"] ==
+                "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL"
+                and not entry["promotion_authorized"]
+                for entry in output["candidates"]
+            ))
+            self.assertEqual(len(history.read_text().splitlines()), 2)
 
 
 if __name__ == "__main__":
