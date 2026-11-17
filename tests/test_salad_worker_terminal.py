@@ -27,7 +27,7 @@ class Dataset:
     def select(self, rows):
         return self
 
-    def map(self, function, remove_columns):
+    def map(self, function, remove_columns, **kwargs):
         return self
 
 
@@ -311,6 +311,119 @@ class TerminalContract(unittest.TestCase):
         load_model.assert_not_called()
         self.assertEqual(self.trained, [])
         self.assertEqual(self.uploads, [])
+
+    def test_ambiguous_prompt_join_fails_before_model_load_or_training(self):
+        class AmbiguousDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                self.assert_cache_disabled = kwargs["load_from_cache_file"] is False
+                function({"prompt": "Complete the proof := by", "completion": "by rfl"})
+                return self
+
+        dataset = AmbiguousDataset()
+        with (
+            patch.object(self.worker, "load_train_split", return_value=dataset),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+        self.assertTrue(dataset.assert_cache_disabled)
+        self.assertFalse(self.events[-1]["training_started"])
+        self.assertNotIn("Complete the proof", json.dumps(self.events))
+
+    def test_chat_conversion_records_and_saves_checkpoint_format(self):
+        rendered = []
+
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                rendered.append(
+                    function(
+                        {"prompt": "Complete the proof := by", "completion": "by rfl"}
+                    )
+                )
+                return self
+
+        tokenizer = types.SimpleNamespace(
+            get_chat_template=lambda: "synthetic template",
+            apply_chat_template=lambda *a, **kw: {
+                "input_ids": [100, 200, 300],
+                "attention_mask": [1, 1, 1],
+            },
+        )
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer, "from_pretrained", return_value=tokenizer
+            ),
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 0)
+        self.assertEqual(
+            rendered, [{"input_ids": [100, 200, 300], "attention_mask": [1, 1, 1]}]
+        )
+        dataset_event = next(e for e in self.events if e["event"] == "dataset")
+        contract = dataset_event["training_format"]
+        self.assertEqual(contract["mode"], "prompt_completion_chat")
+        self.assertEqual(self.events[-1]["training_format"], contract)
+        final = Path(self.saved[0]) / "training_format.json"
+        self.assertEqual(json.loads(final.read_text()), contract)
+
+        output = Path(self.trainer_configs[0].output_dir)
+        checkpoint = output / "checkpoint-50"
+        checkpoint.mkdir(parents=True)
+        self.callbacks[0].on_save(
+            types.SimpleNamespace(output_dir=str(output)),
+            types.SimpleNamespace(global_step=50),
+            types.SimpleNamespace(should_training_stop=False),
+        )
+        self.assertEqual(
+            json.loads((checkpoint / "training_format.json").read_text()), contract
+        )
+        self.assertEqual(self.uploads[-1]["folder_path"], str(checkpoint))
+
+    def test_chat_conversion_cannot_resume_an_unmarked_legacy_checkpoint(self):
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer,
+                "from_pretrained",
+                return_value=types.SimpleNamespace(
+                    get_chat_template=lambda: "template"
+                ),
+            ),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=self.temp.name
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=50),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_formatting_exception_cannot_echo_private_row_content(self):
+        class FailingTemplateDataset(Dataset):
+            def map(self, function, remove_columns, **kwargs):
+                raise RuntimeError("SYNTHETIC_PRIVATE_ROW_CONTENT")
+
+        with (
+            patch.object(
+                self.worker, "load_train_split", return_value=FailingTemplateDataset()
+            ),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertNotIn("SYNTHETIC_PRIVATE_ROW_CONTENT", json.dumps(self.events))
+        self.assertEqual(self.trained, [])
 
     def test_nonpositive_limits_fail_before_api_effects(self):
         for flag in ("--max-steps", "--save-steps", "--max-examples", "--min-examples"):

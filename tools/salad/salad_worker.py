@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.7, 2026-11-16).
+"""salad_worker.py — the resumable burst-training worker (v3.8, 2026-11-16).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -77,6 +77,11 @@ this worker's completion branch. Existing checkpoint uploads remain available
 for resumption; their durability is not asserted by this terminal guard.
 Receipts retain the v1 kind and add a distinct event field. A resumed complete
 checkpoint with a missing/unobservable final adapter returns failure, not success.
+
+v3.8 makes prompt/completion serialization explicit. Verbatim mode rejects an
+ambiguous join without boundary whitespace; chat mode uses the pinned tokenizer's
+template. A checkpoint records its formatting contract so resume cannot silently
+switch formats. These checks do not qualify dataset extraction or model quality.
 
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
@@ -520,6 +525,77 @@ def load_train_split(a, api: HfApi):
             return _Dataset.from_list(rows)
 
 
+def training_format_contract(tok, columns, prompt_completion_format, base, base_revision):
+    """Describe the actual serializer without storing private example contents."""
+    if "text" in columns:
+        mode = "text"
+    elif "messages" in columns:
+        mode = "messages_chat"
+    elif "prompt" in columns and "completion" in columns:
+        mode = "prompt_completion_" + prompt_completion_format
+    else:
+        mode = "json"
+    template_hash = None
+    if mode in ("messages_chat", "prompt_completion_chat"):
+        template = tok.get_chat_template()
+        if not isinstance(template, str) or not template.strip():
+            raise ValueError("chat serialization requires an explicit tokenizer template")
+        template_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()
+    return {"schema": "szl.training-format/v1", "formatter_version": "v1",
+            "mode": mode, "chat_template_sha256": template_hash,
+            "tokenizer_base": base, "tokenizer_revision": base_revision or None}
+
+
+def format_training_example(example, tok, prompt_completion_format):
+    """Preserve raw text, or tokenize chat once without TRL adding another EOS."""
+    ex = dict(example)  # LazyRow -> plain dict.
+    if "text" in ex:
+        return {"text": ex["text"]}
+    if "messages" in ex:
+        return dict(tok.apply_chat_template(ex["messages"], tokenize=True,
+                    add_generation_prompt=False, return_dict=True))
+    if "prompt" in ex and "completion" in ex:
+        prompt, completion = ex["prompt"], ex["completion"]
+        if (not isinstance(prompt, str) or not isinstance(completion, str)
+                or not prompt.strip() or not completion.strip()):
+            raise ValueError("prompt/completion fields must be nonempty strings")
+        if prompt_completion_format == "chat":
+            return dict(tok.apply_chat_template(
+                [{"role": "user", "content": prompt},
+                 {"role": "assistant", "content": completion}],
+                tokenize=True, add_generation_prompt=False, return_dict=True))
+        if prompt_completion_format != "verbatim":
+            raise ValueError("unknown prompt/completion serialization mode")
+        if not (prompt[-1].isspace() or completion[0].isspace()):
+            raise ValueError("verbatim prompt/completion boundary requires whitespace; "
+                             "review extraction or explicitly select chat mode")
+        return {"text": prompt + completion}
+    return {"text": json.dumps(ex)}
+
+
+def verify_resume_training_format(resume, contract):
+    """Never apply chat conversion to an unqualified legacy continuation run."""
+    if not resume:
+        return
+    path = os.path.join(resume, "training_format.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            previous = json.load(f)
+    except FileNotFoundError:
+        if contract["mode"] in ("messages_chat", "prompt_completion_chat"):
+            raise ValueError("legacy checkpoint lacks a chat format contract; use a new target") from None
+        return  # Unchanged legacy serializers may resume after data validation.
+    if previous != contract:
+        raise ValueError("checkpoint training format differs; use a new target")
+
+
+def save_training_format(directory, contract):
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, "training_format.json"), "w", encoding="utf-8") as f:
+        json.dump(contract, f, sort_keys=True, indent=2)
+        f.write("\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
@@ -540,6 +616,9 @@ def main() -> int:
                     help="F2: config name for multi-config datasets")
     ap.add_argument("--dataset-train-file", default="",
                     help="F3: explicit train data file for split-schema-broken datasets")
+    ap.add_argument("--prompt-completion-format", choices=("verbatim", "chat"),
+                    default="verbatim", help="verbatim requires boundary whitespace; "
+                    "chat serializes string pairs as user/assistant turns")
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
     ap.add_argument("--publish-final-to", default="",
                     help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
@@ -595,7 +674,8 @@ def main() -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.7-20261116",
+             "worker_version": "v3.8-20261116",
+             "prompt_completion_format": a.prompt_completion_format,
              "base_revision": a.base_revision or None,
              "dataset_revision": a.dataset_revision or None,
              "energy_start": energy_start,
@@ -648,10 +728,6 @@ def main() -> int:
     cuda_arch_precheck()  # F4: must still precede model loading/training.
     base_kwargs = {"revision": a.base_revision} if a.base_revision else {}
     tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
-    model = AutoModelForCausalLM.from_pretrained(
-        a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
-    if a.gradient_checkpointing:
-        model.config.use_cache = False
     ds = load_train_split(a, api)  # F2/F3
 
     # F5 honesty guard: stub-sized "datasets" (spec files, READMEs) are not training data.
@@ -666,18 +742,27 @@ def main() -> int:
     # F8: the cap is now an explicit, receipted argument (legacy default 2000).
     n_raw = len(ds)
     n_used = min(a.max_examples, n_raw)
-    receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
-            {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples})
     ds = ds.select(range(n_used))
-    def fmt(ex):
-        ex = dict(ex)  # F1: LazyRow -> plain dict; JSON-safe in every branch
-        if "text" in ex: return {"text": ex["text"]}
-        if "messages" in ex:
-            return {"text": tok.apply_chat_template(ex["messages"], tokenize=False)}
-        if "prompt" in ex and "completion" in ex:
-            return {"text": ex["prompt"] + ex["completion"]}
-        return {"text": json.dumps(ex)}
-    ds = ds.map(fmt, remove_columns=ds.column_names)
+    try:
+        format_contract = training_format_contract(
+            tok, ds.column_names, a.prompt_completion_format, a.base, a.base_revision)
+        verify_resume_training_format(resume, format_contract)
+        ds = ds.map(lambda ex: format_training_example(ex, tok, a.prompt_completion_format),
+                    remove_columns=ds.column_names, load_from_cache_file=False)
+    except Exception:
+        # Avoid echoing an exception that may contain private example text.
+        receipt("fail-closed", "training format validation failed; review string fields, "
+                "boundary whitespace, chat template and resume format before retrying",
+                {"prompt_completion_format": a.prompt_completion_format,
+                 "training_started": False})
+        return 9
+    receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
+            {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
+             "training_format": format_contract})
+    model = AutoModelForCausalLM.from_pretrained(
+        a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
+    if a.gradient_checkpointing:
+        model.config.use_cache = False
 
     cfg = SFTConfig(
         output_dir=a.output_dir,
@@ -723,6 +808,7 @@ def main() -> int:
                     control.should_training_stop = True
                     return
                 try:
+                    save_training_format(path, format_contract)
                     api.upload_folder(folder_path=path, path_in_repo=ck,
                         repo_id=a.adapter_out, repo_type="model")
                     receipt("checkpoint", f"checkpoint {ck} pushed to durable storage")
@@ -756,6 +842,7 @@ def main() -> int:
         return 7
     final = os.path.join(a.output_dir, "final")
     trainer.save_model(final)
+    save_training_format(final, format_contract)
     if STOP.get("visibility"):
         print("FAIL-CLOSED: working repo visibility could not be verified; final adapter kept local only",
               file=sys.stderr)
@@ -780,6 +867,7 @@ def main() -> int:
             {"steps": actual_steps, "actual_steps": actual_steps,
              "target_steps": a.max_steps, "completion_qualified": True,
              "completion_scope": "EXACT_TRAINER_STEP_TARGET_NOT_MODEL_QUALITY",
+             "training_format": format_contract,
              "energy_scope": energy_scope,
              "adapter": a.adapter_out,
              "energy_start": energy_start,
