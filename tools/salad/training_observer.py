@@ -36,7 +36,6 @@ def _http_status(exc):
     return code if type(code) is int else None
 
 
-
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
