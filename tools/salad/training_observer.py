@@ -135,7 +135,13 @@ def observe_training(api, fetch, candidate):
         elif step < target:
             result["state"] = "CHECKPOINT_PROGRESS_OBSERVED"
         elif all(
-            snapshot[k] for k in ("final_adapter", "final_config", "final_tokenizer")
+            name in entries
+            for name in (
+                "final/adapter_model.safetensors",
+                "final/adapter_config.json",
+                "final/tokenizer.json",
+                "final/tokenizer_config.json",
+            )
         ):
             result["state"] = "TERMINAL_METADATA_PRESENT"
         else:
