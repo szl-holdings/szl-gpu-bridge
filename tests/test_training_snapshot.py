@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock
 
-SRC = Path(__file__).resolve().parents[1] / "training_snapshot.py"
+SRC = Path(__file__).resolve().parents[1] / "tools/salad/training_snapshot.py"
 spec = importlib.util.spec_from_file_location("training_snapshot", SRC)
 g = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(g)
