@@ -321,9 +321,9 @@ class SaladCoverageContracts(unittest.TestCase):
         self.assertFalse(item["listing_complete"])
 
     def test_reconcile_group_count_drift(self):
-        group = g.salad_group_page_evidence([self.group("szl-ring-v3", running=1)])[
-            "captured"
-        ][0]
+        group = g.salad_group_page_evidence(
+            [self.group("szl-synthetic-v3", running=1)]
+        )["captured"][0]
         instances = g.salad_instance_evidence([{"state": "creating"}])
         self.assertEqual(
             g.reconcile_salad_group_instance_counts(group, instances),
@@ -331,9 +331,9 @@ class SaladCoverageContracts(unittest.TestCase):
         )
 
     def test_reconcile_group_count_match_is_not_process_proof(self):
-        group = g.salad_group_page_evidence([self.group("szl-ring-v2", creating=1)])[
-            "captured"
-        ][0]
+        group = g.salad_group_page_evidence(
+            [self.group("szl-synthetic-v2", creating=1)]
+        )["captured"][0]
         instances = g.salad_instance_evidence([{"state": "creating"}])
         self.assertEqual(
             g.reconcile_salad_group_instance_counts(group, instances),
