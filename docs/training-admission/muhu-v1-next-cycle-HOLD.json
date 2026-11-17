@@ -1,0 +1,101 @@
+{
+  "schema": "szl.muhu.flagship_training_admission_hold.v1",
+  "date_utc": "2026-11-17",
+  "state": "HOLD_NOT_ADMITTED",
+  "admitted_to_flagship_training": false,
+  "admitted_rows": 0,
+  "executable_job": false,
+  "next_cycle_only": true,
+  "base_protected_main_at_review": "e7928fad26692092427ec67dbd182f998abbe2fc",
+  "source": {
+    "type": "original_synthetic_local_archive",
+    "name": "SZL-MUHU-Python-Research-Frontier-20261117.zip",
+    "sha256": "13788fefd549b06d2fc93eb0901d9a8e61ccd045492c0fb5359d69ffde1f19aa",
+    "published_huggingface_revision": null,
+    "license": "CC-BY-4.0",
+    "private_lab_rows": 0,
+    "patient_rows": 0,
+    "third_party_training_rows": 0,
+    "literature_citation_only_rows": 73,
+    "actual_sara_puzzle_rows": 0
+  },
+  "verified_offline": {
+    "automated_tests_passed": 48,
+    "deterministic_replay_passed": true,
+    "number_of_trainable_rows": 1220,
+    "partition_counts": {
+      "train": 842,
+      "validation": 176,
+      "test": 202
+    },
+    "split_sha256": {
+      "train": "6f1e47e974fb574e01a935433e044c28a8d798eb38398410ec90477015f8b817",
+      "validation": "fb0a55a5720c1aee5c0d362a64f17ad1c6e41fbb507d504d2db29da473d4a874",
+      "test": "f047a8427321ce4805c7e72caf681275906e1ca2c6b8d40c0f9d7599e16679b9"
+    }
+  },
+  "classification_by_task": {
+    "mini_sudoku_status": {
+      "train": 156,
+      "validation": 45,
+      "test": 39,
+      "stress": {
+        "correct": 60,
+        "total": 120,
+        "accuracy": 0.5
+      },
+      "biology_assessment": "NOT_MEASURED"
+    },
+    "wave_phase_structure": {
+      "train": 366,
+      "validation": 66,
+      "test": 48,
+      "stress": {
+        "correct": 32,
+        "total": 50,
+        "accuracy": 0.64
+      },
+      "biology_assessment": "NOT_MEASURED"
+    },
+    "research_gate": {
+      "train": 320,
+      "validation": 65,
+      "test": 115,
+      "train_distinct_model_input_patterns": 40,
+      "validation_distinct_model_input_patterns": 33,
+      "validation_distinct_patterns_seen_in_train": 33,
+      "test_distinct_model_input_patterns": 38,
+      "test_distinct_patterns_seen_in_train": 38,
+      "validation_rows_with_input_seen_in_train": 65,
+      "test_rows_with_input_seen_in_train": 115
+    }
+  },
+  "holds": [
+    "RESEARCH_GATE_EXACT_INPUT_CROSS_SPLIT_OVERLAP",
+    "ORIGINAL_DATA_NOT_SFT_CHAT_FORMAT",
+    "HARD_SYNTHETIC_STRESS_GENERALIZATION_GAP",
+    "GENETICS_AND_WET_LAB_EVIDENCE_NOT_IN_TRAINING",
+    "HF_DATASET_PROVIDER_REVISION_UNAVAILABLE",
+    "ACTIVE_FLAGSHIP_LANE_FROZEN_DO_NOT_MODIFY",
+    "BETTERWITHAGE_OFFLINE_CURRENT_SALAD_STATE_UNOBSERVED",
+    "NO_PINNED_BASE_SOURCE_TRAINER_CONFIG_NEXT_GENERATION",
+    "NO_PREREGISTERED_INDEPENDENT_COMPARATIVE_EVALUATION",
+    "NO_EXPLICIT_OWNER_BUDGET_SIGNED_JOB_ADMISSION"
+  ],
+  "non_actions": [
+    "NO_RUNNING_TRAINER_MUTATION",
+    "NO_GPU_JOB",
+    "NO_REPLICA_CHANGE",
+    "NO_PROVIDER_UPLOAD",
+    "NO_MODEL_PROMOTION",
+    "NO_SIGNED_JOB"
+  ],
+  "qualification": {
+    "training": "NOT_STARTED_FOR_MUHU",
+    "artifact_verified": false,
+    "evaluated_quality": false,
+    "deployed": false,
+    "qualified": false
+  },
+  "next_gate": "Create an independent, rights-cleared instruction SFT dataset with no semantic train/test leakage; pin provider revision and frozen fresh evaluation; review under the one authorized Khipu/Bridge next-cycle owner before any job."
+}
