@@ -39,6 +39,71 @@ def transport_label(error):
     return f"HTTP {status}" if type(status) is int else type(error).__name__
 
 
+def valid_lane(value):
+    """Constrain the public path component; never echo rejected identities."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}", value):
+        raise argparse.ArgumentTypeError("INVALID_LANE_IDENTIFIER")
+    return value
+
+
+def sanitized_public_results(results):
+    """Allowlist the public evidence; never release raw generations or model IDs."""
+    keep = (
+        "kind", "lane", "run_id", "decoding", "generated_utc", "probe_scope",
+        "doctrine_marker_totals", "identical_output_count",
+        "forced_reference_loss", "no_verdict", "verdict_note",
+        "energy_scope", "energy_start", "energy_end", "energy_j",
+        "zeus_window", "generation_seconds",
+    )
+    public = {name: results[name] for name in keep if name in results}
+    public["pairs"] = [
+        {name: pair[name] for name in (
+            "prompt_index", "identical", "doctrine_markers_base",
+            "doctrine_markers_adapter",
+        )}
+        for pair in results["pairs"]
+    ]
+    public["privacy"] = {
+        "raw_generations": "WITHHELD",
+        "prompt_text": "WITHHELD",
+        "model_repository_ids": "WITHHELD",
+        "binding_status": "MODEL_REVISIONS_NOT_VERIFIED",
+    }
+    return public
+
+
+def publish_bench_results(api, repo_id, lane, run_id, raw):
+    """One append-only attempt, exact parent, exact byte readback before a receipt."""
+    valid_lane(lane)
+    if not isinstance(run_id, str) or re.fullmatch(r"[0-9a-f]{32}", run_id) is None:
+        raise ReceiptError("INVALID_RUN_ID")
+    if not isinstance(raw, bytes) or not raw:
+        raise ReceiptError("EMPTY_BENCH_EVIDENCE")
+    path = f"mesh/bench/{lane}-{run_id}-diff-eval.json"
+    parent = getattr(api.repo_info(repo_id, repo_type="dataset"), "sha", None)
+    if not isinstance(parent, str) or re.fullmatch(r"[0-9a-f]{40}", parent) is None:
+        raise ReceiptError("PARENT_REVISION_NOT_IMMUTABLE")
+    commit = api.upload_file(
+        path_or_fileobj=raw, path_in_repo=path, repo_id=repo_id,
+        repo_type="dataset", parent_commit=parent,
+        commit_message=f"Bench diff-eval immutable attempt {run_id[:12]}",
+    )
+    revision = hub_revision(commit)
+    local = hf_hub_download(
+        repo_id=repo_id, repo_type="dataset", filename=path,
+        revision=revision, force_download=True,
+    )
+    with open(local, "rb") as stream:
+        if stream.read(len(raw) + 1) != raw:
+            raise ReceiptError("BENCH_EVIDENCE_READBACK_MISMATCH")
+    return {
+        "path": path, "revision": revision,
+        "file_sha256": hashlib.sha256(raw).hexdigest(),
+        "size_bytes": len(raw), "publication_verified": True,
+        "scope": "PUBLIC_SANITIZED_BYTES_ONLY_NOT_QUALITY_OR_MODEL_PIN",
+    }
+
+
 def build_receipt(kind, detail, extra=None):
     r = {**(extra or {}), "kind": "szl.salad-bench-worker/v1", "event": kind,
          "detail": detail, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat()}
@@ -188,7 +253,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--adapter", required=True, help="private model repo holding final/ LoRA adapter")
-    ap.add_argument("--lane", required=True)
+    ap.add_argument("--lane", required=True, type=valid_lane)
     ap.add_argument("--max-new-tokens", type=int, default=200)
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
     a = ap.parse_args()
@@ -230,8 +295,8 @@ def main() -> int:
     energy_start = sample_energy_j()
     z = zeus_begin()
     receipt(api, DS_RECEIPTS, run_id, a.lane, "boot",
-            f"bench worker started - base={a.base} adapter={a.adapter}",
-            {"gpu": torch.cuda.get_device_name(0), "node": os.environ.get("HOSTNAME", "unknown"),
+            "bench worker started - private model and node identities withheld",
+            {"gpu": torch.cuda.get_device_name(0), "node": "WITHHELD",
              "worker_version": "bench-v3-20261117", "prompts": len(PROMPTS),
              "max_new_tokens": a.max_new_tokens,
              "probe_scope": "FIXED_EMBEDDED_PROMPTS_NOT_HELDOUT_BENCHMARK",
@@ -292,16 +357,17 @@ def main() -> int:
         "zeus_window": zeus_end(z),
         "generation_seconds": gen_s,
     }
-    raw = (json.dumps(results, indent=1, allow_nan=False) + "\n").encode()
-    path = f"mesh/bench/{a.lane}-diff-eval.json"
-    commit = api.upload_file(path_or_fileobj=raw, path_in_repo=path,
-                             repo_id=DS_RECEIPTS, repo_type="dataset",
-                             commit_message=f"Bench diff-eval {a.lane}")
-    revision = hub_revision(commit)
-    print(f"BENCH_RESULTS_UPLOADED path={path} revision={revision}", flush=True)
+    # Explicit public allowlist: raw prompts, generated text and private model
+    # repository IDs remain in memory and are NOT uploaded to the public Hub.
+    public_results = sanitized_public_results(results)
+    raw = (json.dumps(public_results, indent=1, allow_nan=False) + "\n").encode()
+    published = publish_bench_results(api, DS_RECEIPTS, a.lane, run_id, raw)
+    print(f"BENCH_RESULTS_VERIFIED path={published['path']} revision={published['revision']}", flush=True)
     receipt(api, DS_RECEIPTS, run_id, a.lane, "bench-complete",
-            f"diff-eval complete in {gen_s}s - {len(pairs)} probes, no verdict issued",
-            {"results_path": path, "results_revision": revision,
+            f"sanitized diff-eval observed in {gen_s}s - {len(pairs)} fixed probes, no verdict",
+            {"results_path": published["path"], "results_revision": published["revision"],
+             "results_sha256": published["file_sha256"],
+             "results_size_bytes": published["size_bytes"],
              "doctrine_marker_totals": results["doctrine_marker_totals"],
              "forced_reference_loss_summary": {"base_mean": results["forced_reference_loss"]["base_mean"],
                                                "adapter_mean": results["forced_reference_loss"]["adapter_mean"]},
