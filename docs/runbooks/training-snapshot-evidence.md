@@ -63,6 +63,15 @@ Publish the card only through an ordinary review and expected-parent write.
 Preserve every sibling file and the original receipt; verify the returned commit
 and exact README bytes. Do not relabel a card proposal as publication.
 
+## Offline observation claim graph
+
+The additive [observation claim graph](observation-claim-graph.md) consumes only
+immutable private one-shot observation JSON, reconciles returned-versus-captured
+Salad group counts and pinned Hub checkpoint deltas, and refuses to infer
+trainer-process liveness, model quality or production qualification. It is a
+consumer, not a competing observer or scheduler. The separately controlled
+owner-device release remains unchanged and has its own admission gate.
+
 ## Verification
 
 Run `python -m unittest discover -s tests -p 'test_training_snapshot.py' -v`.
