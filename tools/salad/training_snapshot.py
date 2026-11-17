@@ -158,7 +158,7 @@ def select_training_repos(catalog_ids, mapped_ids, limit=80):
             for x in catalog_ids
             if isinstance(x, str)
             and valid.fullmatch(x)
-            and re.search(r"flagship|frontier|abst|grpo|distill|salad", x, re.I)
+            and re.search(r"flagship|frontier|abst|absrl|grpo|distill|salad", x, re.I)
         }
     )
     priority = [x for x in mapped if "flagship" in x.lower()]
