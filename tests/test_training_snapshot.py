@@ -6,7 +6,7 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock
 
-SRC = Path(__file__).resolve().parents[1] / "tools/salad/training_snapshot.py"
+SRC = Path(__file__).resolve().parents[1] / "training_snapshot.py"
 spec = importlib.util.spec_from_file_location("training_snapshot", SRC)
 g = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(g)
@@ -200,6 +200,19 @@ class SnapshotTests(unittest.TestCase):
         )
         self.assertEqual(selected, ["SZLHOLDINGS/mapped", "SZLHOLDINGS/abst-a"])
         self.assertEqual(cov["omitted_ids"], ["SZLHOLDINGS/abst-b"])
+
+    def test_absrl_successors_selected_without_salad_mapping(self):
+        candidates = [
+            "SZLHOLDINGS/absrl-synthetic-a",
+            "SZLHOLDINGS/absrl-synthetic-b",
+        ]
+        selected, coverage = g.select_training_repos(candidates, [], limit=1)
+        self.assertEqual(selected, ["SZLHOLDINGS/absrl-synthetic-a"])
+        self.assertEqual(coverage["eligible_count"], 2)
+        self.assertEqual(
+            coverage["omitted_ids"],
+            ["SZLHOLDINGS/absrl-synthetic-b"],
+        )
 
     def test_external_mapping_refused(self):
         selected, _ = g.select_training_repos([], ["foreign/repo", "SZLHOLDINGS/../x"])
