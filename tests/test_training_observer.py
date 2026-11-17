@@ -186,6 +186,7 @@ class ObserverTests(unittest.TestCase):
     def test_salad_auth_or_rate_limit_denial_stops_provider_lane(self):
         for code in (401, 403, 429):
             with self.subTest(code=code):
+
                 def denied(*args, **kwargs):
                     raise urllib.error.HTTPError(
                         "https://example.invalid", code, "denied", {}, None
@@ -226,6 +227,7 @@ class ObserverTests(unittest.TestCase):
     def test_hub_auth_or_rate_limit_denial_stops_hub_lane(self):
         for code in (401, 403, 429):
             with self.subTest(code=code):
+
                 class DeniedApi:
                     def model_info(self, *args, **kwargs):
                         raise urllib.error.HTTPError(
@@ -251,10 +253,16 @@ class ObserverTests(unittest.TestCase):
             status = folder / "status.json"
             history = folder / "history.jsonl"
             candidates = [
-                {"repo": "SZLHOLDINGS/example-a", "target_steps": 5,
-                 "salad_group": "szl-example-a"},
-                {"repo": "SZLHOLDINGS/example-b", "target_steps": 5,
-                 "salad_group": "szl-example-b"},
+                {
+                    "repo": "SZLHOLDINGS/example-a",
+                    "target_steps": 5,
+                    "salad_group": "szl-example-a",
+                },
+                {
+                    "repo": "SZLHOLDINGS/example-b",
+                    "target_steps": 5,
+                    "salad_group": "szl-example-b",
+                },
             ]
             spec.write_text(json.dumps({"candidates": candidates}))
             hub_calls = []
@@ -263,8 +271,10 @@ class ObserverTests(unittest.TestCase):
             def denied_hub(api, fetch, candidate):
                 hub_calls.append(candidate["repo"])
                 return {
-                    "repo": candidate["repo"], "state": "UNAVAILABLE",
-                    "reason": "HUB_HTTP_429", "access_stop_required": True,
+                    "repo": candidate["repo"],
+                    "state": "UNAVAILABLE",
+                    "reason": "HUB_HTTP_429",
+                    "access_stop_required": True,
                     "promotion_authorized": False,
                     "training_complete_verified": False,
                     "trainer_process_liveness_verified": False,
@@ -283,15 +293,25 @@ class ObserverTests(unittest.TestCase):
             fake_hub.HfApi = lambda: object()
             fake_hub.hf_hub_download = lambda **kwargs: None
             argv = [
-                "training_observer", "--spec", str(spec),
-                "--status", str(status), "--history", str(history),
-                "--cycles", "2", "--interval", "60",
+                "training_observer",
+                "--spec",
+                str(spec),
+                "--status",
+                str(status),
+                "--history",
+                str(history),
+                "--cycles",
+                "2",
+                "--interval",
+                "60",
             ]
             with (
                 mock.patch.dict(sys.modules, {"huggingface_hub": fake_hub}),
                 mock.patch.object(sys, "argv", argv),
                 mock.patch.object(observer, "observe_training", side_effect=denied_hub),
-                mock.patch.object(observer, "provider_observation", side_effect=denied_salad),
+                mock.patch.object(
+                    observer, "provider_observation", side_effect=denied_salad
+                ),
                 mock.patch.object(observer.time, "sleep"),
                 contextlib.redirect_stdout(io.StringIO()),
             ):
@@ -304,13 +324,15 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(
                 output["provider_lane_stops"], {"huggingface": True, "salad": True}
             )
-            self.assertTrue(all(
-                entry["reason"] == "HUB_ACCESS_STOPPED_AFTER_DENIAL"
-                and entry["provider"]["reason"] ==
-                "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL"
-                and not entry["promotion_authorized"]
-                for entry in output["candidates"]
-            ))
+            self.assertTrue(
+                all(
+                    entry["reason"] == "HUB_ACCESS_STOPPED_AFTER_DENIAL"
+                    and entry["provider"]["reason"]
+                    == "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL"
+                    and not entry["promotion_authorized"]
+                    for entry in output["candidates"]
+                )
+            )
             self.assertEqual(len(history.read_text().splitlines()), 2)
 
 
