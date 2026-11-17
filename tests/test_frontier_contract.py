@@ -453,6 +453,54 @@ class RuntimeEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "minJsonValidRate"):
             validate_v2_spec(spec)
 
+    def test_mandatory_evaluation_gates_must_have_a_failing_outcome(self):
+        for field, value in (
+            ("minJsonValidRate", 0),
+            ("minRequiredKeysRate", 0),
+            ("minCeilingRespectRate", 0),
+            ("maxDegenerateRate", 1),
+        ):
+            with self.subTest(field=field):
+                spec = valid_spec()
+                spec["eval"][field] = value
+                with self.assertRaisesRegex(ContractError, field):
+                    validate_v2_spec(spec)
+
+    def test_evaluation_thresholds_must_be_finite_numbers(self):
+        fields = (
+            "convictionCeiling",
+            "maxDegenerateRate",
+            "minJsonValidRate",
+            "minRequiredKeysRate",
+            "minCeilingRespectRate",
+        )
+        for field in fields:
+            for value in (float("nan"), float("inf"), -float("inf"), True, "0.5"):
+                with self.subTest(field=field, value=value):
+                    spec = valid_spec()
+                    spec["eval"][field] = value
+                    with self.assertRaisesRegex(ContractError, field):
+                        validate_v2_spec(spec)
+
+    def test_nonvacuous_evaluation_boundaries_remain_valid(self):
+        spec = valid_spec()
+        spec["eval"].update(
+            convictionCeiling=0,
+            maxDegenerateRate=0,
+            minJsonValidRate=1,
+            minRequiredKeysRate=1,
+            minCeilingRespectRate=1,
+        )
+        self.assertIs(validate_v2_spec(spec), spec)
+        spec["eval"].update(
+            convictionCeiling=1,
+            maxDegenerateRate=0.999,
+            minJsonValidRate=0.001,
+            minRequiredKeysRate=0.001,
+            minCeilingRespectRate=0.001,
+        )
+        self.assertIs(validate_v2_spec(spec), spec)
+
     def test_json_and_degeneracy_checks(self):
         self.assertEqual(
             extract_json_object('prefix {"action":"ABSTAIN"} suffix')["action"],

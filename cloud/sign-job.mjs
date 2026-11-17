@@ -157,9 +157,14 @@ function validateV2(spec) {
     'convictionCeiling', 'maxDegenerateRate', 'minJsonValidRate',
     'minRequiredKeysRate', 'minCeilingRespectRate',
   ]) {
-    if (typeof evaluation[key] !== 'number' || evaluation[key] < 0 || evaluation[key] > 1) {
-      throw new Error(`eval.${key} must be between 0 and 1`);
+    if (!Number.isFinite(evaluation[key]) || evaluation[key] < 0 || evaluation[key] > 1) {
+      throw new Error(`eval.${key} must be finite and between 0 and 1`);
     }
+  }
+  // Every mandatory gate must admit a failing outcome on a non-empty battery.
+  if (evaluation.maxDegenerateRate === 1) throw new Error('eval.maxDegenerateRate must be < 1');
+  for (const key of ['minJsonValidRate', 'minRequiredKeysRate', 'minCeilingRespectRate']) {
+    if (evaluation[key] === 0) throw new Error(`eval.${key} must be > 0`);
   }
 }
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 import pathlib
 import platform
@@ -283,12 +284,36 @@ def prompt_messages(messages: Any) -> list[dict[str, Any]]:
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
+    """Extract one unambiguous JSON object with finite numeric values."""
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if not match:
         return None
+
+    def reject_constant(value: str) -> None:
+        raise ValueError(f"non-finite JSON constant: {value}")
+
+    def finite_float(value: str) -> float:
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("non-finite JSON number")
+        return number
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
     try:
-        value = json.loads(match.group(0))
-    except json.JSONDecodeError:
+        value = json.loads(
+            match.group(0),
+            parse_constant=reject_constant,
+            parse_float=finite_float,
+            object_pairs_hook=unique_object,
+        )
+    except ValueError:
         return None
     return value if isinstance(value, dict) else None
 
