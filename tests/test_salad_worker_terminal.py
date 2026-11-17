@@ -180,6 +180,7 @@ class TerminalContract(unittest.TestCase):
             from_pretrained=lambda *a, **k: fixture.loaded.append(True) or object()
         )
         modules["transformers"].TrainerCallback = object
+
         def config(*, max_seq_length, **kwargs):
             # TRL 0.13 uses this required sequence-bound keyword. A permissive
             # **kwargs-only double previously hid the worker's max_length bug.

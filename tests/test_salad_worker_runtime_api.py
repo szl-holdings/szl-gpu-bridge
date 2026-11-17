@@ -59,12 +59,16 @@ class PinnedRuntimeContract(unittest.TestCase):
             signature = inspect.signature(constructor)
             for call in self.calls(name):
                 with self.subTest(constructor=name, line=call.lineno):
-                    self.assertFalse(call.args, "review positional constructor arguments")
+                    self.assertFalse(
+                        call.args, "review positional constructor arguments"
+                    )
                     self.assertTrue(
                         all(keyword.arg is not None for keyword in call.keywords),
                         "review expanded constructor keyword arguments",
                     )
-                    signature.bind(**{keyword.arg: object() for keyword in call.keywords})
+                    signature.bind(
+                        **{keyword.arg: object() for keyword in call.keywords}
+                    )
 
     def test_real_worker_config_constructs_with_cpu_test_overrides(self):
         # Use the worker's complete actual config expression. Only output location
