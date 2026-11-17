@@ -14,6 +14,44 @@ Set `CUDA_VISIBLE_DEVICES=0` on this single-GPU host and
 energy libraries then remain unavailable without changing installed dependencies.
 Pass immutable `--base-revision` and `--dataset-revision` commit SHAs to the worker.
 
+## Data format and quality admission
+
+For string `prompt`/`completion` instruction datasets, explicitly select
+`--prompt-completion-format chat`. The pinned tokenizer serializes and tokenizes
+user and assistant turns with no extra generation prompt. The default `verbatim` mode
+preserves both fields exactly, but now refuses a boundary with no whitespace on
+either side. This intentionally requires review of previously accepted ambiguous
+joins; it does not infer that every whitespace-free continuation is invalid.
+The worker never inserts a newline or strips the source fields automatically.
+Preformatted `text` retains its serializer. Both chat pairs and `messages` now
+produce token IDs directly; TRL skips its plain-text EOS/tokenization path. This
+avoids an extra EOS after templates ending with EOS plus a newline and avoids
+adding a second BOS. Full-sequence training loss remains unchanged.
+
+Validation runs before model weights are loaded. The dataset/completion receipts
+and each checkpoint/final directory carry a `training_format` contract with the
+mode, formatter version, resolved chat-template SHA-256, tokenizer base and
+requested immutable revision. A changed contract cannot resume a checkpoint.
+Chat modes require a matching checkpoint contract, including for `messages`
+datasets. A legacy checkpoint without that metadata requires a new adapter
+target and output directory; its missing contract cannot qualify a chat-format
+change. Legacy text/verbatim serializers may resume after validation. Completed
+targets still exit without new training.
+
+The November 16 Lean v2 run completed 200 steps, but a bounded five-prompt paired
+diagnostic found incomplete adapter responses in all five cases. Its first 2,000
+rows also exposed missing prompt/completion boundary whitespace and suspicious
+trailing attributes. **Do not repeat or promote that run from this example.**
+Review the completion extraction, use a separately pinned corrected dataset and
+new private target, then require held-out proof verification and comparison with
+the base model before a quality claim or promotion. Chat serialization alone
+does not repair an incorrectly extracted completion or establish improvement.
+
+## Guarded launch template
+
+Replace the reviewed revision, dataset, target and directory values below before
+launching. They are intentionally not the completed Lean v2 lane's identifiers.
+
 ```sh
 python3 tools/a6000-migration/shared_gpu_supervisor.py \
   --lock-file /home/Ubuntu/.cache/szl/gpu-0-training.lock \
@@ -24,8 +62,11 @@ python3 tools/a6000-migration/shared_gpu_supervisor.py \
   --max-seconds 21600 -- \
   /home/Ubuntu/lean-v2-run/venv/bin/python tools/salad/salad_worker.py \
   --base Qwen/Qwen2.5-Coder-3B-Instruct \
-  --dataset SZLHOLDINGS/lean-math-sft-v2 --dataset-train-file train.jsonl \
-  --adapter-out SZLHOLDINGS/salad-lean-math-v2-r1 \
+  --base-revision REVIEWED_BASE_COMMIT \
+  --dataset REVIEWED_CORRECTED_DATASET --dataset-train-file train.jsonl \
+  --dataset-revision REVIEWED_DATASET_COMMIT \
+  --prompt-completion-format chat \
+  --adapter-out NEW_PRIVATE_ADAPTER_TARGET \
   --max-steps 200 --save-steps 25 \
   --output-dir /home/Ubuntu/lean-v2-run/checkpoints \
   --gradient-checkpointing --gpu-memory-budget-mib 24576 --gpu-reserve-mib 8192
@@ -52,7 +93,10 @@ the child's exit status is returned. Child success is not proof of completed
 training: verify newly trained steps, checkpoint contents, final publication,
 dataset digest and the completion receipt independently.
 
-For the Lean v2 lane, invoke `complete_record.py` only after the supervisor exits.
+The existing `complete_record.py` is scoped to the original Lean v2 lane. Do not
+reuse it for a corrected replacement target until its destination contract has
+been updated and reviewed; preserve the completed lane's receipt. For its
+original scope, invoke it only after the supervisor exits.
 Supply `--launch-spec`, `--worker-log`, `--supervisor-state`, and `--output-dir`.
 The launch specification contains `run_id`, `host`, `source_commit`, a
 `source_files` mapping of file names to SHA-256 hashes, `base` and `dataset`
