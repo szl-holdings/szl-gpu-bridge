@@ -1,6 +1,6 @@
 """Exercise real worker terminal branches with synthetic, network-denied adapters."""
 
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import hashlib
 import importlib.util
 import io
@@ -27,7 +27,7 @@ class Dataset:
     def select(self, rows):
         return self
 
-    def map(self, function, remove_columns):
+    def map(self, function, remove_columns, **kwargs):
         return self
 
 
@@ -51,10 +51,26 @@ class TerminalContract(unittest.TestCase):
         self.saved = []
         self.trained = []
         self.api_calls = []
+        self.loaded = []
+        self.receipt_uploads = []
+        self.receipt_downloads = []
+        self.receipt_bytes = {}
+        self.receipt_failures = []
+        self.fail_receipt_event = None
+        self.readback_error = None
+        self.corrupt_readback = False
+        self.receipt_revision = "b" * 40
+        self.flip_receipt_visibility = False
+        self.invoke_heartbeat = False
+        self.invoke_checkpoint = False
+        self.trainer_configs = []
+        self.trainer_inputs = []
+        self.callbacks = []
         self.actual = 200
         self.interrupted = False
         self.final_present = True
         self.upload_error = None
+        self.fail_upload_repo = None
         self.private = True
         self.lose_visibility_on_train = False
         fixture = self
@@ -77,15 +93,54 @@ class TerminalContract(unittest.TestCase):
 
             def upload_folder(self, **kwargs):
                 fixture.uploads.append(kwargs)
-                if fixture.upload_error:
+                if fixture.upload_error and (
+                    fixture.fail_upload_repo is None
+                    or kwargs["repo_id"] == fixture.fail_upload_repo
+                ):
                     raise fixture.upload_error
+                return types.SimpleNamespace(oid="a" * 40)
+
+            def upload_file(self, **kwargs):
+                fixture.receipt_uploads.append(kwargs)
+                value = json.loads(kwargs["path_or_fileobj"])
+                if value["event"] == fixture.fail_receipt_event:
+                    error = PermissionError(
+                        "synthetic-sensitive-url-must-not-be-logged"
+                    )
+                    error.response = types.SimpleNamespace(status_code=403)
+                    raise error
+                if fixture.receipt_failures:
+                    error = fixture.receipt_failures.pop(0)
+                    if error:
+                        raise error
+                fixture.receipt_bytes[kwargs["path_in_repo"]] = kwargs[
+                    "path_or_fileobj"
+                ]
+                if fixture.flip_receipt_visibility:
+                    fixture.private = False
+                return types.SimpleNamespace(oid=fixture.receipt_revision)
+
+        def download(**kwargs):
+            fixture.receipt_downloads.append(kwargs)
+            if fixture.readback_error:
+                raise fixture.readback_error
+            content = fixture.receipt_bytes[kwargs["filename"]]
+            if fixture.corrupt_readback:
+                content += b"corrupt"
+            target = Path(fixture.temp.name) / "synthetic-readback.json"
+            target.write_bytes(content)
+            return str(target)
 
         class Trainer:
             def __init__(self, **kwargs):
                 self.state = types.SimpleNamespace(global_step=fixture.actual)
+                self.args = kwargs["args"]
+                fixture.trainer_configs.append(kwargs["args"])
+                fixture.trainer_inputs.append(kwargs)
 
             def add_callback(self, callback):
                 self.callback = callback
+                fixture.callbacks.append(callback)
 
             def train(self, **kwargs):
                 fixture.trained.append(kwargs)
@@ -93,6 +148,17 @@ class TerminalContract(unittest.TestCase):
                     fixture.private = False
                 if fixture.interrupted:
                     fixture.worker.STOP["flag"] = True
+                fixture.control = types.SimpleNamespace(
+                    should_training_stop=False, should_save=False
+                )
+                if fixture.invoke_heartbeat:
+                    self.callback.last_heartbeat = -1000
+                    self.callback.on_step_end(self.args, self.state, fixture.control)
+                if fixture.invoke_checkpoint or fixture.control.should_save:
+                    (Path(self.args.output_dir) / f"checkpoint-{fixture.actual}").mkdir(
+                        parents=True, exist_ok=True
+                    )
+                    self.callback.on_save(self.args, self.state, fixture.control)
                 return types.SimpleNamespace(global_step=fixture.actual)
 
             def save_model(self, path):
@@ -116,22 +182,33 @@ class TerminalContract(unittest.TestCase):
         modules["transformers"].AutoTokenizer = types.SimpleNamespace(
             from_pretrained=lambda *a, **k: object()
         )
+        self.model = types.SimpleNamespace(config=types.SimpleNamespace(use_cache=True))
         modules["transformers"].AutoModelForCausalLM = types.SimpleNamespace(
-            from_pretrained=lambda *a, **k: object()
+            from_pretrained=lambda *a, **k: fixture.loaded.append(True) or self.model
         )
         modules["transformers"].TrainerCallback = object
-        modules["trl"].SFTConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
+
+        def config(*, max_seq_length, **kwargs):
+            # TRL 0.13 uses this required sequence-bound keyword. A permissive
+            # **kwargs-only double previously hid the worker's max_length bug.
+            fixture.config_kwargs = {"max_seq_length": max_seq_length, **kwargs}
+            return types.SimpleNamespace(**fixture.config_kwargs)
+
+        modules["trl"].SFTConfig = config
         modules["trl"].SFTTrainer = Trainer
         modules["peft"].LoraConfig = lambda **kwargs: kwargs
         modules["datasets"].load_dataset = lambda *a, **k: Dataset()
         modules["huggingface_hub"].HfApi = API
+        modules["huggingface_hub"].hf_hub_download = download
         self.stack.enter_context(patch.dict(sys.modules, modules))
         spec = importlib.util.spec_from_file_location(
             "salad_terminal_under_test", WORKER
         )
         self.worker = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.worker)
-        self.original_receipt = self.worker.receipt
+        self.original_receipt = self.worker.build_receipt
+        self.real_receipt = self.worker.receipt
+        self.sleep = self.stack.enter_context(patch.object(self.worker.time, "sleep"))
         self.stack.enter_context(
             patch.object(
                 self.worker,
@@ -186,11 +263,18 @@ class TerminalContract(unittest.TestCase):
             "unit-test-not-a-credential",
             *extra,
         ]
-        with patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+        output, errors = io.StringIO(), io.StringIO()
+        with (
+            patch.object(sys, "argv", argv),
+            redirect_stdout(output),
+            redirect_stderr(errors),
+        ):
             try:
                 return self.worker.main()
             except SystemExit as error:
                 return error.code
+            finally:
+                self.stdout, self.stderr = output.getvalue(), errors.getvalue()
 
     def assert_incomplete(self, expected_event):
         self.assertEqual(self.run_worker(), 7)
@@ -201,6 +285,11 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(terminal["event"], expected_event)
         self.assertEqual(terminal["target_steps"], 200)
         self.assertIs(terminal["completion_qualified"], False)
+
+    def test_pinned_recipe_keeps_the_supported_sequence_bound(self):
+        self.assertEqual(self.run_worker(), 0)
+        self.assertEqual(self.config_kwargs["max_seq_length"], 2048)
+        self.assertNotIn("max_length", self.config_kwargs)
 
     def test_interrupted_run_cannot_publish_final_or_claim_target(self):
         self.actual, self.interrupted = 50, True
@@ -256,9 +345,19 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(self.events[-1]["event"], "complete")
 
     def test_upload_failure_never_emits_successful_completion(self):
-        self.upload_error = OSError("synthetic upload failure")
-        with self.assertRaises(OSError):
-            self.run_worker()
+        self.upload_error = OSError("synthetic-sensitive-url-must-not-be-logged")
+        self.assertEqual(self.run_worker(), 9)
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
+        self.assertFalse(any(e["event"] == "complete" for e in self.events))
+
+    def test_optional_artifact_failure_is_sanitized_without_completion(self):
+        self.fail_upload_repo = "fixture/second-private"
+        self.upload_error = OSError("synthetic-sensitive-url-must-not-be-logged")
+        self.assertEqual(
+            self.run_worker("--publish-final-to", self.fail_upload_repo), 9
+        )
+        self.assertEqual(len(self.uploads), 2)
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
         self.assertFalse(any(e["event"] == "complete" for e in self.events))
 
     def test_resume_at_target_without_final_is_failure(self):
@@ -282,17 +381,255 @@ class TerminalContract(unittest.TestCase):
                 self.worker, "fetch_resume_checkpoint", return_value="checkpoint-200"
             ),
             patch.object(self.worker, "resume_global_step", return_value=200),
+            patch.object(
+                self.worker,
+                "cuda_arch_precheck",
+                side_effect=AssertionError("terminal resume must not probe CUDA"),
+            ) as precheck,
         ):
             self.assertEqual(self.run_worker(), 0)
+        precheck.assert_not_called()
         self.assertEqual(self.trained, [])
         self.assertEqual(self.events[-1]["event"], "already-complete")
 
+    def test_cuda_precheck_failure_prevents_model_load_and_training(self):
+        with (
+            patch.object(self.worker, "cuda_arch_precheck", side_effect=SystemExit(4)),
+            patch.object(
+                self.worker.AutoModelForCausalLM, "from_pretrained"
+            ) as load_model,
+        ):
+            self.assertEqual(self.run_worker(), 4)
+        load_model.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_ambiguous_prompt_join_fails_before_model_load_or_training(self):
+        class AmbiguousDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                self.assert_cache_disabled = kwargs["load_from_cache_file"] is False
+                function({"prompt": "Complete the proof := by", "completion": "by rfl"})
+                return self
+
+        dataset = AmbiguousDataset()
+        with (
+            patch.object(self.worker, "load_train_split", return_value=dataset),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+        self.assertTrue(dataset.assert_cache_disabled)
+        self.assertFalse(self.events[-1]["training_started"])
+        self.assertNotIn("Complete the proof", json.dumps(self.events))
+
+    def test_chat_conversion_records_and_saves_checkpoint_format(self):
+        rendered = []
+
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                rendered.append(
+                    function(
+                        {"prompt": "Complete the proof := by", "completion": "by rfl"}
+                    )
+                )
+                return self
+
+        tokenizer = types.SimpleNamespace(
+            get_chat_template=lambda: "synthetic template",
+            apply_chat_template=lambda *a, **kw: {
+                "input_ids": [100, 200, 300],
+                "attention_mask": [1, 1, 1],
+            },
+        )
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer, "from_pretrained", return_value=tokenizer
+            ),
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 0)
+        self.assertEqual(
+            rendered, [{"input_ids": [100, 200, 300], "attention_mask": [1, 1, 1]}]
+        )
+        dataset_event = next(e for e in self.events if e["event"] == "dataset")
+        contract = dataset_event["training_format"]
+        self.assertEqual(contract["mode"], "prompt_completion_chat")
+        self.assertEqual(self.events[-1]["training_format"], contract)
+        final = Path(self.saved[0]) / "training_format.json"
+        self.assertEqual(json.loads(final.read_text()), contract)
+
+        output = Path(self.trainer_configs[0].output_dir)
+        checkpoint = output / "checkpoint-50"
+        checkpoint.mkdir(parents=True)
+        self.callbacks[0].on_save(
+            types.SimpleNamespace(output_dir=str(output)),
+            types.SimpleNamespace(global_step=50),
+            types.SimpleNamespace(should_training_stop=False),
+        )
+        self.assertEqual(
+            json.loads((checkpoint / "training_format.json").read_text()), contract
+        )
+        self.assertEqual(self.uploads[-1]["folder_path"], str(checkpoint))
+
+    def test_chat_conversion_cannot_resume_an_unmarked_legacy_checkpoint(self):
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer,
+                "from_pretrained",
+                return_value=types.SimpleNamespace(
+                    get_chat_template=lambda: "template"
+                ),
+            ),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=self.temp.name
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=50),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_formatting_exception_cannot_echo_private_row_content(self):
+        class FailingTemplateDataset(Dataset):
+            def map(self, function, remove_columns, **kwargs):
+                raise RuntimeError("SYNTHETIC_PRIVATE_ROW_CONTENT")
+
+        with (
+            patch.object(
+                self.worker, "load_train_split", return_value=FailingTemplateDataset()
+            ),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertNotIn("SYNTHETIC_PRIVATE_ROW_CONTENT", json.dumps(self.events))
+        self.assertEqual(self.trained, [])
+
     def test_nonpositive_limits_fail_before_api_effects(self):
-        for flag in ("--max-steps", "--save-steps", "--max-examples", "--min-examples"):
+        for flag in (
+            "--max-steps",
+            "--save-steps",
+            "--max-examples",
+            "--min-examples",
+            "--heartbeat-seconds",
+        ):
             with self.subTest(flag=flag):
                 self.api_calls.clear()
                 self.assertEqual(self.run_worker(flag, "0"), 2)
                 self.assertEqual(self.api_calls, [])
+
+    def test_invalid_shared_gpu_limits_fail_before_api_effects(self):
+        for flag in ("--gpu-memory-budget-mib", "--gpu-reserve-mib"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_worker(flag, "-1"), 2)
+                self.assertEqual(self.api_calls, [])
+
+    def test_mutable_explicit_revision_is_refused_before_api_effects(self):
+        for flag in ("--base-revision", "--dataset-revision"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_worker(flag, "main"), 2)
+                self.assertEqual(self.api_calls, [])
+
+    def test_base_revision_pins_tokenizer_and_weights(self):
+        revision = "a" * 40
+        with (
+            patch.object(self.worker.AutoTokenizer, "from_pretrained") as tokenizer,
+            patch.object(
+                self.worker.AutoModelForCausalLM,
+                "from_pretrained",
+                return_value=self.model,
+            ) as model,
+        ):
+            self.assertEqual(self.run_worker("--base-revision", revision), 0)
+        self.assertEqual(tokenizer.call_args.kwargs["revision"], revision)
+        self.assertEqual(model.call_args.kwargs["revision"], revision)
+        self.assertIs(
+            self.trainer_inputs[0]["processing_class"], tokenizer.return_value
+        )
+        self.assertIn("torch_dtype", model.call_args.kwargs)
+        boot = next(event for event in self.events if event["event"] == "boot")
+        self.assertEqual(boot["base_revision"], revision)
+
+    def test_shared_gpu_refusal_prevents_model_load_and_training(self):
+        with (
+            patch.object(
+                self.worker,
+                "configure_shared_gpu_budget",
+                side_effect=RuntimeError("no headroom"),
+            ),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker("--gpu-memory-budget-mib", "24576"), 8)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_lane_output_directory_applies_to_resume_training_and_final(self):
+        with patch.object(
+            self.worker, "fetch_resume_checkpoint", return_value=None
+        ) as resume:
+            self.assertEqual(self.run_worker("--output-dir", "~/lean-v2/ckpt"), 0)
+        expected = str(Path(self.temp.name) / "lean-v2" / "ckpt")
+        self.assertEqual(resume.call_args.args[2], expected)
+        self.assertEqual(self.trainer_configs[0].output_dir, expected)
+        self.assertEqual(self.saved, [str(Path(expected) / "final")])
+
+    def test_checkpointing_opt_in_disables_incompatible_model_cache(self):
+        self.assertEqual(self.run_worker("--gradient-checkpointing"), 0)
+        cfg = self.trainer_configs[0]
+        self.assertTrue(cfg.gradient_checkpointing)
+        self.assertEqual(cfg.gradient_checkpointing_kwargs, {"use_reentrant": False})
+        self.assertFalse(self.model.config.use_cache)
+
+    def test_stop_signal_requests_save_and_stop_at_next_optimizer_step(self):
+        self.assertEqual(self.run_worker(), 0)
+        callback = self.callbacks[0]
+        control = types.SimpleNamespace(should_save=False, should_training_stop=False)
+        callback.on_step_end(None, None, control)
+        self.assertFalse(control.should_save)
+        self.assertFalse(control.should_training_stop)
+        self.worker.STOP["flag"] = True
+        self.assertIs(callback.on_step_end(None, None, control), control)
+        self.assertTrue(control.should_save)
+        self.assertTrue(control.should_training_stop)
+
+    def test_signal_handler_never_waits_for_telemetry_or_network(self):
+        with patch.object(
+            self.worker,
+            "receipt",
+            side_effect=AssertionError("signal telemetry blocked"),
+        ) as telemetry:
+            self.worker.on_term(signal.SIGTERM, None)
+            self.worker.on_term(signal.SIGINT, None)
+        telemetry.assert_not_called()
+        self.assertTrue(self.worker.STOP["flag"])
+        self.assertEqual(self.worker.STOP["signal"], signal.SIGTERM)
+
+    def test_prebuilt_runtime_does_not_install_missing_energy_libraries(self):
+        with (
+            patch.dict(os.environ, {"SZL_DISABLE_RUNTIME_INSTALL": "1"}),
+            patch.dict(
+                sys.modules, {"pynvml": None, "zeus": None, "zeus.monitor": None}
+            ),
+            patch(
+                "subprocess.run",
+                side_effect=AssertionError("runtime installation forbidden"),
+            ),
+        ):
+            self.assertIsNone(self.worker._ensure_pynvml())
+            self.assertIsNone(self.worker._ensure_zeus())
 
     def test_max_examples_below_minimum_cannot_silently_train_stub(self):
         self.assertEqual(
@@ -379,6 +716,284 @@ class TerminalContract(unittest.TestCase):
             self.assertEqual(self.run_worker(), 7)
         close.assert_called_once()
         self.assertEqual(self.trained, [])
+
+    def channel(self, repo_type="dataset"):
+        channel = self.worker.ReceiptChannel(
+            self.worker.HfApi(),
+            "unit-test-not-a-credential",
+            "fixture/receipts",
+            repo_type,
+            self.temp.name,
+            "fixture/private-adapter",
+        )
+        self.worker.RECEIPTS = channel
+        return channel
+
+    def real_run(self, *extra):
+        with patch.object(self.worker, "receipt", self.real_receipt):
+            return self.run_worker(*extra)
+
+    def published_events(self):
+        return [
+            value
+            for line in self.stdout.splitlines()
+            if line.startswith("{")
+            for value in [json.loads(line)]
+            if value.get("kind") == "szl.salad-worker/v1"
+        ]
+
+    def test_unconfigured_or_missing_token_cannot_emit_local_success(self):
+        with redirect_stdout(io.StringIO()) as output:
+            with self.assertRaises(self.worker.ReceiptError):
+                self.real_receipt("complete", "unpublished")
+        self.assertEqual(output.getvalue(), "")
+        with self.assertRaises(self.worker.ReceiptError):
+            self.worker.ReceiptChannel(None, "", "fixture/r", "model", ".", "fixture/a")
+        self.assertEqual(self.receipt_uploads, [])
+
+    def test_receipt_outbox_cannot_be_placed_in_final_artifact_directory(self):
+        self.assertEqual(self.real_run("--receipt-outbox", "~/ckpt/final"), 8)
+        self.assertEqual(self.receipt_uploads, [])
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.loaded, [])
+
+    def test_custom_output_directory_cannot_contain_receipt_outbox(self):
+        self.assertEqual(
+            self.run_worker(
+                "--output-dir",
+                "~/lane/ckpt",
+                "--receipt-outbox",
+                "~/lane/ckpt/final/receipts",
+            ),
+            8,
+        )
+        self.assertEqual(self.loaded, [])
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.receipt_uploads, [])
+        self.assertIn("outside the artifact directory", self.stderr)
+
+    def test_default_outbox_is_outside_all_artifact_uploads(self):
+        self.assertEqual(self.real_run(), 0)
+        for upload in self.uploads:
+            self.assertFalse(
+                self.worker.RECEIPTS.outbox.resolve().is_relative_to(
+                    Path(upload["folder_path"]).resolve()
+                )
+            )
+
+    def test_outbox_symlink_into_artifacts_is_refused(self):
+        target = Path(self.temp.name) / "ckpt" / "final"
+        target.mkdir(parents=True)
+        link = Path(self.temp.name) / "outside-link"
+        try:
+            link.symlink_to(target, target_is_directory=True)
+        except OSError:
+            self.skipTest("this environment does not allow symlink creation")
+        self.assertEqual(self.real_run("--receipt-outbox", str(link)), 8)
+        self.assertEqual(self.receipt_uploads, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_cli_token_is_used_for_receipts_without_environment_token(self):
+        self.assertEqual(self.real_run(), 0)
+        self.assertEqual(
+            [e["event"] for e in self.published_events()],
+            ["boot", "dataset", "complete"],
+        )
+        self.assertTrue(self.receipt_downloads)
+        self.assertTrue(
+            all(
+                d["token"] == "unit-test-not-a-credential"
+                for d in self.receipt_downloads
+            )
+        )
+
+    def test_boot_permission_failure_stops_before_model_loading(self):
+        self.fail_receipt_event = "boot"
+        self.assertEqual(self.real_run(), 8)
+        self.assertEqual(self.loaded, [])
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(len(self.receipt_uploads), 1)
+        self.assertEqual(self.published_events(), [])
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
+        self.sleep.assert_not_called()
+
+    def test_failed_final_receipt_keeps_adapter_but_cannot_claim_success(self):
+        self.fail_receipt_event = "complete"
+        self.assertEqual(self.real_run(), 8)
+        self.assertEqual([u["path_in_repo"] for u in self.uploads], ["final"])
+        self.assertFalse(any(e["event"] == "complete" for e in self.published_events()))
+        pending = list(self.worker.RECEIPTS.outbox.glob("*.pending.json"))
+        self.assertEqual(len(pending), 3)
+        self.assertEqual(
+            len(list(self.worker.RECEIPTS.outbox.glob("*.publication.json"))), 2
+        )
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
+
+    def test_missing_commit_revision_is_not_accepted_as_publication(self):
+        self.receipt_revision = None
+        self.assertEqual(self.real_run(), 8)
+        self.assertEqual(self.receipt_downloads, [])
+        self.assertEqual(self.loaded, [])
+        self.assertEqual(self.published_events(), [])
+
+    def test_wrong_bytes_fail_without_success_or_another_upload(self):
+        self.corrupt_readback = True
+        self.assertEqual(self.real_run(), 8)
+        self.assertEqual(len(self.receipt_uploads), 1)
+        self.assertEqual(len(self.receipt_downloads), 1)
+        self.assertEqual(self.published_events(), [])
+        self.sleep.assert_not_called()
+
+    def test_readback_outage_is_bounded_and_does_not_repeat_upload(self):
+        self.readback_error = OSError("synthetic-sensitive-url-must-not-be-logged")
+        self.assertEqual(self.real_run(), 8)
+        self.assertEqual(len(self.receipt_uploads), 1)
+        self.assertEqual(len(self.receipt_downloads), 3)
+        self.assertEqual(self.sleep.call_count, 2)
+        self.assertEqual(self.published_events(), [])
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
+
+    def test_transient_upload_retries_identical_bytes_and_reads_exact_commit(self):
+        self.channel()
+        error = OSError("synthetic rate limit")
+        error.response = types.SimpleNamespace(status_code=429)
+        self.receipt_failures = [error, error]
+        with redirect_stdout(io.StringIO()):
+            value = self.real_receipt(
+                "heartbeat", "step observed", {"actual_steps": 50}
+            )
+        self.assertEqual(len(self.receipt_uploads), 3)
+        self.assertEqual(len({u["path_in_repo"] for u in self.receipt_uploads}), 1)
+        self.assertEqual(len({u["path_or_fileobj"] for u in self.receipt_uploads}), 1)
+        self.assertEqual(self.receipt_downloads[0]["revision"], "b" * 40)
+        self.assertIs(self.receipt_downloads[0]["force_download"], True)
+        self.assertIn(value["receipt_sha256"], self.receipt_downloads[0]["filename"])
+
+    def test_explicit_private_model_channel_uses_only_named_destination(self):
+        self.assertEqual(
+            self.real_run(
+                "--receipts-repo",
+                "fixture/private-adapter",
+                "--receipts-repo-type",
+                "model",
+            ),
+            0,
+        )
+        self.assertTrue(
+            all(
+                u["repo_id"] == "fixture/private-adapter" and u["repo_type"] == "model"
+                for u in self.receipt_uploads
+            )
+        )
+
+    def test_model_channel_refuses_public_repo_without_upload_or_fallback(self):
+        self.channel("model")
+        self.private = False
+        with self.assertRaises(self.worker.ReceiptError):
+            self.real_receipt("boot", "synthetic")
+        self.assertEqual(self.receipt_uploads, [])
+
+    def test_model_visibility_loss_after_upload_withholds_acknowledgement(self):
+        self.flip_receipt_visibility = True
+        self.assertEqual(
+            self.real_run(
+                "--receipts-repo",
+                "fixture/private-adapter",
+                "--receipts-repo-type",
+                "model",
+            ),
+            8,
+        )
+        self.assertEqual(len(self.receipt_uploads), 1)
+        self.assertEqual(len(self.receipt_downloads), 1)
+        self.assertEqual(self.published_events(), [])
+        self.assertEqual(self.loaded, [])
+
+    def test_heartbeat_failure_requests_checkpoint_and_prevents_final_even_at_target(
+        self,
+    ):
+        self.invoke_heartbeat = True
+        self.fail_receipt_event = "heartbeat"
+        self.assertEqual(self.real_run(), 8)
+        self.assertIs(self.control.should_training_stop, True)
+        self.assertIs(self.control.should_save, True)
+        self.assertEqual([u["path_in_repo"] for u in self.uploads], ["checkpoint-200"])
+        self.assertEqual(self.saved, [])
+        self.assertFalse(any(e["event"] == "complete" for e in self.published_events()))
+        self.assertIs(self.published_events()[-1]["receipt_channel_failed"], True)
+
+    def test_checkpoint_receipt_failure_requests_stop_without_final(self):
+        self.invoke_checkpoint = True
+        self.fail_receipt_event = "checkpoint"
+        self.assertEqual(self.real_run(), 8)
+        self.assertIs(self.control.should_training_stop, True)
+        self.assertEqual([u["path_in_repo"] for u in self.uploads], ["checkpoint-200"])
+        self.assertFalse(any(e["event"] == "complete" for e in self.published_events()))
+
+    def test_checkpoint_upload_failure_stops_and_redacts_provider_exception(self):
+        self.invoke_checkpoint = True
+        self.upload_error = OSError("synthetic-sensitive-url-must-not-be-logged")
+        self.assertEqual(self.real_run(), 7)
+        self.assertIs(self.control.should_training_stop, True)
+        self.assertEqual(self.saved, [])
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
+        self.assertIs(
+            self.published_events()[-1]["checkpoint_publication_failed"], True
+        )
+
+    def test_verified_terminal_receipt_binds_artifact_and_publication_commits(self):
+        self.assertEqual(self.real_run(), 0)
+        complete = self.published_events()[-1]
+        self.assertEqual(complete["final_artifact"]["revision"], "a" * 40)
+        self.assertEqual(complete["final_artifact"]["directory"], "final")
+        ack_path = (
+            self.worker.RECEIPTS.outbox
+            / f"{complete['receipt_sha256']}.publication.json"
+        )
+        ack = json.loads(ack_path.read_text())
+        self.assertEqual(ack["revision"], "b" * 40)
+        raw = self.receipt_bytes[ack["path"]]
+        self.assertEqual(ack["file_sha256"], hashlib.sha256(raw).hexdigest())
+        digest = complete.pop("receipt_sha256")
+        self.assertEqual(
+            digest,
+            hashlib.sha256(json.dumps(complete, sort_keys=True).encode()).hexdigest(),
+        )
+
+    def test_heartbeat_is_durable_liveness_without_checkpoint_claim(self):
+        self.invoke_heartbeat = True
+        self.assertEqual(self.real_run(), 0)
+        heartbeat = next(
+            e for e in self.published_events() if e["event"] == "heartbeat"
+        )
+        self.assertEqual(heartbeat["actual_steps"], 200)
+        self.assertEqual(
+            heartbeat["scope"], "TRAINER_LIVENESS_NOT_CHECKPOINT_DURABILITY"
+        )
+        self.assertIs(self.control.should_training_stop, False)
+
+    def test_signal_handler_never_performs_blocking_receipt_io(self):
+        with redirect_stdout(io.StringIO()):
+            self.worker.on_term(signal.SIGTERM, None)
+        self.assertIs(self.worker.STOP["flag"], True)
+        self.assertEqual(self.events, [])
+        self.assertEqual(self.receipt_uploads, [])
+
+    def test_already_complete_still_requires_durable_terminal_receipt(self):
+        self.fail_receipt_event = "already-complete"
+        with (
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value="checkpoint-200"
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.real_run(), 8)
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+        self.assertFalse(
+            any(e["event"] == "already-complete" for e in self.published_events())
+        )
 
 
 if __name__ == "__main__":

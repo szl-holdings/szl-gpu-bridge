@@ -42,7 +42,7 @@ The observer writes atomic current status and append-only history. Consumers mus
 | --- | --- |
 | `NO_CHECKPOINT_OBSERVED` | Successfully listed model, no checkpoint paths observed. |
 | `CHECKPOINT_PROGRESS_OBSERVED` | Pinned trainer JSON verified below the declared target. Not proof the trainer process is alive. |
-| `TERMINAL_METADATA_PRESENT` | Exact terminal step and final filenames observed. Not adapter-byte verification or training completion. |
+| `TERMINAL_METADATA_PRESENT` | Exact terminal step plus final adapter, config, tokenizer JSON and tokenizer config filenames observed at the same immutable revision. Not adapter-byte verification or training completion. |
 | `TARGET_CHECKPOINT_WITHOUT_FINAL_BUNDLE` | Target checkpoint observed without a complete final metadata set. |
 | `TARGET_CONTRACT_MISMATCH` / `TERMINAL_STEP_OVERSHOOT` | Operator contract and observed trainer metadata disagree. |
 | `UNAVAILABLE` | The observation failed; never interpreted as an absent instance or a pass. |
