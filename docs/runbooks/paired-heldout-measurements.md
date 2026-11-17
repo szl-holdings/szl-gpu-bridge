@@ -16,11 +16,23 @@ GPU/resource generation, output storage, and the compute budget. No model stack
 is installed by this program. A source-hash match is not trusted-main ancestry,
 code review, a signature, independent execution proof, or admission.
 
-The existing `artifact_qualification.py` is the complementary artifact gate, not
-a competing evaluator. Before execution, the controller must bind its verified
-model revision to this contract's `adapter.revision` and its declared base to
-`base.repo_id`; retain the artifact receipt with the external admission evidence.
-`ARTIFACT_VERIFIED` alone cannot qualify held-out quality. See
+The existing `artifact_qualification.py` is the complementary artifact gate.
+Execution now requires its original local four-file bundle and a controller-pinned
+SHA-256 of the exact `qualification.json` bytes. The shared
+`evaluation_binding.py` checks the bundle manifest and verifier-source hashes,
+then binds one artifact-verified candidate's repository, immutable model revision,
+`final` adapter directory, terminal step and adapter hash to the evaluation
+contract. Its declared base must match `base.repo_id`. Missing evidence, a held
+candidate, an altered receipt, or a different model identity fails before the
+public `execute()` function creates an attempt or starts a process.
+
+The controller must obtain the expected qualification hash from its admitted
+observation, rather than treating a hash supplied with unknown evidence as
+authorization. This is an unsigned observation binding. It does not establish
+source ancestry, training-data rights or provenance, base-model revision admission,
+independent fixtures, runtime approval, a signature, or a compute grant. Those
+obligations remain with the existing controller. `ARTIFACT_VERIFIED` alone cannot
+qualify held-out quality. See
 [artifact qualification](artifact-qualification.md) and the existing
 [benchmark launch contract](salad-benchmark-launch.md).
 
@@ -82,22 +94,47 @@ and sends no network requests. It reports the actual full-training coverage and
 hashes while keeping `source_admission_verified`, `compute_authorized`, and
 `independent_holdout_verified` false.
 
-Only after separate controller admission, add `--execute` and an explicit
-`--output-root /private/heldout-evidence`. The claimed attempt directory is
-exclusive: an existing or partial attempt is preserved and cannot be resumed or
-overwritten. The base and adapter arms run sequentially in **different fresh
-Python processes** on device 0. The base is measured without loading PEFT; a base
-that already reports adapter injection is rejected. Only the adapter process
-attaches the pinned adapter. The runtime must support CUDA BF16; there is no
-silent CPU/offload fallback. Remote model code is disabled.
+Only after separate controller admission, add all four execution arguments:
+
+```sh
+--execute \
+--output-root /private/heldout-evidence \
+--qualification-bundle /private/artifact-observation \
+--qualification-sha256 CONTROLLER_PINNED_64_CHARACTER_LOWERCASE_SHA256
+```
+
+The qualification arguments are execution-only; ordinary planning remains
+network-free and does not require an artifact bundle. The claimed attempt
+directory is exclusive: an existing or partial attempt is preserved and cannot
+be resumed or overwritten. The selected observation is copied into the new
+private attempt. The parent passes its captured binding and helper-source hashes
+to each child. The child checks the binding against that process pin and executes
+only the exact helper bytes it verified, before importing the model stack. A
+coherent replacement of the receipt, manifest and binding cannot change the
+parent's selected observation. The parent rechecks both identities before writing
+a completed bundle.
+
+The base and adapter arms run sequentially in **different fresh Python processes**
+on device 0. The base is measured without loading PEFT; a base that already
+reports adapter injection is rejected. For the adapter arm, only the qualified
+adapter configuration, safetensors, tokenizer JSON and tokenizer configuration
+are downloaded at the exact revision. Their sizes and streamed SHA-256 values
+must match the archived candidate's proofs before constructing either model.
+Ordinary Hub cache symlinks are allowed only when they resolve to regular files
+with matching bytes. These checks bind bytes to the observation; they do not
+establish training provenance or model quality. Only the adapter process attaches
+the adapter. The runtime must support CUDA BF16; there is no silent CPU/offload
+fallback. Remote model code is disabled.
 
 Generation explicitly requests greedy, single-beam, single-sequence output.
 Tokenization explicitly returns tensors without input truncation. Each row records
 prompt/fixture identity, decoded generated text, output hash, token counts and
 whether generation exhausted its budget without EOS. Journals are flushed after
 every row. Missing, extra, reordered, relabeled or tokenization-mismatched paired
-rows cannot complete. Worker exceptions retain typed, secret-free diagnostics;
-raw exception text and library logs are not copied into receipts. A timed-out
+rows cannot complete. Worker exceptions retain typed, secret-free diagnostics.
+Qualification refusals expose fixed reason codes, including missing arguments,
+wrong observation pins, model identity mismatches and changed adapter bytes;
+private paths, raw exception text and library logs are not copied into receipts. A timed-out
 direct worker is terminated, and partial evidence remains available.
 
 Both arm observations bind Python, torch, Transformers, PEFT, CUDA, GPU name,
@@ -112,10 +149,21 @@ For an original completed bundle:
 python tools/salad/heldout_eval_v2.py --replay /private/heldout-evidence/ATTEMPT_ID
 ```
 
-Replay verifies exact file hashes and recomputes the summary from all original
-paired rows. It does not import torch, invoke a worker, fetch source, execute the
-archived harness, publish, or repeat inference. Rehashing a fabricated PASS does
-not make it equal the replayed summary. Hash consistency alone is not authenticity.
+New attempts use `szl.heldout-bundle/v3`. In addition to the original measurement
+files, its exact file set contains `qualification-binding.json`, the sibling
+`evaluation_binding.py` source, and the original `qualification.json`,
+`manifest.json`, `artifact_qualification.py`, and `training_snapshot.py` under
+`qualification/`. The immutable observation is retained even when inference
+fails or times out. Its release blockers are preserved; binding leaves compute,
+promotion, authenticity and quality claims unestablished.
+
+Replay verifies exact file hashes, reconstructs the qualification binding with the
+current trusted helper, and recomputes the summary from all original paired rows.
+It does not import torch, invoke a worker, fetch source, execute an archived helper
+or verifier, publish, or repeat inference. Historical `szl.heldout-bundle/v2`
+bundles retain their original exact file set and replay behavior; they do not
+acquire a qualification claim. Rehashing a fabricated binding or PASS does not
+make it equal the reconstructed result. Hash consistency alone is not authenticity.
 
 ## Prospective split quarantine (no model execution)
 
@@ -172,6 +220,10 @@ python -m ruff check tools/salad/heldout_eval_v2.py tests/test_salad_heldout_v2.
 
 Tests include real tiny child processes and timeouts, model-stack doubles for the
 production worker path, streaming coverage, negative controls and offline replay.
+They reject missing or mismatched qualification before execution side effects,
+coherent observation replacement and changed helper bytes before worker imports,
+and altered adapter files before model loading. Legacy v2 replay is preserved,
+and v3 replay never executes archived helper or verifier sources.
 They perform no GPU evaluation and establish no model-quality result. The existing
 repository contract CI discovers the test file without a new scheduler/workflow.
 Rollback is an ordinary reviewed source revert; preserve all original bundles.

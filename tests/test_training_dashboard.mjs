@@ -23,6 +23,28 @@ const fixture = () => ({
   training_complete_verified: false, promotion_authorized: false, trainer_process_liveness_verified: false, reason: null
 });
 const response = data => ({ok: true, headers: {get: () => "application/json; charset=utf-8"}, json: async () => data});
+const RELEASE_BLOCKERS = [
+  "TRAINING_PROVENANCE_AND_SIGNATURE_NOT_VERIFIED",
+  "HELDOUT_QUALITY_AND_CONTAMINATION_NOT_ASSESSED",
+  "SAFETY_AND_NEUTRAL_CAPABILITY_NOT_ASSESSED",
+  "SERVING_AUTH_ISOLATION_LATENCY_ROLLBACK_NOT_ASSESSED",
+  "OWNER_PROMOTION_APPROVAL_NOT_BOUND"
+];
+const qualificationFixture = () => {
+  const report = fixture();
+  const row = report.candidates[0];
+  row.state = row.observed_state = "TERMINAL_METADATA_PRESENT";
+  row.latest_checkpoint = row.global_step = row.target_steps;
+  row.qualification = {
+    state: "ARTIFACT_OBSERVATION_MATCHED", revision: row.revision,
+    observed_at_utc: "2026-11-01T12:00:00Z", qualification_sha256: "e".repeat(64),
+    artifact_sha256: "f".repeat(64), target_steps: row.target_steps, base_repo: "Example/base-model",
+    hold_reasons: [], release_blockers: [...RELEASE_BLOCKERS],
+    artifact_observation_bound: true, authenticity_verified: false,
+    quality_qualification: "NOT_ESTABLISHED", compute_authorized: false, promotion_authorized: false
+  };
+  return report;
+};
 
 test("only the same-origin status endpoint supplies evidence", async () => {
   const requests = [];
@@ -136,7 +158,12 @@ test("an old in-flight success cannot overwrite a newer failure", async () => {
 function fakeDocument() {
   const elements = new Map();
   const create = tag => ({
-    tag, children: [], textContent: "", className: "",
+    tag, children: [], textContent: "", className: "", id: "", open: false,
+    querySelectorAll(selector) {
+      const descendants = this.children.flatMap(child => [child, ...child.querySelectorAll("*")]);
+      return selector === "*" ? descendants : descendants.filter(child => child.tag === "details" &&
+        (selector === "details" || selector === "details[open]" && child.open));
+    },
     set innerHTML(_) { throw new Error("untrusted HTML used"); },
     append(...items) { this.children.push(...items); },
     replaceChildren(...items) { this.children = items; }
@@ -167,4 +194,187 @@ test("a browser clock reversal removes current evidence", () => {
   const view = snapshotView(fixture(), AT, AT - 1000);
   assert.equal(view.status, "UNAVAILABLE");
   assert.equal(view.source, null);
+});
+
+
+test("older projections without qualification are explicitly unconfigured", () => {
+  const original = fixture();
+  const report = validateReport(original);
+  assert.equal(original.candidates[0].qualification, undefined);
+  assert.equal(report.candidates[0].qualification.state, "NOT_CONFIGURED");
+  assert.equal(report.candidates[0].qualification.artifact_observation_bound, false);
+  assert.deepEqual(report.candidates[0].qualification.release_blockers, RELEASE_BLOCKERS);
+  const document = fakeDocument();
+  renderDashboard(document, report);
+  assert.match(collect(document.getElementById("candidates")), /Artifact check not configured/);
+  assert.doesNotMatch(collect(document.getElementById("candidates")), /Bound to recorded revision/);
+});
+
+test("an exact artifact match remains separate from checkpoint evidence and never grants release authority", async () => {
+  const document = fakeDocument();
+  let shown;
+  const controller = createController({now: () => AT,
+    fetcher: async () => response(qualificationFixture()),
+    render: report => { shown = report; renderDashboard(document, report); }});
+  await controller.refresh();
+  const q = shown.candidates[0].qualification;
+  assert.equal(q.state, "ARTIFACT_OBSERVATION_MATCHED");
+  assert.equal(q.artifact_observation_bound, true);
+  assert.equal(q.authenticity_verified, false);
+  assert.equal(q.quality_qualification, "NOT_ESTABLISHED");
+  assert.equal(q.compute_authorized, false);
+  assert.equal(q.promotion_authorized, false);
+  assert.equal(shown.promotion_authorized, false);
+  assert.equal(shown.candidates[0].training_complete_verified, false);
+  const row = document.getElementById("candidates").children[0];
+  const artifact = collect(row.children[0]);
+  const checkpoint = collect(row.children[1]);
+  assert.match(artifact, /Recorded artifact observation matched/);
+  assert.match(artifact, /Bound to recorded revision/);
+  assert.match(artifact, /Quality not established · compute and promotion unauthorized/);
+  assert.match(artifact, /Authenticity remains unverified/);
+  assert.match(checkpoint, /TERMINAL METADATA PRESENT/);
+  assert.doesNotMatch(checkpoint, /Recorded artifact check/);
+  assert.ok(artifact.includes("e".repeat(64)));
+  assert.ok(artifact.includes("f".repeat(64)));
+  for (const code of RELEASE_BLOCKERS) assert.ok(artifact.includes(code));
+  const requirements = row.querySelectorAll("details").find(item => item.id.startsWith("qualification-"));
+  assert.equal(requirements.open, false);
+});
+
+test("a changed revision renders the existing artifact record as unbound", () => {
+  const data = qualificationFixture();
+  data.candidates[0].revision = "c".repeat(40);
+  Object.assign(data.candidates[0].qualification, {
+    state: "REVISION_MISMATCH", artifact_observation_bound: false,
+    hold_reasons: ["QUALIFICATION_REVISION_MISMATCH"]
+  });
+  const report = validateReport(data);
+  const document = fakeDocument();
+  renderDashboard(document, report);
+  const display = collect(document.getElementById("candidates"));
+  assert.match(display, /Artifact revision mismatch/);
+  assert.match(display, /Unbound to this candidate observation/);
+  assert.doesNotMatch(display, /Bound to recorded revision/);
+  assert.ok(display.includes("b".repeat(40)));
+  assert.ok(display.includes("c".repeat(40)));
+  assert.ok(display.includes("f".repeat(64)));
+  assert.equal(report.candidates[0].qualification.promotion_authorized, false);
+});
+
+test("a changed target cannot retain an artifact binding", () => {
+  const data = qualificationFixture();
+  data.candidates[0].target_steps = 600;
+  assert.throws(() => validateReport(data), /RESPONSE_CONTRACT_INVALID/);
+  Object.assign(data.candidates[0].qualification, {
+    state: "INVALID", artifact_observation_bound: false,
+    hold_reasons: ["QUALIFICATION_TARGET_MISMATCH"]
+  });
+  const document = fakeDocument();
+  renderDashboard(document, validateReport(data));
+  const display = collect(document.getElementById("candidates"));
+  assert.match(display, /Artifact record invalid/);
+  assert.match(display, /recorded target differs/);
+  assert.doesNotMatch(display, /Bound to recorded revision/);
+});
+
+test("a false binding or elevated authority clears a prior matched record", async () => {
+  for (const mutate of [
+    r => { r.candidates[0].revision = "c".repeat(40); },
+    r => { r.candidates[0].revision = null; },
+    r => { r.candidates[0].qualification.artifact_observation_bound = false; },
+    r => { r.candidates[0].qualification.state = "ARTIFACT_HOLD"; },
+    r => { r.candidates[0].qualification.authenticity_verified = true; },
+    r => { r.candidates[0].qualification.quality_qualification = "ESTABLISHED"; },
+    r => { r.candidates[0].qualification.compute_authorized = true; },
+    r => { r.candidates[0].qualification.promotion_authorized = true; },
+    r => { r.candidates[0].qualification.release_blockers.pop(); },
+    r => { r.candidates[0].qualification.release_blockers[0] = RELEASE_BLOCKERS[1]; },
+    r => { r.candidates[0].qualification.hold_reasons = ["ARBITRARY_PROVIDER_ERROR"]; },
+    r => { r.candidates[0].qualification.artifact_sha256 = null; },
+    r => { r.candidates[0].qualification.qualification_sha256 = "bad-digest"; },
+    r => { r.candidates[0].qualification.observed_at_utc = null; }
+  ]) {
+    const document = fakeDocument();
+    let data = qualificationFixture(); let shown;
+    const controller = createController({now: () => AT,
+      fetcher: async () => response(data),
+      render: report => { shown = report; renderDashboard(document, report); }});
+    await controller.refresh();
+    assert.match(collect(document.getElementById("candidates")), /Bound to recorded revision/);
+    data = qualificationFixture(); mutate(data);
+    await controller.refresh();
+    assert.equal(shown.status, "UNAVAILABLE");
+    assert.equal(shown.reason, "RESPONSE_CONTRACT_INVALID");
+    assert.doesNotMatch(collect(document.getElementById("candidates")), /Bound to recorded revision/);
+    assert.ok(!collect(document.getElementById("candidates")).includes("f".repeat(64)));
+  }
+});
+
+test("artifact failures remain explicit while checkpoint observations remain available", () => {
+  for (const [state, reason, message] of [
+    ["UNAVAILABLE", "QUALIFICATION_UNAVAILABLE", "Artifact check unavailable"],
+    ["INVALID", "QUALIFICATION_INVALID", "Artifact record invalid"],
+    ["NOT_ASSESSED", "QUALIFICATION_CANDIDATE_NOT_ASSESSED", "Candidate not assessed"],
+    ["ARTIFACT_HOLD", "QUALIFICATION_ARTIFACT_HELD", "Artifact check held"]
+  ]) {
+    const data = fixture();
+    data.candidates[0].qualification = {
+      ...validateReport(fixture()).candidates[0].qualification, state, hold_reasons: [reason]
+    };
+    const document = fakeDocument();
+    const report = validateReport(data);
+    renderDashboard(document, report);
+    const display = collect(document.getElementById("candidates"));
+    assert.equal(report.status, "CURRENT");
+    assert.ok(display.includes(message));
+    assert.match(display, /CHECKPOINT PROGRESS OBSERVED/);
+    assert.doesNotMatch(display, /Bound to recorded revision/);
+    for (const code of RELEASE_BLOCKERS) assert.ok(display.includes(code));
+  }
+});
+
+test("source expiry retains the immutable artifact record as a historical revision match", () => {
+  const report = validateReport(qualificationFixture());
+  const document = fakeDocument();
+  renderDashboard(document, report);
+  const detailId = "qualification-" + report.candidates[0].repo;
+  document.getElementById("candidates").querySelectorAll("details")
+    .find(item => item.id === detailId).open = true;
+  const snapshot = structuredClone(report.candidates[0].qualification);
+  const aged = snapshotView(report, AT, AT + 86400000);
+  renderDashboard(document, aged);
+  assert.equal(aged.status, "STALE");
+  assert.deepEqual(aged.candidates[0].qualification, snapshot);
+  assert.equal(aged.candidates[0].qualification.artifact_observation_bound, true);
+  const display = collect(document.getElementById("candidates"));
+  assert.match(display, /Bound to recorded revision/);
+  assert.match(display, /Historical candidate observation; current revision is unestablished/);
+  assert.match(display, /Quality not established · compute and promotion unauthorized/);
+  assert.equal(document.getElementById("candidates").querySelectorAll("details")
+    .find(item => item.id === detailId).open, true);
+});
+
+test("an endpoint failure removes the previously rendered artifact match", async () => {
+  const document = fakeDocument();
+  let fail = false;
+  const controller = createController({now: () => AT,
+    fetcher: async () => { if (fail) throw new Error("offline"); return response(qualificationFixture()); },
+    render: report => renderDashboard(document, report)});
+  await controller.refresh();
+  assert.match(collect(document.getElementById("candidates")), /Bound to recorded revision/);
+  fail = true;
+  await controller.refresh();
+  assert.equal(document.getElementById("report-status").textContent, "UNAVAILABLE");
+  assert.doesNotMatch(collect(document.getElementById("candidates")), /Bound to recorded revision/);
+  assert.ok(!collect(document.getElementById("candidates")).includes("f".repeat(64)));
+});
+
+test("artifact metadata uses text rendering even for hostile base labels", () => {
+  const report = qualificationFixture();
+  const hostile = '<img src=x onerror="throw 1">';
+  report.candidates[0].qualification.base_repo = hostile;
+  const document = fakeDocument();
+  renderDashboard(document, validateReport(report));
+  assert.ok(collect(document.getElementById("candidates")).includes(hostile));
 });

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import hashlib
+import importlib.util
 import io
 from importlib.metadata import version, PackageNotFoundError
 import platform
@@ -30,7 +31,25 @@ MAX_TRAINING_LINE_BYTES = 2 * 1024 * 1024
 MAX_TRAINING_ROWS = 500000
 MAX_ROWS = 2000
 TASKS = ("neutral_mcq", "refusal", "invented_id")
+ADAPTER_NAMES = (
+    "adapter_config.json",
+    "adapter_model.safetensors",
+    "tokenizer.json",
+    "tokenizer_config.json",
+)
 REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*")
+QUALIFICATION_NAMES = frozenset(
+    (
+        "qualification.json",
+        "manifest.json",
+        "artifact_qualification.py",
+        "training_snapshot.py",
+    )
+)
+BINDING_REASON_CODES = frozenset()
+BINDING_FILES = {"evaluation_binding.py", "qualification-binding.json"} | {
+    "qualification/" + name for name in QUALIFICATION_NAMES
+}
 
 
 def digest(raw: bytes) -> str:
@@ -73,6 +92,105 @@ def read_bytes(path: Path) -> bytes:
     if not raw or len(raw) > MAX_BYTES:
         raise ValueError("input_byte_limit")
     return raw
+
+
+def binding_api(verified_source=None):
+    """Load the admitted helper lazily; replay never loads a bundle's helper."""
+    global BINDING_REASON_CODES
+    if __package__ and verified_source is None:
+        from . import evaluation_binding as module
+    else:
+        # Direct script/worker invocation has no package. Use its own sibling only.
+        path = Path(__file__).with_name("evaluation_binding.py")
+        spec = importlib.util.spec_from_file_location("_szl_evaluation_binding", path)
+        module = importlib.util.module_from_spec(spec)
+        if verified_source is None:
+            spec.loader.exec_module(module)
+        else:
+            # Execute the exact verified bytes, without reopening or cached bytecode.
+            exec(compile(verified_source, str(path), "exec"), module.__dict__)
+    BINDING_REASON_CODES = module.REASON_CODES
+    return module
+
+
+def binding_failure_reason(error):
+    """Expose only fixed binding codes; never exception text or private paths."""
+    reason = getattr(error, "reason_code", None)
+    if isinstance(reason, str) and reason in BINDING_REASON_CODES:
+        return reason
+    return {
+        "qualification_bundle_and_sha256_required": "QUALIFICATION_ARGUMENTS_REQUIRED",
+        "qualification_binding_mismatch": "QUALIFICATION_ARCHIVED_BINDING_MISMATCH",
+        "qualification_binding_hash_mismatch": "QUALIFICATION_BINDING_PIN_MISMATCH",
+        "binding_source_hash_mismatch": "QUALIFICATION_HELPER_HASH_MISMATCH",
+        "qualified_adapter_file_size_mismatch": "QUALIFICATION_ADAPTER_BYTES_MISMATCH",
+        "qualified_adapter_file_hash_mismatch": "QUALIFICATION_ADAPTER_BYTES_MISMATCH",
+    }.get(str(error))
+
+
+def verify_binding_source(expected_sha256):
+    """Check the controller's process argument before importing copied helper code."""
+    hex_value(expected_sha256, 64)
+    source = read_bytes(Path(__file__).with_name("evaluation_binding.py"))
+    if digest(source) != expected_sha256:
+        raise ValueError("binding_source_hash_mismatch")
+    return source
+
+
+def validate_archived_binding(
+    directory, contract, *, binding_source=None, expected_binding_sha256=None
+):
+    """Check the copied observation before inference, without running verifiers."""
+    binding_raw = read_bytes(directory / "qualification-binding.json")
+    if expected_binding_sha256 is not None:
+        hex_value(expected_binding_sha256, 64)
+        if digest(binding_raw) != expected_binding_sha256:
+            raise ValueError("qualification_binding_hash_mismatch")
+    binding = strict_json(binding_raw)
+    if not isinstance(binding, dict):
+        raise ValueError("invalid_qualification_binding")
+    api = binding_api(binding_source)
+    report, files = api.load_qualification_bundle(
+        directory / "qualification", binding.get("qualification_sha256")
+    )
+    expected = api.bind_report(
+        report,
+        contract,
+        binding.get("qualification_sha256"),
+        digest(files["manifest.json"]),
+    )
+    if binding != expected:
+        raise ValueError("qualification_binding_mismatch")
+    return binding, report
+
+
+def verify_adapter_files(snapshot, contract, report):
+    """Bind cached regular-file bytes, including ordinary HF cache symlinks."""
+    adapter = contract["adapter"]
+    candidate = next(
+        item
+        for item in report["candidates"]
+        if item["repo"] == adapter["repo_id"]
+        and item["snapshot"]["revision"] == adapter["revision"]
+    )
+    directory = Path(snapshot) / adapter["directory"]
+    for name in ADAPTER_NAMES:
+        proof = candidate["gates"]["files"][adapter["directory"] + "/" + name]
+        path = directory / name
+        # The validated proof bounds each file to 128 MiB and all four to 192 MiB.
+        if not path.is_file() or path.stat().st_size != proof["bytes"]:
+            raise ValueError("qualified_adapter_file_size_mismatch")
+        observed = hashlib.sha256()
+        count = 0
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                count += len(chunk)
+                if count > proof["bytes"]:
+                    raise ValueError("qualified_adapter_file_size_mismatch")
+                observed.update(chunk)
+        if count != proof["bytes"] or observed.hexdigest() != proof["sha256"]:
+            raise ValueError("qualified_adapter_file_hash_mismatch")
+    return directory
 
 
 def exact(obj, keys):
@@ -426,7 +544,9 @@ def exclusive(path, raw):
         os.fsync(stream.fileno())
 
 
-def worker(directory, arm):
+def worker(directory, arm, *, binding_source_sha256, binding_sha256):
+    binding_source = verify_binding_source(binding_source_sha256)
+    hex_value(binding_sha256, 64)
     # Parent has already claimed and snapshotted the exact input/source bytes.
     c, fixtures, plan = prepare(
         read_bytes(directory / "contract.json"),
@@ -439,6 +559,23 @@ def worker(directory, arm):
         or strict_json(read_bytes(directory / "plan.json")) != plan
     ):
         raise ValueError("unclaimed_worker_identity")
+    _, qualification_report = validate_archived_binding(
+        directory,
+        c,
+        binding_source=binding_source,
+        expected_binding_sha256=binding_sha256,
+    )
+    adapter_directory = None
+    if arm == "adapter":
+        from huggingface_hub import snapshot_download
+
+        ad = c["adapter"]
+        snapshot = snapshot_download(
+            ad["repo_id"],
+            revision=ad["revision"],
+            allow_patterns=[ad["directory"] + "/" + name for name in ADAPTER_NAMES],
+        )
+        adapter_directory = verify_adapter_files(snapshot, c, qualification_report)
     import torch
     import transformers
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -465,17 +602,10 @@ def worker(directory, arm):
     ):
         raise ValueError("base_model_already_contains_adapter")
     if arm == "adapter":
-        from huggingface_hub import snapshot_download
         from peft import PeftModel
 
-        ad = c["adapter"]
-        snapshot = snapshot_download(
-            ad["repo_id"],
-            revision=ad["revision"],
-            allow_patterns=[ad["directory"] + "/*"],
-        )
         model = PeftModel.from_pretrained(
-            model, str(Path(snapshot) / ad["directory"]), is_trainable=False
+            model, str(adapter_directory), is_trainable=False
         )
     model.eval()
     with (directory / (arm + ".jsonl")).open("xb") as journal:
@@ -557,7 +687,9 @@ def worker(directory, arm):
     }
 
 
-def run_worker(directory, arm):
+def run_worker(directory, arm, *, binding_source_sha256, binding_sha256):
+    binding_source = verify_binding_source(binding_source_sha256)
+    hex_value(binding_sha256, 64)
     # Validate the claimed directory before any diagnostic write.
     c, _, plan = prepare(
         read_bytes(directory / "contract.json"),
@@ -570,23 +702,33 @@ def run_worker(directory, arm):
         or strict_json(read_bytes(directory / "plan.json")) != plan
     ):
         raise ValueError("unclaimed_worker_identity")
+    validate_archived_binding(
+        directory,
+        c,
+        binding_source=binding_source,
+        expected_binding_sha256=binding_sha256,
+    )
     try:
-        result = worker(directory, arm)
+        result = worker(
+            directory,
+            arm,
+            binding_source_sha256=binding_source_sha256,
+            binding_sha256=binding_sha256,
+        )
         exclusive(directory / (arm + "-runtime.json"), encoded(result))
     except Exception as error:
-        exclusive(
-            directory / (arm + "-failure.json"),
-            encoded(
-                {
-                    "schema": "szl.heldout-worker-failure/v2",
-                    "attempt_id": c["attempt_id"],
-                    "arm": arm,
-                    "error_type": type(error).__name__,
-                    "state": "UNAVAILABLE",
-                    "raw_exception_omitted": True,
-                }
-            ),
-        )
+        failure = {
+            "schema": "szl.heldout-worker-failure/v2",
+            "attempt_id": c["attempt_id"],
+            "arm": arm,
+            "error_type": type(error).__name__,
+            "state": "UNAVAILABLE",
+            "raw_exception_omitted": True,
+        }
+        reason = binding_failure_reason(error)
+        if reason is not None:
+            failure["reason_code"] = reason
+        exclusive(directory / (arm + "-failure.json"), encoded(failure))
         raise
 
 
@@ -647,7 +789,7 @@ def replay(directory):
     manifest = strict_json(read_bytes(directory / "bundle.json"))
     exact(manifest, ("schema", "files", "authenticity_verified"))
     if (
-        manifest["schema"] != "szl.heldout-bundle/v2"
+        manifest["schema"] not in ("szl.heldout-bundle/v2", "szl.heldout-bundle/v3")
         or manifest["authenticity_verified"] is not False
     ):
         raise ValueError("invalid_bundle_claim")
@@ -663,6 +805,8 @@ def replay(directory):
         "base-runtime.json",
         "adapter-runtime.json",
     }
+    if manifest["schema"] == "szl.heldout-bundle/v3":
+        expected |= BINDING_FILES
     if not isinstance(manifest["files"], dict) or set(manifest["files"]) != expected:
         raise ValueError("incomplete_bundle")
     raw = {
@@ -681,6 +825,8 @@ def replay(directory):
         raw["training.jsonl"],
         raw["heldout_eval_v2.py"],
     )
+    if manifest["schema"] == "szl.heldout-bundle/v3":
+        validate_archived_binding(directory, c)
     validate_runtime(c, raw)
     if strict_json(raw["plan.json"]) != plan:
         raise ValueError("plan_mismatch")
@@ -692,12 +838,54 @@ def replay(directory):
     return result
 
 
-def execute(c, plan, raw, root, *, run=subprocess.run):
+def execute(
+    c,
+    plan,
+    raw,
+    root,
+    *,
+    qualification_bundle=None,
+    qualification_sha256=None,
+    run=subprocess.run,
+):
+    # This public entry point owns the gate, including direct Python callers.
+    # All qualification checks precede directory creation and worker execution.
+    if qualification_bundle is None or qualification_sha256 is None:
+        raise ValueError("qualification_bundle_and_sha256_required")
+    exact(
+        raw, ("contract.json", "fixtures.jsonl", "training.jsonl", "heldout_eval_v2.py")
+    )
+    checked_contract, _, checked_plan = prepare(
+        raw["contract.json"],
+        raw["fixtures.jsonl"],
+        raw["training.jsonl"],
+        raw["heldout_eval_v2.py"],
+    )
+    if c != checked_contract or plan != checked_plan:
+        raise ValueError("execution_input_binding_mismatch")
+    api = binding_api()
+    report, qualification_files = api.load_qualification_bundle(
+        qualification_bundle, qualification_sha256
+    )
+    binding = api.bind_report(
+        report, c, qualification_sha256, digest(qualification_files["manifest.json"])
+    )
+    if set(qualification_files) != QUALIFICATION_NAMES:
+        raise ValueError("unexpected_qualification_files")
+    raw = dict(raw)
+    raw.update(
+        {"qualification/" + name: value for name, value in qualification_files.items()}
+    )
+    raw["evaluation_binding.py"] = read_bytes(Path(api.__file__))
+    binding_source_sha256 = digest(raw["evaluation_binding.py"])
+    raw["qualification-binding.json"] = encoded(binding)
+    binding_sha256 = digest(raw["qualification-binding.json"])
     if root.is_symlink():
         raise ValueError("symlink_output_root")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     directory = root / c["attempt_id"]
     directory.mkdir(mode=0o700, exist_ok=False)
+    (directory / "qualification").mkdir(mode=0o700, exist_ok=False)
     started = time.monotonic()
     for name, value in raw.items():
         if name == "training.jsonl":
@@ -726,6 +914,10 @@ def execute(c, plan, raw, root, *, run=subprocess.run):
                     str(directory / "heldout_eval_v2.py"),
                     "--worker",
                     arm,
+                    "--binding-source-sha256",
+                    binding_source_sha256,
+                    "--binding-sha256",
+                    binding_sha256,
                     "--bundle",
                     str(directory),
                 ],
@@ -741,6 +933,12 @@ def execute(c, plan, raw, root, *, run=subprocess.run):
                 if diagnostic.is_file():
                     terminal["worker_failure"] = strict_json(read_bytes(diagnostic))
                 raise RuntimeError(arm + "_worker_failed")
+        validate_archived_binding(directory, c, expected_binding_sha256=binding_sha256)
+        if (
+            digest(read_bytes(directory / "evaluation_binding.py"))
+            != binding_source_sha256
+        ):
+            raise ValueError("binding_source_hash_mismatch")
         arms = {
             arm: jsonl(read_bytes(directory / (arm + ".jsonl")))
             for arm in ("base", "adapter")
@@ -761,7 +959,7 @@ def execute(c, plan, raw, root, *, run=subprocess.run):
             "adapter-runtime.json",
         }
         manifest = {
-            "schema": "szl.heldout-bundle/v2",
+            "schema": "szl.heldout-bundle/v3",
             "authenticity_verified": False,
             "files": {
                 name: training_digest(directory / name)
@@ -782,6 +980,9 @@ def execute(c, plan, raw, root, *, run=subprocess.run):
         subprocess.SubprocessError,
     ) as error:
         terminal["error_type"] = type(error).__name__
+        reason = binding_failure_reason(error)
+        if reason is not None:
+            terminal["reason_code"] = reason
         terminal["state"] = (
             "PARTIAL"
             if any((directory / (a + ".jsonl")).exists() for a in ("base", "adapter"))
@@ -900,9 +1101,16 @@ def main(argv=None):
         help="Private prospective exact-disjoint candidate; never acceptance",
     )
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--qualification-bundle", type=Path)
+    parser.add_argument(
+        "--qualification-sha256",
+        help="Controller-pinned SHA-256 of the original qualification.json bytes",
+    )
     parser.add_argument("--replay", type=Path)
     parser.add_argument("--worker", choices=("base", "adapter"), help=argparse.SUPPRESS)
     parser.add_argument("--bundle", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--binding-source-sha256", help=argparse.SUPPRESS)
+    parser.add_argument("--binding-sha256", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
         if args.audit_eval:
@@ -915,6 +1123,10 @@ def main(argv=None):
                 or args.contract
                 or args.fixtures
                 or args.bundle
+                or args.qualification_bundle
+                or args.qualification_sha256
+                or args.binding_source_sha256
+                or args.binding_sha256
             ):
                 raise ValueError(
                     "split_audit_requires_only_training_eval_and_new_output"
@@ -923,9 +1135,30 @@ def main(argv=None):
             print(json.dumps(result, allow_nan=False))
             return 3 if result["shared_unique_prompt_identities"] else 0
         if args.worker:
-            if args.bundle is None or args.execute or args.replay:
+            if (
+                args.bundle is None
+                or args.binding_source_sha256 is None
+                or args.binding_sha256 is None
+                or args.execute
+                or args.replay
+                or any(
+                    (
+                        args.contract,
+                        args.fixtures,
+                        args.training,
+                        args.output_root,
+                        args.qualification_bundle,
+                        args.qualification_sha256,
+                    )
+                )
+            ):
                 raise ValueError("invalid_worker_arguments")
-            run_worker(args.bundle.resolve(), args.worker)
+            run_worker(
+                args.bundle.resolve(),
+                args.worker,
+                binding_source_sha256=args.binding_source_sha256,
+                binding_sha256=args.binding_sha256,
+            )
             return 0
         if args.replay:
             if args.execute or any(
@@ -935,11 +1168,25 @@ def main(argv=None):
                     args.training,
                     args.output_root,
                     args.bundle,
+                    args.binding_source_sha256,
+                    args.binding_sha256,
+                    args.qualification_bundle,
+                    args.qualification_sha256,
                 )
             ):
                 raise ValueError("replay_requires_original_bundle_only")
             result = replay(args.replay)
         else:
+            if (
+                args.binding_source_sha256 is not None
+                or args.binding_sha256 is not None
+            ):
+                raise ValueError("binding_source_pin_requires_worker")
+            if not args.execute and (
+                args.qualification_bundle is not None
+                or args.qualification_sha256 is not None
+            ):
+                raise ValueError("qualification_arguments_require_execute")
             if not all((args.contract, args.fixtures, args.training)) or args.bundle:
                 raise ValueError("contract_fixtures_and_training_required")
             source = read_bytes(Path(__file__))
@@ -955,23 +1202,29 @@ def main(argv=None):
                     "training.jsonl": t_raw,
                     "heldout_eval_v2.py": source,
                 }
-                code, result = execute(c, result, raw, args.output_root.absolute())
+                code, result = execute(
+                    c,
+                    result,
+                    raw,
+                    args.output_root.absolute(),
+                    qualification_bundle=args.qualification_bundle,
+                    qualification_sha256=args.qualification_sha256,
+                )
                 print(json.dumps(result, allow_nan=False))
                 return code
         print(json.dumps(result, allow_nan=False))
         return 0
     except Exception as error:
         # Do not echo input data, remote response bodies, secrets or prompts.
-        print(
-            json.dumps(
-                {
-                    "state": "UNAVAILABLE",
-                    "error_type": type(error).__name__,
-                    "quality_qualification": "NOT_ESTABLISHED",
-                }
-            ),
-            file=sys.stderr,
-        )
+        failure = {
+            "state": "UNAVAILABLE",
+            "error_type": type(error).__name__,
+            "quality_qualification": "NOT_ESTABLISHED",
+        }
+        reason = binding_failure_reason(error)
+        if reason is not None:
+            failure["reason_code"] = reason
+        print(json.dumps(failure), file=sys.stderr)
         return 7
 
 

@@ -4,17 +4,75 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+from tools.salad import artifact_qualification as qualification
 
 SOURCE = Path(__file__).resolve().parents[1] / "tools/salad/heldout_eval_v2.py"
 SPEC = importlib.util.spec_from_file_location("heldout_v2", SOURCE)
 M = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(M)
+FIXTURE_SPEC = importlib.util.spec_from_file_location(
+    "heldout_binding_fixtures", Path(__file__).with_name("test_evaluation_binding.py")
+)
+FIXTURES = importlib.util.module_from_spec(FIXTURE_SPEC)
+FIXTURE_SPEC.loader.exec_module(FIXTURES)
+ADAPTER_BYTES = {
+    "adapter_config.json": b'{"synthetic":"adapter configuration"}',
+    "adapter_model.safetensors": b"synthetic adapter bytes; no real tensors",
+    "tokenizer.json": b'{"synthetic":"tokenizer"}',
+    "tokenizer_config.json": b'{"synthetic":"tokenizer configuration"}',
+}
+
+
+def binding_source_pin():
+    return M.digest(SOURCE.with_name("evaluation_binding.py").read_bytes())
+
+
+def archived_binding_pin(directory):
+    return M.digest((directory / "qualification-binding.json").read_bytes())
+
+
+def qualification_input(root, contract):
+    directory = root / "qualification-input"
+    candidate = FIXTURES.candidate_fixture()
+    candidate["repo"] = contract["adapter"]["repo_id"]
+    candidate["snapshot"].update(
+        id=candidate["repo"], revision=contract["adapter"]["revision"]
+    )
+    candidate["gates"]["adapter_config"]["base"] = contract["base"]["repo_id"]
+    for name, value in ADAPTER_BYTES.items():
+        candidate["gates"]["files"]["final/" + name].update(
+            bytes=len(value), sha256=M.digest(value)
+        )
+    qualification.write_bundle(directory, [candidate])
+    return {
+        "qualification_bundle": directory,
+        "qualification_sha256": M.digest(
+            (directory / "qualification.json").read_bytes()
+        ),
+    }
+
+
+def execute_qualified(c, plan, raw, root, **kwargs):
+    return M.execute(c, plan, raw, root, **qualification_input(root, c), **kwargs)
+
+
+def archive_qualification(directory, contract):
+    args = qualification_input(directory.parent, contract)
+    shutil.copytree(args["qualification_bundle"], directory / "qualification")
+    api = M.binding_api()
+    binding = api.bind_qualification(
+        args["qualification_bundle"], contract, args["qualification_sha256"]
+    )
+    (directory / "qualification-binding.json").write_bytes(M.encoded(binding))
+    (directory / "evaluation_binding.py").write_bytes(Path(api.__file__).read_bytes())
 
 
 def examples():
@@ -62,7 +120,7 @@ def inputs(source=None):
         },
         "base": identity,
         "adapter": {
-            "repo_id": "test/adapter",
+            "repo_id": "SZLHOLDINGS/test-adapter",
             "revision": "c" * 40,
             "directory": "final",
         },
@@ -394,7 +452,7 @@ class ExecutionTests(unittest.TestCase):
                 calls.append(command[command.index("--worker") + 1])
                 return self.fake_success(command, **kw)
 
-            code, terminal = M.execute(c, plan, raw, root, run=child)
+            code, terminal = execute_qualified(c, plan, raw, root, run=child)
             self.assertEqual(code, 0)
             self.assertEqual(calls, ["base", "adapter"])
             self.assertEqual(terminal["state"], "MEASUREMENTS_COMPLETE_REPLAY_VERIFIED")
@@ -418,7 +476,7 @@ class ExecutionTests(unittest.TestCase):
                 calls.append(command)
                 return SimpleNamespace(returncode=23)
 
-            code, terminal = M.execute(c, plan, raw, root, run=child)
+            code, terminal = execute_qualified(c, plan, raw, root, run=child)
             self.assertEqual(code, 7)
             self.assertEqual(len(calls), 1)
             self.assertEqual(terminal["state"], "UNAVAILABLE")
@@ -434,7 +492,7 @@ class ExecutionTests(unittest.TestCase):
                     return self.fake_success(command, **kw)
                 raise subprocess.TimeoutExpired(command, 0.1)
 
-            code, terminal = M.execute(c, plan, raw, root, run=child)
+            code, terminal = execute_qualified(c, plan, raw, root, run=child)
             self.assertEqual(code, 7)
             self.assertEqual(terminal["state"], "PARTIAL")
             self.assertTrue((root / c["attempt_id"] / "base.jsonl").exists())
@@ -447,14 +505,16 @@ class ExecutionTests(unittest.TestCase):
             directory.mkdir()
             (directory / "original").write_bytes(b"keep")
             with self.assertRaises(FileExistsError):
-                M.execute(c, plan, raw, root, run=self.fake_success)
+                execute_qualified(c, plan, raw, root, run=self.fake_success)
             self.assertEqual((directory / "original").read_bytes(), b"keep")
 
     def test_byte_tamper_and_rehashed_false_score_both_fail_replay(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             c, plan, raw = self.setup_run(root)
-            self.assertEqual(M.execute(c, plan, raw, root, run=self.fake_success)[0], 0)
+            self.assertEqual(
+                execute_qualified(c, plan, raw, root, run=self.fake_success)[0], 0
+            )
             directory = root / c["attempt_id"]
             path = directory / "measurements.json"
             original = path.read_bytes()
@@ -473,7 +533,7 @@ class ExecutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             c, plan, raw = self.setup_run(root)
-            code, terminal = M.execute(
+            code, terminal = execute_qualified(
                 c, plan, raw, root, run=lambda *a, **k: SimpleNamespace(returncode=0)
             )
             self.assertEqual(code, 7)
@@ -503,6 +563,266 @@ class ExecutionTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_SECRET", result.stdout + result.stderr)
 
 
+class QualificationExecutionTests(unittest.TestCase):
+    setup_run = ExecutionTests.setup_run
+    fake_success = ExecutionTests.fake_success
+
+    def completed(self, root):
+        c, plan, raw = self.setup_run(root)
+        code, terminal = execute_qualified(c, plan, raw, root, run=self.fake_success)
+        self.assertEqual(code, 0, terminal)
+        return root / c["attempt_id"]
+
+    def test_missing_bad_pin_and_changed_identity_have_no_execution_effects(self):
+        for case in (
+            "missing",
+            "missing_pin",
+            "bad_pin",
+            "revision",
+            "base",
+            "directory",
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as folder:
+                parent = Path(folder)
+                output = parent / "not-created"
+                c, plan, raw = self.setup_run(parent)
+                arguments = qualification_input(parent, c)
+                if case == "missing":
+                    arguments = {}
+                elif case == "missing_pin":
+                    arguments.pop("qualification_sha256")
+                elif case == "bad_pin":
+                    arguments["qualification_sha256"] = "0" * 64
+                else:
+                    if case == "revision":
+                        c["adapter"]["revision"] = "f" * 40
+                    elif case == "base":
+                        c["base"]["repo_id"] = "test/different-base"
+                    else:
+                        c["adapter"]["directory"] = "checkpoint-200"
+                    raw["contract.json"] = M.encoded(c)
+                    _, _, plan = M.prepare(
+                        raw["contract.json"],
+                        raw["fixtures.jsonl"],
+                        raw["training.jsonl"],
+                        raw["heldout_eval_v2.py"],
+                    )
+                runner = Mock(side_effect=AssertionError("unqualified process"))
+                with self.assertRaises(ValueError):
+                    M.execute(c, plan, raw, output, run=runner, **arguments)
+                runner.assert_not_called()
+                self.assertFalse(output.exists())
+
+    def test_v3_bundle_preserves_original_observation_and_authority_boundaries(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            directory = self.completed(root)
+            manifest = json.loads((directory / "bundle.json").read_bytes())
+            binding = json.loads(
+                (directory / "qualification-binding.json").read_bytes()
+            )
+            self.assertEqual(manifest["schema"], "szl.heldout-bundle/v3")
+            self.assertEqual(len(manifest["files"]), 16)
+            self.assertTrue(M.BINDING_FILES.issubset(manifest["files"]))
+            for name in M.QUALIFICATION_NAMES:
+                self.assertEqual(
+                    (directory / "qualification" / name).read_bytes(),
+                    (root / "qualification-input" / name).read_bytes(),
+                )
+            self.assertEqual(
+                binding["qualification_sha256"],
+                M.digest(
+                    (root / "qualification-input/qualification.json").read_bytes()
+                ),
+            )
+            self.assertTrue(binding["artifact_observation_bound"])
+            self.assertEqual(binding["quality_qualification"], "NOT_ESTABLISHED")
+            for key in (
+                "compute_authorized",
+                "promotion_authorized",
+                "authenticity_verified",
+            ):
+                self.assertIs(binding[key], False)
+
+    def test_rehashed_binding_change_fails_replay(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = self.completed(Path(folder))
+            path = directory / "qualification-binding.json"
+            value = json.loads(path.read_bytes())
+            value["artifact"]["revision"] = "f" * 40
+            path.write_bytes(M.encoded(value))
+            manifest = json.loads((directory / "bundle.json").read_bytes())
+            manifest["files"][path.name] = M.digest(path.read_bytes())
+            (directory / "bundle.json").write_bytes(M.encoded(manifest))
+            with self.assertRaisesRegex(ValueError, "qualification_binding_mismatch"):
+                M.replay(directory)
+
+    def test_legacy_v2_replay_never_requires_or_imports_binding_helper(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = self.completed(Path(folder))
+            manifest = json.loads((directory / "bundle.json").read_bytes())
+            manifest["schema"] = "szl.heldout-bundle/v2"
+            for name in M.BINDING_FILES:
+                manifest["files"].pop(name)
+            shutil.rmtree(directory / "qualification")
+            (directory / "evaluation_binding.py").unlink()
+            (directory / "qualification-binding.json").unlink()
+            (directory / "bundle.json").write_bytes(M.encoded(manifest))
+            with patch.object(
+                M, "binding_api", side_effect=AssertionError("legacy import")
+            ):
+                result = M.replay(directory)
+            self.assertEqual(result["quality_qualification"], "NOT_ESTABLISHED")
+
+    def test_replay_never_executes_archived_helper(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = self.completed(Path(folder))
+            path = directory / "evaluation_binding.py"
+            path.write_bytes(b"raise AssertionError('archived code executed')\n")
+            manifest = json.loads((directory / "bundle.json").read_bytes())
+            manifest["files"][path.name] = M.digest(path.read_bytes())
+            (directory / "bundle.json").write_bytes(M.encoded(manifest))
+            result = M.replay(directory)
+            self.assertEqual(result["quality_qualification"], "NOT_ESTABLISHED")
+
+    def test_standalone_worker_rejects_changed_helper_before_import(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            c, plan, raw = self.setup_run(root)
+            calls = []
+
+            def child(command, **kwargs):
+                calls.append(command)
+                directory = Path(command[-1])
+                (directory / "evaluation_binding.py").write_bytes(
+                    b"raise AssertionError('unverified helper executed')\n"
+                )
+                process = subprocess.run(
+                    command, capture_output=True, text=True, timeout=10, check=False
+                )
+                self.assertEqual(process.returncode, 7)
+                self.assertEqual(
+                    json.loads(process.stderr)["reason_code"],
+                    "QUALIFICATION_HELPER_HASH_MISMATCH",
+                )
+                self.assertFalse((directory / "base.jsonl").exists())
+                return SimpleNamespace(returncode=process.returncode)
+
+            code, _ = execute_qualified(c, plan, raw, root, run=child)
+            self.assertEqual(code, 7)
+            self.assertEqual(len(calls), 1)
+
+    def replace_observation_consistently(self, directory):
+        path = directory / "qualification/qualification.json"
+        report = json.loads(path.read_bytes())
+        report["candidates"][0]["observed_at_utc"] = "2026-01-02T00:00:00+00:00"
+        path.write_bytes(M.encoded(report))
+        pin = M.digest(path.read_bytes())
+        manifest_path = directory / "qualification/manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["sha256"]["qualification.json"] = pin
+        manifest_path.write_bytes(M.encoded(manifest))
+        contract = json.loads((directory / "contract.json").read_bytes())
+        binding = M.binding_api().bind_qualification(
+            directory / "qualification", contract, pin
+        )
+        (directory / "qualification-binding.json").write_bytes(M.encoded(binding))
+
+    def test_standalone_worker_rejects_coherent_replacement_of_selected_observation(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            c, plan, raw = self.setup_run(root)
+            calls = []
+
+            def child(command, **kwargs):
+                calls.append(command)
+                directory = Path(command[-1])
+                self.replace_observation_consistently(directory)
+                process = subprocess.run(
+                    command, capture_output=True, text=True, timeout=10, check=False
+                )
+                self.assertEqual(process.returncode, 7)
+                self.assertEqual(
+                    json.loads(process.stderr)["reason_code"],
+                    "QUALIFICATION_BINDING_PIN_MISMATCH",
+                )
+                self.assertFalse((directory / "base.jsonl").exists())
+                return SimpleNamespace(returncode=process.returncode)
+
+            code, _ = execute_qualified(c, plan, raw, root, run=child)
+            self.assertEqual(code, 7)
+            self.assertEqual(len(calls), 1)
+
+    def test_completion_rechecks_selected_observation_before_manifest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            c, plan, raw = self.setup_run(root)
+
+            def child(command, **kwargs):
+                result = self.fake_success(command, **kwargs)
+                if command[command.index("--worker") + 1] == "adapter":
+                    self.replace_observation_consistently(Path(command[-1]))
+                return result
+
+            code, terminal = execute_qualified(c, plan, raw, root, run=child)
+            self.assertEqual(code, 7)
+            self.assertEqual(
+                terminal["reason_code"], "QUALIFICATION_BINDING_PIN_MISMATCH"
+            )
+            self.assertFalse((root / c["attempt_id"] / "bundle.json").exists())
+
+    def test_cli_binding_holds_have_fixed_codes_and_no_private_output(self):
+        for case, expected in (
+            ("missing", "QUALIFICATION_ARGUMENTS_REQUIRED"),
+            ("bad_pin", "QUALIFICATION_PIN_MISMATCH"),
+            ("revision", "QUALIFICATION_ADAPTER_REVISION_MISMATCH"),
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                c, f, t, _ = inputs()
+                arguments = qualification_input(root, c)
+                if case == "revision":
+                    c["adapter"]["revision"] = "f" * 40
+                for name, value in (
+                    ("c.json", M.encoded(c)),
+                    ("f.jsonl", f),
+                    ("t.jsonl", t),
+                ):
+                    (root / name).write_bytes(value)
+                output = root / "PRIVATE_OUTPUT_NEVER_CREATED"
+                command = [
+                    sys.executable,
+                    str(SOURCE),
+                    "--contract",
+                    str(root / "c.json"),
+                    "--fixtures",
+                    str(root / "f.jsonl"),
+                    "--training",
+                    str(root / "t.jsonl"),
+                    "--execute",
+                    "--output-root",
+                    str(output),
+                ]
+                if case != "missing":
+                    command += [
+                        "--qualification-bundle",
+                        str(arguments["qualification_bundle"]),
+                        "--qualification-sha256",
+                        "0" * 64
+                        if case == "bad_pin"
+                        else arguments["qualification_sha256"],
+                    ]
+                process = subprocess.run(
+                    command, capture_output=True, text=True, timeout=10, check=False
+                )
+                self.assertEqual(process.returncode, 7)
+                self.assertEqual(json.loads(process.stderr)["reason_code"], expected)
+                self.assertNotIn("PRIVATE_OUTPUT", process.stdout + process.stderr)
+                self.assertFalse(output.exists())
+
+
 class RuntimeBoundaryTests(unittest.TestCase):
     setup_run = ExecutionTests.setup_run
     fake_success = ExecutionTests.fake_success
@@ -523,7 +843,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
                     path.write_bytes(M.encoded(value))
                 return result
 
-            code, terminal = M.execute(c, plan, raw, root, run=child)
+            code, terminal = execute_qualified(c, plan, raw, root, run=child)
             self.assertEqual(code, 7)
             self.assertEqual(terminal["state"], "PARTIAL")
             self.assertFalse((root / c["attempt_id"] / "bundle.json").exists())
@@ -537,11 +857,17 @@ class RuntimeBoundaryTests(unittest.TestCase):
             for name, value in raw.items():
                 (directory / name).write_bytes(value)
             (directory / "plan.json").write_bytes(M.encoded(plan))
+            archive_qualification(directory, c)
             with patch.object(
                 M, "worker", side_effect=RuntimeError("PRIVATE_TOKEN PRIVATE_PROMPT")
             ):
                 with self.assertRaises(RuntimeError):
-                    M.run_worker(directory, "base")
+                    M.run_worker(
+                        directory,
+                        "base",
+                        binding_source_sha256=binding_source_pin(),
+                        binding_sha256=archived_binding_pin(directory),
+                    )
             diagnostic = (directory / "base-failure.json").read_bytes()
             self.assertNotIn(b"PRIVATE", diagnostic)
             self.assertEqual(json.loads(diagnostic)["error_type"], "RuntimeError")
@@ -552,7 +878,7 @@ class RuntimeBoundaryTests(unittest.TestCase):
             root = Path(folder)
             rows = {a: arm_rows(a) for a in ("base", "adapter")}
             script = """import argparse,hashlib,json,os,pathlib
-p=argparse.ArgumentParser();p.add_argument('--worker');p.add_argument('--bundle');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--worker');p.add_argument('--bundle');p.add_argument('--binding-source-sha256');p.add_argument('--binding-sha256');a=p.parse_args()
 r=pathlib.Path(a.bundle)
 def enc(x):return (json.dumps(x,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':'))+'\\n').encode()
 c=json.loads((r/'contract.json').read_bytes())
@@ -570,7 +896,7 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
                 "training.jsonl": t,
                 "heldout_eval_v2.py": s,
             }
-            code, terminal = M.execute(c, plan, raw, root)
+            code, terminal = execute_qualified(c, plan, raw, root)
             self.assertEqual(code, 0, terminal)
             directory = root / c["attempt_id"]
             base_pid = json.loads((directory / "base-runtime.json").read_bytes())["pid"]
@@ -595,12 +921,14 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
                 "training.jsonl": t,
                 "heldout_eval_v2.py": s,
             }
-            code, terminal = M.execute(c, plan, raw, root)
+            code, terminal = execute_qualified(c, plan, raw, root)
             self.assertEqual(code, 7)
             self.assertEqual(terminal["error_type"], "TimeoutExpired")
             self.assertFalse((root / c["attempt_id"] / "adapter.jsonl").exists())
 
-    def invoke_worker_double(self, directory, arm, *, injected=False, overlong=False):
+    def invoke_worker_double(
+        self, directory, arm, *, injected=False, overlong=False, tampered_adapter=None
+    ):
         from contextlib import nullcontext
 
         calls = {"adapter": 0, "generated": 0}
@@ -652,6 +980,8 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
                 return Outputs()
 
         def load_base(repo, **kwargs):
+            if tampered_adapter is not None:
+                self.fail("changed adapter bytes reached a model loader")
             test.assertEqual(repo, "test/base")
             test.assertEqual(kwargs["revision"], "a" * 40)
             test.assertIs(kwargs["trust_remote_code"], False)
@@ -686,9 +1016,23 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
             if arm == "adapter"
             else None
         )
-        hub = SimpleNamespace(
-            snapshot_download=lambda *a, **kw: str(directory / "snapshot")
-        )
+        snapshot = directory / "snapshot"
+        final = snapshot / "final"
+        final.mkdir(parents=True)
+        for name, value in ADAPTER_BYTES.items():
+            if name == tampered_adapter:
+                value = bytes([value[0] ^ 1]) + value[1:]
+            (final / name).write_bytes(value)
+
+        def download(repo, **kwargs):
+            test.assertEqual(repo, "SZLHOLDINGS/test-adapter")
+            test.assertEqual(kwargs["revision"], "c" * 40)
+            test.assertEqual(
+                kwargs["allow_patterns"], ["final/" + name for name in M.ADAPTER_NAMES]
+            )
+            return str(snapshot)
+
+        hub = SimpleNamespace(snapshot_download=download)
         with (
             patch.dict(
                 sys.modules,
@@ -701,7 +1045,12 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
             ),
             patch.object(M, "version", return_value="synthetic"),
         ):
-            result = M.worker(directory, arm)
+            result = M.worker(
+                directory,
+                arm,
+                binding_source_sha256=binding_source_pin(),
+                binding_sha256=archived_binding_pin(directory),
+            )
         return result, calls
 
     def claimed_directory(self, root):
@@ -711,6 +1060,7 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
         for name, value in raw.items():
             (directory / name).write_bytes(value)
         (directory / "plan.json").write_bytes(M.encoded(plan))
+        archive_qualification(directory, c)
         return directory
 
     def test_production_worker_never_loads_adapter_in_base_arm(self):
@@ -738,6 +1088,45 @@ w={'schema':'szl.heldout-worker/v2','arm':a.worker,'state':'COMPLETE','pid':os.g
             directory = self.claimed_directory(Path(folder))
             with self.assertRaisesRegex(ValueError, "no_truncation"):
                 self.invoke_worker_double(directory, "base", overlong=True)
+
+    def test_changed_qualified_files_never_reach_model_loading(self):
+        for name in M.ADAPTER_NAMES:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
+                directory = self.claimed_directory(Path(folder))
+                with self.assertRaisesRegex(ValueError, "qualified_adapter_file_hash"):
+                    self.invoke_worker_double(
+                        directory, "adapter", tampered_adapter=name
+                    )
+                self.assertFalse((directory / "adapter.jsonl").exists())
+
+    def test_worker_entrypoints_recheck_binding_before_model_imports(self):
+        for entry in (M.worker, M.run_worker):
+            with (
+                self.subTest(entry=entry.__name__),
+                tempfile.TemporaryDirectory() as folder,
+            ):
+                directory = self.claimed_directory(Path(folder))
+                path = directory / "qualification-binding.json"
+                value = json.loads(path.read_bytes())
+                value["artifact"]["sha256"] = "0" * 64
+                path.write_bytes(M.encoded(value))
+                with (
+                    patch.dict(
+                        sys.modules,
+                        {"torch": None, "transformers": None, "huggingface_hub": None},
+                    ),
+                    self.assertRaisesRegex(
+                        ValueError, "qualification_binding_mismatch"
+                    ),
+                ):
+                    entry(
+                        directory,
+                        "adapter",
+                        binding_source_sha256=binding_source_pin(),
+                        binding_sha256=archived_binding_pin(directory),
+                    )
+                self.assertFalse((directory / "adapter.jsonl").exists())
+                self.assertFalse((directory / "adapter-failure.json").exists())
 
 
 class StreamingTrainingTests(unittest.TestCase):

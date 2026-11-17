@@ -14,7 +14,7 @@ import re
 import stat
 from urllib.parse import urlsplit
 
-from tools.salad.artifact_qualification import strict_object
+from tools.salad.artifact_qualification import RELEASE_BLOCKERS, strict_object
 from tools.salad.training_snapshot import EvidenceHold
 
 INPUT_SCHEMA = "szl.training-observation/v1"
@@ -285,7 +285,139 @@ def project_observation(raw, *, now=None, max_age_seconds=900):
     return output
 
 
-def read_projection(path, *, now=None, max_age_seconds=900):
+def qualification_summary(
+    state="NOT_CONFIGURED", reason="QUALIFICATION_NOT_CONFIGURED"
+):
+    """Display a recorded check without inheriting quality or execution authority."""
+    return {
+        "state": state,
+        "revision": None,
+        "observed_at_utc": None,
+        "qualification_sha256": None,
+        "artifact_sha256": None,
+        "target_steps": None,
+        "base_repo": None,
+        "hold_reasons": [reason] if reason else [],
+        "release_blockers": list(RELEASE_BLOCKERS),
+        "artifact_observation_bound": False,
+        "authenticity_verified": False,
+        "quality_qualification": "NOT_ESTABLISHED",
+        "compute_authorized": False,
+        "promotion_authorized": False,
+    }
+
+
+def attach_qualification(projection, directory, expected_sha256, now):
+    rows = projection["candidates"]
+    for row in rows:
+        row["qualification"] = qualification_summary()
+    if not rows or directory is None and expected_sha256 is None:
+        return projection
+    from tools.salad.evaluation_binding import (
+        BindingError,
+        load_qualification_bundle,
+        validate_candidate,
+    )
+
+    try:
+        if directory is None or expected_sha256 is None:
+            raise ValueError("partial_configuration")
+        directory = Path(directory)
+        if not directory.is_dir():
+            raise FileNotFoundError("bundle_unavailable")
+        if directory.is_symlink():
+            raise ValueError("bundle_not_regular")
+        for name in (
+            "qualification.json",
+            "manifest.json",
+            "artifact_qualification.py",
+            "training_snapshot.py",
+        ):
+            if not (directory / name).is_file():
+                raise FileNotFoundError("bundle_member_unavailable")
+        report, _ = load_qualification_bundle(directory, expected_sha256)
+        if timestamp(report.get("observed_at_utc")) > now:
+            raise ValueError("future_qualification")
+    except OSError:
+        for row in rows:
+            row["qualification"] = qualification_summary(
+                "UNAVAILABLE", "QUALIFICATION_UNAVAILABLE"
+            )
+        return projection
+    except BindingError as error:
+        unavailable = error.reason_code == "QUALIFICATION_UNAVAILABLE"
+        for row in rows:
+            row["qualification"] = qualification_summary(
+                "UNAVAILABLE" if unavailable else "INVALID",
+                "QUALIFICATION_UNAVAILABLE" if unavailable else "QUALIFICATION_INVALID",
+            )
+        return projection
+    except (ValueError, TypeError):
+        for row in rows:
+            row["qualification"] = qualification_summary(
+                "INVALID", "QUALIFICATION_INVALID"
+            )
+        return projection
+    selected = {candidate["repo"]: candidate for candidate in report["candidates"]}
+    for row in rows:
+        candidate = selected.get(row["repo"])
+        if candidate is None:
+            row["qualification"] = qualification_summary(
+                "NOT_ASSESSED", "QUALIFICATION_CANDIDATE_NOT_ASSESSED"
+            )
+            row["qualification"]["qualification_sha256"] = expected_sha256
+            continue
+        if candidate.get("status") == "HOLD":
+            row["qualification"] = qualification_summary(
+                "ARTIFACT_HOLD", "QUALIFICATION_ARTIFACT_HELD"
+            )
+            row["qualification"]["qualification_sha256"] = expected_sha256
+            continue
+        try:
+            checked = validate_candidate(candidate)
+            if timestamp(checked["observed_at_utc"]) > min(
+                now, timestamp(report["observed_at_utc"])
+            ):
+                raise ValueError("inconsistent_qualification_time")
+        except (BindingError, ValueError, TypeError):
+            row["qualification"] = qualification_summary(
+                "INVALID", "QUALIFICATION_INVALID"
+            )
+            continue
+        qualified = qualification_summary("ARTIFACT_OBSERVATION_MATCHED", None)
+        qualified.update(
+            revision=checked["revision"],
+            observed_at_utc=checked["observed_at_utc"],
+            qualification_sha256=expected_sha256,
+            artifact_sha256=checked["artifact_sha256"],
+            target_steps=checked["target_steps"],
+            base_repo=checked["base_repo"],
+            release_blockers=checked["release_blockers"],
+        )
+        if checked["revision"] != row["revision"]:
+            qualified.update(
+                state="REVISION_MISMATCH",
+                hold_reasons=["QUALIFICATION_REVISION_MISMATCH"],
+            )
+        elif checked["target_steps"] != row["target_steps"]:
+            qualified.update(
+                state="INVALID",
+                hold_reasons=["QUALIFICATION_TARGET_MISMATCH"],
+            )
+        else:
+            qualified["artifact_observation_bound"] = True
+        row["qualification"] = qualified
+    return projection
+
+
+def read_projection(
+    path,
+    *,
+    now=None,
+    max_age_seconds=900,
+    qualification_bundle=None,
+    qualification_sha256=None,
+):
     now = utc_now() if now is None else now
     output = result_base(now)
     try:
@@ -301,10 +433,20 @@ def read_projection(path, *, now=None, max_age_seconds=900):
     except OSError:
         output["reason"] = "SOURCE_UNREADABLE"
         return output
-    return project_observation(raw, now=now, max_age_seconds=max_age_seconds)
+    projection = project_observation(raw, now=now, max_age_seconds=max_age_seconds)
+    return attach_qualification(
+        projection, qualification_bundle, qualification_sha256, now
+    )
 
 
-def make_server(status_path, *, port=8767, max_age_seconds=900):
+def make_server(
+    status_path,
+    *,
+    port=8767,
+    max_age_seconds=900,
+    qualification_bundle=None,
+    qualification_sha256=None,
+):
     """Bind only loopback. Paths and provider credentials are never request inputs."""
     integer(port, minimum=0, maximum=65535)
     integer(max_age_seconds, minimum=60, maximum=3600)
@@ -366,7 +508,12 @@ def make_server(status_path, *, port=8767, max_age_seconds=900):
             if url.path == "/api/training/status":
                 self.send_json(
                     200,
-                    read_projection(status_path, max_age_seconds=max_age_seconds),
+                    read_projection(
+                        status_path,
+                        max_age_seconds=max_age_seconds,
+                        qualification_bundle=qualification_bundle,
+                        qualification_sha256=qualification_sha256,
+                    ),
                 )
                 return
             if url.path == "/healthz":
@@ -416,11 +563,29 @@ def main():
     parser.add_argument("--status", required=True, help="Existing local observer JSON")
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument("--max-age-seconds", type=int, default=900)
+    parser.add_argument("--qualification-bundle", type=Path)
+    parser.add_argument("--qualification-sha256")
+
     args = parser.parse_args()
     if not 1024 <= args.port <= 65535 or not 60 <= args.max_age_seconds <= 3600:
         parser.error("port must be 1024-65535 and max age 60-3600 seconds")
+    if (args.qualification_bundle is None) != (args.qualification_sha256 is None):
+        parser.error(
+            "qualification bundle and reviewed report SHA-256 are required together"
+        )
+    if (
+        args.qualification_sha256 is not None
+        and re.fullmatch(r"[0-9a-f]{64}", args.qualification_sha256) is None
+    ):
+        parser.error(
+            "qualification SHA-256 must be 64 lowercase hexadecimal characters"
+        )
     with make_server(
-        args.status, port=args.port, max_age_seconds=args.max_age_seconds
+        args.status,
+        port=args.port,
+        max_age_seconds=args.max_age_seconds,
+        qualification_bundle=args.qualification_bundle,
+        qualification_sha256=args.qualification_sha256,
     ) as server:
         print(
             f"Training observations: http://127.0.0.1:{args.port}/training", flush=True

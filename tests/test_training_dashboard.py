@@ -12,6 +12,13 @@ import unittest
 from unittest import mock
 
 from tools.dashboard import training_server as view
+from tools.salad import artifact_qualification as artifact
+from tools.salad import evaluation_binding
+
+try:
+    from tests.test_evaluation_binding import write_fixture_bundle
+except ModuleNotFoundError:
+    from test_evaluation_binding import write_fixture_bundle
 
 NOW = dt.datetime(2026, 11, 16, 23, 30, tzinfo=dt.timezone.utc)
 
@@ -65,6 +72,205 @@ def observation():
 
 def encoded(value):
     return json.dumps(value).encode()
+
+
+def qualification_fixture(directory, **overrides):
+    """Synthetic receipt at the fixed test clock, using the production writer."""
+    write_fixture_bundle(directory, overrides or None)
+    path = directory / "qualification.json"
+    report = json.loads(path.read_bytes())
+    report["observed_at_utc"] = (NOW - dt.timedelta(seconds=60)).isoformat()
+    raw = artifact.canonical(report)
+    path.write_bytes(raw)
+    pin = hashlib.sha256(raw).hexdigest()
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["sha256"]["qualification.json"] = pin
+    manifest_path.write_bytes(artifact.canonical(manifest))
+    return pin
+
+
+class QualificationViewTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "status.json"
+        self.path.write_bytes(encoded(observation()))
+        self.bundle = self.root / "qualification"
+        self.pin = qualification_fixture(self.bundle)
+
+    def project(self, **overrides):
+        options = {
+            "now": NOW,
+            "qualification_bundle": self.bundle,
+            "qualification_sha256": self.pin,
+        }
+        options.update(overrides)
+        return view.read_projection(self.path, **options)
+
+    def rewrite_report(self, mutate):
+        path = self.bundle / "qualification.json"
+        report = json.loads(path.read_bytes())
+        mutate(report)
+        raw = artifact.canonical(report)
+        path.write_bytes(raw)
+        self.pin = hashlib.sha256(raw).hexdigest()
+        manifest_path = self.bundle / "manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest["sha256"]["qualification.json"] = self.pin
+        manifest_path.write_bytes(artifact.canonical(manifest))
+
+    def test_exact_artifact_observation_match_does_not_establish_quality(self):
+        result = self.project()
+        row = result["candidates"][0]
+        qualification = row["qualification"]
+        self.assertEqual(qualification["state"], "ARTIFACT_OBSERVATION_MATCHED")
+        self.assertEqual(qualification["revision"], row["revision"])
+        self.assertEqual(qualification["target_steps"], row["target_steps"])
+        self.assertEqual(qualification["qualification_sha256"], self.pin)
+        self.assertEqual(len(qualification["artifact_sha256"]), 64)
+        self.assertTrue(qualification["artifact_observation_bound"])
+        self.assertEqual(qualification["quality_qualification"], "NOT_ESTABLISHED")
+        self.assertEqual(qualification["release_blockers"], artifact.RELEASE_BLOCKERS)
+        for flag in (
+            "authenticity_verified",
+            "compute_authorized",
+            "promotion_authorized",
+        ):
+            self.assertIs(qualification[flag], False)
+        self.assertFalse(row["training_complete_verified"])
+        self.assertFalse(row["promotion_authorized"])
+
+    def test_new_observed_revision_cannot_inherit_prior_artifact_match(self):
+        data = observation()
+        data["candidates"][0]["snapshot"]["revision"] = "b" * 40
+        self.path.write_bytes(encoded(data))
+        result = self.project()
+        qualification = result["candidates"][0]["qualification"]
+        self.assertEqual(result["status"], "CURRENT")
+        self.assertEqual(qualification["state"], "REVISION_MISMATCH")
+        self.assertEqual(qualification["revision"], "a" * 40)
+        self.assertEqual(
+            qualification["hold_reasons"], ["QUALIFICATION_REVISION_MISMATCH"]
+        )
+        self.assertFalse(qualification["artifact_observation_bound"])
+
+    def test_immutable_record_and_live_observer_have_separate_freshness(self):
+        result = self.project(now=NOW + dt.timedelta(seconds=700))
+        row = result["candidates"][0]
+        self.assertEqual(result["status"], "STALE")
+        self.assertEqual(row["freshness"], "STALE")
+        self.assertEqual(row["qualification"]["state"], "ARTIFACT_OBSERVATION_MATCHED")
+        self.assertEqual(
+            row["qualification"]["observed_at_utc"], "2026-01-01T00:00:00+00:00"
+        )
+        self.assertFalse(row["promotion_authorized"])
+
+    def test_target_contract_mismatch_is_not_a_qualified_match(self):
+        data = observation()
+        row = data["candidates"][0]
+        row["target_steps"] = 201
+        row["state"] = "TARGET_CONTRACT_MISMATCH"
+        self.path.write_bytes(encoded(data))
+        result = self.project()
+        qualification = result["candidates"][0]["qualification"]
+        self.assertEqual(qualification["state"], "INVALID")
+        self.assertEqual(
+            qualification["hold_reasons"], ["QUALIFICATION_TARGET_MISMATCH"]
+        )
+        self.assertFalse(qualification["artifact_observation_bound"])
+
+    def test_unselected_candidate_is_explicitly_unassessed(self):
+        data = observation()
+        row = data["candidates"][0]
+        row["repo"] = "SZLHOLDINGS/another"
+        row["snapshot"]["id"] = row["repo"]
+        self.path.write_bytes(encoded(data))
+        qualification = self.project()["candidates"][0]["qualification"]
+        self.assertEqual(qualification["state"], "NOT_ASSESSED")
+        self.assertIsNone(qualification["artifact_sha256"])
+        self.assertFalse(qualification["artifact_observation_bound"])
+
+    def test_missing_bad_pin_and_unconfigured_are_distinct(self):
+        cases = [
+            (
+                {"qualification_bundle": None, "qualification_sha256": None},
+                "NOT_CONFIGURED",
+            ),
+            (
+                {"qualification_bundle": self.root / "private-unavailable"},
+                "UNAVAILABLE",
+            ),
+            ({"qualification_sha256": "f" * 64}, "INVALID"),
+            ({"qualification_sha256": None}, "INVALID"),
+        ]
+        for options, state in cases:
+            with self.subTest(state=state):
+                result = self.project(**options)
+                qualification = result["candidates"][0]["qualification"]
+                self.assertEqual(qualification["state"], state)
+                self.assertFalse(qualification["artifact_observation_bound"])
+                self.assertNotIn("private-unavailable", json.dumps(result))
+
+    def test_file_disappearing_after_precheck_is_unavailable(self):
+        original = evaluation_binding.load_qualification_bundle
+
+        def interrupted_read(directory, pin):
+            (directory / "manifest.json").unlink()
+            return original(directory, pin)
+
+        with mock.patch.object(
+            evaluation_binding,
+            "load_qualification_bundle",
+            side_effect=interrupted_read,
+        ):
+            result = self.project()
+        self.assertEqual(
+            result["candidates"][0]["qualification"]["state"], "UNAVAILABLE"
+        )
+
+    def test_tampered_source_is_invalid_without_executing_or_echoing_it(self):
+        path = self.bundle / "artifact_qualification.py"
+        path.write_bytes(b"raise RuntimeError('private-secret')\n")
+        result = self.project()
+        self.assertEqual(result["candidates"][0]["qualification"]["state"], "INVALID")
+        self.assertNotIn("private-secret", json.dumps(result))
+
+    def test_held_record_exposes_fixed_reason_only(self):
+        self.rewrite_report(
+            lambda report: report["candidates"][0].update(
+                status="HOLD",
+                ready_for_evaluation=False,
+                hold_reasons=["OBSERVATION_UNAVAILABLE:private-secret"],
+            )
+        )
+        result = self.project()
+        qualification = result["candidates"][0]["qualification"]
+        self.assertEqual(qualification["state"], "ARTIFACT_HOLD")
+        self.assertEqual(qualification["hold_reasons"], ["QUALIFICATION_ARTIFACT_HELD"])
+        self.assertNotIn("private-secret", json.dumps(result))
+        self.assertIsNone(qualification["artifact_sha256"])
+
+    def test_candidate_cannot_postdate_its_containing_report(self):
+        self.rewrite_report(
+            lambda report: report["candidates"][0].update(
+                observed_at_utc=(NOW - dt.timedelta(seconds=30)).isoformat()
+            )
+        )
+        self.assertEqual(
+            self.project()["candidates"][0]["qualification"]["state"], "INVALID"
+        )
+
+    def test_future_qualification_timestamp_is_invalid(self):
+        self.rewrite_report(
+            lambda report: report.update(
+                observed_at_utc=(NOW + dt.timedelta(seconds=1)).isoformat()
+            )
+        )
+        self.assertEqual(
+            self.project()["candidates"][0]["qualification"]["state"], "INVALID"
+        )
 
 
 class ProjectionTests(unittest.TestCase):
@@ -252,7 +458,14 @@ class HttpBoundaryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "status.json"
         self.path.write_bytes(encoded(observation()))
-        self.server = view.make_server(self.path, port=0)
+        self.bundle = Path(self.temp.name) / "qualification"
+        self.pin = qualification_fixture(self.bundle)
+        self.server = view.make_server(
+            self.path,
+            port=0,
+            qualification_bundle=self.bundle,
+            qualification_sha256=self.pin,
+        )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -293,6 +506,26 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertEqual(
             json.loads(self.request("/api/training/status")[2])["status"], "UNAVAILABLE"
         )
+
+    def test_http_reloads_both_evidence_sources_and_cannot_reuse_match(self):
+        first = json.loads(self.request("/api/training/status")[2])
+        self.assertEqual(
+            first["candidates"][0]["qualification"]["state"],
+            "ARTIFACT_OBSERVATION_MATCHED",
+        )
+        data = observation()
+        data["candidates"][0]["snapshot"]["revision"] = "b" * 40
+        self.path.write_bytes(encoded(data))
+        second = json.loads(self.request("/api/training/status")[2])
+        self.assertEqual(
+            second["candidates"][0]["qualification"]["state"], "REVISION_MISMATCH"
+        )
+        self.path.write_bytes(encoded(observation()))
+        (self.bundle / "qualification.json").write_bytes(b"{}")
+        third = json.loads(self.request("/api/training/status")[2])
+        self.assertEqual(third["status"], "CURRENT")
+        self.assertEqual(third["candidates"][0]["qualification"]["state"], "INVALID")
+        self.assertFalse(third["candidates"][0]["promotion_authorized"])
 
     def test_host_and_cross_origin_requests_are_rejected(self):
         for headers in [
