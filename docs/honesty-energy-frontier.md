@@ -43,7 +43,7 @@ NVML device-total energy is *not* process-isolated, and can include concurrent G
 
 Current public legacy batteries and the older `4090-leg.json`/A6000 training-energy records do **not** supply this exact same-run six-probe pair. They must remain `HOLD` for this diagnostic. Producing the first measurable point requires *adding* immutable revision/run/fixture/GPU bindings and per-probe NVML counter snapshots **to the governed battery evaluation harness**, preserving all existing receipts and human promotion gates. Do not edit historical receipts to make them pass.
 
-Tests: `python -m pytest tests/test_honesty_energy_frontier.py -q`; `ruff check tools/salad/honesty_energy_frontier.py tests/test_honesty_energy_frontier.py`; `ruff format --check ...`.
+Tests: `python -m unittest discover -s tests -p test_honesty_energy_frontier.py -v` (native standard-library CI discovery); `ruff check tools/salad/honesty_energy_frontier.py tests/test_honesty_energy_frontier.py`; `ruff format --check ...`. Linux symlink denial also passed through an isolated WSL negative-control replay.
 
 ### Live negative-control replay (November 16, 2026)
 

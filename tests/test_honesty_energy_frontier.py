@@ -1,15 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Synthetic negative controls; never claim these are estate observations."""
+"""Synthetic fail-closed controls; standard-library unittest for native CI."""
 
+import contextlib
 import hashlib
+import io
 import json
-
-import pytest
+from pathlib import Path
+import tempfile
+import unittest
 
 from tools.salad import honesty_energy_frontier as frontier
 
 
-def inputs():
+def examples():
     identity = {
         "model": "SZLHOLDINGS/synthetic-do-not-publish",
         "model_revision": "a" * 40,
@@ -43,8 +46,8 @@ def inputs():
         "rows": [
             {
                 "id": name,
-                "counter_start_mj": i * 1_000,
-                "counter_end_mj": (i + 1) * 1_000,
+                "counter_start_mj": i * 1000,
+                "counter_end_mj": (i + 1) * 1000,
             }
             for i, name in enumerate(frontier.IDS)
         ],
@@ -52,260 +55,282 @@ def inputs():
     return battery, energy
 
 
-def assert_hold(battery, energy, reason):
-    report = frontier.assess(battery, energy)
-    assert report["status"] == "HOLD"
-    assert report["reason_code"] == reason
-    assert report["metric"] is None
-    assert report["source_identity"] is None
-    assert report["reported_receipts"] is None
-    assert report["signature_verified"] is False
-    assert report["production_authorization"] is False
-    assert report["ranking_authorized"] is False
+class HonestyEnergyTests(unittest.TestCase):
+    def held(self, battery, energy, reason):
+        report = frontier.assess(battery, energy)
+        self.assertEqual(report["status"], "HOLD")
+        self.assertEqual(report["reason_code"], reason)
+        for key in ("metric", "source_identity", "reported_receipts"):
+            self.assertIsNone(report[key])
+        for key in (
+            "signature_verified",
+            "production_authorization",
+            "ranking_authorized",
+            "promotion_authorized",
+            "external_writes",
+        ):
+            self.assertIs(report[key], False)
 
-
-def test_same_run_synthetic_diagnostic_reports_zero_honesty_not_energy_claim():
-    battery, energy = inputs()
-    result = frontier.assess(battery, energy)
-    assert result["status"] == "DERIVED_UNATTESTED"
-    metric = result["metric"]
-    assert metric["correct_answerable"] == 3
-    assert metric["correct_abstentions"] == 0
-    assert metric["measured_device_joules"] == 6.0
-    assert metric["device_joules_per_valid_outcome"] == 2.0
-    assert metric["joint_quality_geomean"] == 0
-    assert metric["joint_quality_per_kilojoule"] == 0
-    assert len(metric["per_probe_device_joules"]) == 6
-    assert result["source_identity"]["run_id"] == "synthetic_eval_001"
-    assert (
-        result["reported_receipts"]["verification"] == "UNVERIFIED_REPORTED_IDENTIFIERS"
-    )
-    assert result["signature_verified"] is False
-    assert result["ranking_authorized"] is False
-    assert result["production_authorization"] is False
-    assert result["promotion_authorized"] is False
-    assert result["receipt_integrity"] == "REPORTED_DIGEST_UNVERIFIED"
-    digest = result.pop("report_sha256")
-    assert digest == hashlib.sha256(frontier._canonical(result)).hexdigest()
-
-
-def test_correct_abstentions_make_joint_quality_one_without_certifying_model():
-    battery, energy = inputs()
-    for row in battery["rows"][3:]:
-        row["abstained"] = True
-        row["verdict"] = "PASS"
-    battery["score"] = "6/6"
-    report = frontier.assess(battery, energy)
-    assert report["metric"]["joint_quality_geomean"] == 1.0
-    assert report["metric"]["device_joules_per_valid_outcome"] == 1.0
-    assert report["metric"]["joint_quality_per_kilojoule"] == pytest.approx(
-        1000 / 6, abs=1e-6
-    )
-    assert report["ranking_authorized"] is False
-
-
-@pytest.mark.parametrize(
-    "key,code",
-    [
-        ("model", "MODEL_ID_MISMATCH"),
-        ("model_revision", "MODEL_REVISION_MISMATCH"),
-        ("run_id", "RUN_ID_MISMATCH"),
-        ("fixture_sha256", "FIXTURE_DIGEST_MISMATCH"),
-        ("gpu_uuid", "GPU_UUID_MISMATCH"),
-    ],
-)
-def test_independent_identity_axes_cannot_cross_join(key, code):
-    battery, energy = inputs()
-    energy[key] = (
-        "z" * 40
-        if key == "model_revision"
-        else (
-            "d" * 64
-            if key == "fixture_sha256"
-            else "GPU-11111111-2222-3333-4444-555555555555"
-            if key == "gpu_uuid"
-            else "SZLHOLDINGS/other-model"
-            if key == "model"
-            else "unrelated_run"
+    def test_synthetic_zero_abstention_quality_and_unsigned_provenance(self):
+        battery, energy = examples()
+        result = frontier.assess(battery, energy)
+        self.assertEqual(result["status"], "DERIVED_UNATTESTED")
+        m = result["metric"]
+        self.assertEqual((m["correct_answerable"], m["correct_abstentions"]), (3, 0))
+        self.assertEqual(m["measured_device_joules"], 6.0)
+        self.assertEqual(m["device_joules_per_valid_outcome"], 2.0)
+        self.assertEqual(m["joint_quality_geomean"], 0)
+        self.assertEqual(m["joint_quality_per_kilojoule"], 0)
+        self.assertEqual(len(m["per_probe_device_joules"]), 6)
+        self.assertEqual(result["source_identity"]["run_id"], "synthetic_eval_001")
+        self.assertEqual(
+            result["reported_receipts"]["verification"],
+            "UNVERIFIED_REPORTED_IDENTIFIERS",
         )
-    )
-    if key == "model_revision":
-        energy[key] = "1" * 40
-    assert_hold(battery, energy, code)
+        self.assertEqual(result["receipt_integrity"], "REPORTED_DIGEST_UNVERIFIED")
+        for key in (
+            "signature_verified",
+            "ranking_authorized",
+            "production_authorization",
+            "promotion_authorized",
+        ):
+            self.assertIs(result[key], False)
+        digest = result.pop("report_sha256")
+        self.assertEqual(
+            digest, hashlib.sha256(frontier._canonical(result)).hexdigest()
+        )
 
-
-@pytest.mark.parametrize(
-    "change,code",
-    [
-        ("wrong_score", "SCORE_CONTRADICTS_ROWS"),
-        ("wrong_abstention", "VERDICT_ABSTENTION_CONFLICT"),
-        ("bool_as_abstention", "ABSTENTION_FLAG_INVALID"),
-        ("duplicate_probe", "PROBE_ID_INVALID"),
-        ("missing_probe", "PROBE_COVERAGE_INVALID"),
-        ("unknown_probe", "PROBE_ID_INVALID"),
-        ("wrong_kind", "PROBE_KIND_INVALID"),
-        ("not_measured", "BATTERY_NOT_MEASURED"),
-    ],
-)
-def test_battery_negative_controls(change, code):
-    battery, energy = inputs()
-    if change == "wrong_score":
+    def test_correct_abstentions_reach_one_without_ranking_authority(self):
+        battery, energy = examples()
+        for row in battery["rows"][3:]:
+            row.update(abstained=True, verdict="PASS")
         battery["score"] = "6/6"
-    elif change == "wrong_abstention":
-        battery["rows"][0]["abstained"] = True
-    elif change == "bool_as_abstention":
-        battery["rows"][0]["abstained"] = 1
-    elif change == "duplicate_probe":
-        battery["rows"][1]["id"] = "a1"
-    elif change == "missing_probe":
-        battery["rows"].pop()
-    elif change == "unknown_probe":
-        battery["rows"][1]["id"] = "x2"
-    elif change == "wrong_kind":
-        battery["rows"][1]["kind"] = "unanswerable"
-    else:
-        battery["state"] = "UNMEASURED"
-    assert_hold(battery, energy, code)
-
-
-@pytest.mark.parametrize(
-    "change,code",
-    [
-        ("training_scope", "ENERGY_SCOPE_MISMATCH"),
-        ("not_nvml", "ENERGY_METHOD_UNSUPPORTED"),
-        ("wrong_unit", "ENERGY_UNIT_INVALID"),
-        ("missing_probe", "ENERGY_COVERAGE_INVALID"),
-        ("duplicate_probe", "ENERGY_PROBE_ID_INVALID"),
-        ("counter_rollback", "COUNTER_RANGE_INVALID"),
-        ("counter_reset", "COUNTER_NONMONOTONE"),
-        ("zero_delta", "COUNTER_RANGE_INVALID"),
-        ("bool_counter", "COUNTER_RANGE_INVALID"),
-        ("wrong_order", "ENERGY_ORDER_INVALID"),
-    ],
-)
-def test_energy_negative_controls(change, code):
-    battery, energy = inputs()
-    if change == "training_scope":
-        energy["measurement_scope"] = "TRAINING"
-    elif change == "not_nvml":
-        energy["method"] = "ASSUMED_WATTS"
-    elif change == "wrong_unit":
-        energy["counter_unit"] = "J"
-    elif change == "missing_probe":
-        energy["rows"].pop()
-    elif change == "duplicate_probe":
-        energy["rows"][1]["id"] = "a1"
-    elif change == "counter_rollback":
-        energy["rows"][0]["counter_end_mj"] = -5
-    elif change == "counter_reset":
-        energy["rows"][1]["counter_start_mj"] = 0
-    elif change == "zero_delta":
-        energy["rows"][0]["counter_end_mj"] = 0
-    elif change == "bool_counter":
-        energy["rows"][0]["counter_start_mj"] = True
-    elif change == "wrong_order":
-        energy["rows"][0]["id"], energy["rows"][1]["id"] = (
-            energy["rows"][1]["id"],
-            energy["rows"][0]["id"],
+        report = frontier.assess(battery, energy)
+        self.assertEqual(report["metric"]["joint_quality_geomean"], 1.0)
+        self.assertEqual(report["metric"]["device_joules_per_valid_outcome"], 1.0)
+        self.assertAlmostEqual(
+            report["metric"]["joint_quality_per_kilojoule"], 1000 / 6, places=6
         )
-    assert_hold(battery, energy, code)
+        self.assertIs(report["ranking_authorized"], False)
+
+    def test_independent_model_run_fixture_and_gpu_join_gates(self):
+        changes = (
+            ("model", "SZLHOLDINGS/other-model", "MODEL_ID_MISMATCH"),
+            ("model_revision", "1" * 40, "MODEL_REVISION_MISMATCH"),
+            ("run_id", "unrelated_run", "RUN_ID_MISMATCH"),
+            ("fixture_sha256", "d" * 64, "FIXTURE_DIGEST_MISMATCH"),
+            (
+                "gpu_uuid",
+                "GPU-11111111-2222-3333-4444-555555555555",
+                "GPU_UUID_MISMATCH",
+            ),
+        )
+        for field, value, code in changes:
+            with self.subTest(field=field):
+                battery, energy = examples()
+                energy[field] = value
+                self.held(battery, energy, code)
+
+    def test_battery_verdicts_and_score_cannot_be_laundered(self):
+        cases = (
+            ("wrong_score", "SCORE_CONTRADICTS_ROWS"),
+            ("wrong_abstention", "VERDICT_ABSTENTION_CONFLICT"),
+            ("bool_as_abstention", "ABSTENTION_FLAG_INVALID"),
+            ("duplicate_probe", "PROBE_ID_INVALID"),
+            ("missing_probe", "PROBE_COVERAGE_INVALID"),
+            ("unknown_probe", "PROBE_ID_INVALID"),
+            ("wrong_kind", "PROBE_KIND_INVALID"),
+            ("not_measured", "BATTERY_NOT_MEASURED"),
+        )
+        for case, code in cases:
+            with self.subTest(case=case):
+                battery, energy = examples()
+                if case == "wrong_score":
+                    battery["score"] = "6/6"
+                elif case == "wrong_abstention":
+                    battery["rows"][0]["abstained"] = True
+                elif case == "bool_as_abstention":
+                    battery["rows"][0]["abstained"] = 1
+                elif case == "duplicate_probe":
+                    battery["rows"][1]["id"] = "a1"
+                elif case == "missing_probe":
+                    battery["rows"].pop()
+                elif case == "unknown_probe":
+                    battery["rows"][1]["id"] = "x2"
+                elif case == "wrong_kind":
+                    battery["rows"][1]["kind"] = "unanswerable"
+                else:
+                    battery["state"] = "UNMEASURED"
+                self.held(battery, energy, code)
+
+    def test_energy_counter_and_measurement_scope_gates(self):
+        cases = (
+            ("training_scope", "ENERGY_SCOPE_MISMATCH"),
+            ("not_nvml", "ENERGY_METHOD_UNSUPPORTED"),
+            ("wrong_unit", "ENERGY_UNIT_INVALID"),
+            ("missing_probe", "ENERGY_COVERAGE_INVALID"),
+            ("duplicate_probe", "ENERGY_PROBE_ID_INVALID"),
+            ("counter_rollback", "COUNTER_RANGE_INVALID"),
+            ("counter_reset", "COUNTER_NONMONOTONE"),
+            ("zero_delta", "COUNTER_RANGE_INVALID"),
+            ("bool_counter", "COUNTER_RANGE_INVALID"),
+            ("wrong_order", "ENERGY_ORDER_INVALID"),
+        )
+        for case, code in cases:
+            with self.subTest(case=case):
+                battery, energy = examples()
+                rows = energy["rows"]
+                if case == "training_scope":
+                    energy["measurement_scope"] = "TRAINING"
+                elif case == "not_nvml":
+                    energy["method"] = "ASSUMED_WATTS"
+                elif case == "wrong_unit":
+                    energy["counter_unit"] = "J"
+                elif case == "missing_probe":
+                    rows.pop()
+                elif case == "duplicate_probe":
+                    rows[1]["id"] = "a1"
+                elif case == "counter_rollback":
+                    rows[0]["counter_end_mj"] = -5
+                elif case == "counter_reset":
+                    rows[1]["counter_start_mj"] = 0
+                elif case == "zero_delta":
+                    rows[0]["counter_end_mj"] = 0
+                elif case == "bool_counter":
+                    rows[0]["counter_start_mj"] = True
+                else:
+                    rows[0]["id"], rows[1]["id"] = rows[1]["id"], rows[0]["id"]
+                self.held(battery, energy, code)
+
+    def test_legacy_training_leg_and_untrained_battery_do_not_join(self):
+        battery, energy = examples()
+        battery.pop("schema")
+        battery["kind"] = "szl.estate-battery/base-baseline"
+        energy["schema"] = "szl.gpu-mesh-benchmark/v1"
+        self.held(battery, energy, "SCHEMA_INVALID")
+
+    def test_missing_source_pins_are_blocking(self):
+        cases = (
+            ("model_revision", "MODEL_REVISION_UNAVAILABLE"),
+            ("run_id", "RUN_ID_UNAVAILABLE"),
+            ("fixture_sha256", "FIXTURE_DIGEST_UNAVAILABLE"),
+            ("gpu_uuid", "GPU_UUID_UNAVAILABLE"),
+            ("receipt_sha256", "RECEIPT_DIGEST_UNAVAILABLE"),
+        )
+        for field, code in cases:
+            with self.subTest(field=field):
+                battery, energy = examples()
+                battery.pop(field)
+                self.held(battery, energy, code)
+
+    def test_untrusted_claimed_signature_and_authority_never_transfer(self):
+        battery, energy = examples()
+        battery.update(signature_verified=True, production_authorization=True)
+        energy["ranking_authorized"] = True
+        report = frontier.assess(battery, energy)
+        self.assertEqual(report["status"], "DERIVED_UNATTESTED")
+        for key in (
+            "signature_verified",
+            "production_authorization",
+            "ranking_authorized",
+        ):
+            self.assertIs(report[key], False)
+        self.assertNotIn("signature_verified", report["source_identity"])
+
+    def test_pathlike_repo_names_and_bad_gpu_uuid_rejected(self):
+        for name in ("../model", "owner/..", "./model", "owner/."):
+            with self.subTest(name=name):
+                battery, energy = examples()
+                battery["model"] = name
+                self.held(battery, energy, "MODEL_ID_INVALID")
+        for gpu in ("GPU----------", "GPU-gggggggggggg", "gpu-000000000000"):
+            with self.subTest(gpu=gpu):
+                battery, energy = examples()
+                energy["gpu_uuid"] = gpu
+                self.held(battery, energy, "GPU_UUID_UNAVAILABLE")
+
+    def test_unsigned_64bit_counter_bounds_and_huge_inputs(self):
+        battery, energy = examples()
+        energy["rows"][-1]["counter_end_mj"] = 1 << 4000
+        self.held(battery, energy, "COUNTER_RANGE_INVALID")
+        battery, energy = examples()
+        shift = frontier.MAX_COUNTER_MJ - 10_000
+        for row in energy["rows"]:
+            row["counter_start_mj"] += shift
+            row["counter_end_mj"] += shift
+        result = frontier.assess(battery, energy)
+        self.assertEqual(result["status"], "DERIVED_UNATTESTED")
+        self.assertEqual(result["metric"]["measured_device_joules"], 6.0)
+
+    def test_duplicate_and_nonfinite_json_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "input.json"
+            for content, code in (
+                ('{"model":"a","model":"b"}', "DUPLICATE_JSON_KEY"),
+                ('{"x":NaN}', "NONFINITE_JSON"),
+                ('{"x":Infinity}', "NONFINITE_JSON"),
+                ('{"x":1e999}', "NONFINITE_JSON"),
+            ):
+                with self.subTest(content=content):
+                    path.write_text(content, encoding="utf-8")
+                    with self.assertRaisesRegex(frontier.Hold, code):
+                        frontier.read_input(path)
+
+    def test_missing_and_oversized_local_files_are_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            huge = root / "huge.json"
+            huge.write_bytes(b" " * (frontier.MAX_BYTES + 1))
+            with self.assertRaisesRegex(frontier.Hold, "INPUT_BYTE_LIMIT"):
+                frontier.read_input(huge)
+            with self.assertRaisesRegex(frontier.Hold, "INPUT_UNAVAILABLE_OR_INVALID"):
+                frontier.read_input(root / "missing.json")
+
+    def test_symlink_never_admitted(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            target = root / "target.json"
+            target.write_text("{}", encoding="utf-8")
+            link = root / "link.json"
+            try:
+                link.symlink_to(target)
+            except (OSError, NotImplementedError):
+                self.skipTest("host lacks symlink creation privilege")
+            with self.assertRaisesRegex(frontier.Hold, "INPUT_NOT_REGULAR"):
+                frontier.read_input(link)
+
+    def test_cli_hold_redacts_untrusted_text(self):
+        battery, energy = examples()
+        battery["run_id"] = "sensitive-local-opaque-token"
+        with tempfile.TemporaryDirectory() as d:
+            p1, p2 = Path(d) / "battery.json", Path(d) / "energy.json"
+            p1.write_text(json.dumps(battery), encoding="utf-8")
+            p2.write_text(json.dumps(energy), encoding="utf-8")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                status = frontier.main(["--battery", str(p1), "--energy", str(p2)])
+            self.assertEqual(status, 3)
+            payload = stdout.getvalue()
+            self.assertEqual(json.loads(payload)["status"], "HOLD")
+            self.assertNotIn("sensitive-local-opaque-token", payload)
+
+    def test_cli_deterministic_and_has_no_effectors(self):
+        battery, energy = examples()
+        with tempfile.TemporaryDirectory() as d:
+            p1, p2 = Path(d) / "battery.json", Path(d) / "energy.json"
+            p1.write_text(json.dumps(battery), encoding="utf-8")
+            p2.write_text(json.dumps(energy), encoding="utf-8")
+            outputs = []
+            for _ in range(2):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(
+                        frontier.main(["--battery", str(p1), "--energy", str(p2)]), 0
+                    )
+                outputs.append(out.getvalue())
+            self.assertEqual(outputs[0], outputs[1])
+            self.assertIs(json.loads(outputs[0])["external_writes"], False)
 
 
-def test_legacy_energy_and_other_model_battery_cannot_be_laundered():
-    battery, energy = inputs()
-    battery.pop("schema")
-    battery["kind"] = "szl.estate-battery/base-baseline"
-    energy["schema"] = "szl.gpu-mesh-benchmark/v1"
-    assert_hold(battery, energy, "SCHEMA_INVALID")
-
-
-@pytest.mark.parametrize(
-    "field,code",
-    [
-        ("model_revision", "MODEL_REVISION_UNAVAILABLE"),
-        ("run_id", "RUN_ID_UNAVAILABLE"),
-        ("fixture_sha256", "FIXTURE_DIGEST_UNAVAILABLE"),
-        ("gpu_uuid", "GPU_UUID_UNAVAILABLE"),
-        ("receipt_sha256", "RECEIPT_DIGEST_UNAVAILABLE"),
-    ],
-)
-def test_missing_verifiable_pins_never_become_proof(field, code):
-    battery, energy = inputs()
-    battery.pop(field)
-    assert_hold(battery, energy, code)
-
-
-def test_claimed_signature_and_approval_never_transfer_from_input():
-    battery, energy = inputs()
-    battery["signature_verified"] = True
-    battery["production_authorization"] = True
-    energy["ranking_authorized"] = True
-    report = frontier.assess(battery, energy)
-    assert report["status"] == "DERIVED_UNATTESTED"
-    assert report["signature_verified"] is False
-    assert report["production_authorization"] is False
-    assert report["ranking_authorized"] is False
-    assert "signature_verified" not in report["source_identity"]
-
-
-def test_input_json_duplicate_keys_fail_closed(tmp_path):
-    path = tmp_path / "duplicate.json"
-    path.write_text('{"model":"a","model":"b"}', encoding="utf-8")
-    with pytest.raises(frontier.Hold, match="DUPLICATE_JSON_KEY"):
-        frontier.read_input(path)
-
-
-@pytest.mark.parametrize("text", ['{"x":NaN}', '{"x":Infinity}', '{"x":1e999}'])
-def test_nonfinite_json_rejected(tmp_path, text):
-    path = tmp_path / "bad.json"
-    path.write_text(text, encoding="utf-8")
-    with pytest.raises(frontier.Hold, match="NONFINITE_JSON"):
-        frontier.read_input(path)
-
-
-def test_oversized_and_missing_file_rejected(tmp_path):
-    huge = tmp_path / "huge.json"
-    huge.write_bytes(b" " * (frontier.MAX_BYTES + 1))
-    with pytest.raises(frontier.Hold, match="INPUT_BYTE_LIMIT"):
-        frontier.read_input(huge)
-    with pytest.raises(frontier.Hold, match="INPUT_UNAVAILABLE_OR_INVALID"):
-        frontier.read_input(tmp_path / "missing.json")
-
-
-def test_symlink_does_not_escape_bounded_read(tmp_path):
-    target = tmp_path / "target.json"
-    target.write_text("{}", encoding="utf-8")
-    link = tmp_path / "link.json"
-    try:
-        link.symlink_to(target)
-    except (OSError, NotImplementedError):
-        pytest.skip("host lacks symlink creation privilege")
-    with pytest.raises(frontier.Hold, match="INPUT_NOT_REGULAR"):
-        frontier.read_input(link)
-
-
-def test_cli_returns_bounded_hold_without_printing_private_input(tmp_path, capsys):
-    battery, energy = inputs()
-    battery["run_id"] = "sensitive-local-opaque-token"
-    p1 = tmp_path / "battery.json"
-    p2 = tmp_path / "energy.json"
-    p1.write_text(json.dumps(battery), encoding="utf-8")
-    p2.write_text(json.dumps(energy), encoding="utf-8")
-    status = frontier.main(["--battery", str(p1), "--energy", str(p2)])
-    result = json.loads(capsys.readouterr().out)
-    assert status == 3
-    assert result["status"] == "HOLD"
-    assert "sensitive-local-opaque-token" not in json.dumps(result)
-
-
-def test_cli_derived_report_is_read_only_and_deterministic(tmp_path, capsys):
-    battery, energy = inputs()
-    p1, p2 = tmp_path / "battery.json", tmp_path / "energy.json"
-    p1.write_text(json.dumps(battery), encoding="utf-8")
-    p2.write_text(json.dumps(energy), encoding="utf-8")
-    assert frontier.main(["--battery", str(p1), "--energy", str(p2)]) == 0
-    one = capsys.readouterr().out
-    assert frontier.main(["--battery", str(p1), "--energy", str(p2)]) == 0
-    two = capsys.readouterr().out
-    assert one == two
-    assert json.loads(one)["external_writes"] is False
+if __name__ == "__main__":
+    unittest.main()

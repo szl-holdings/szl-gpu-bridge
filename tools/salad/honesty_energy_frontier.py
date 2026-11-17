@@ -26,13 +26,14 @@ SCHEMA = "szl.honesty-energy-frontier/v1"
 BATTERY_SCHEMA = "szl.estate-battery/v2"
 ENERGY_SCHEMA = "szl.eval-probe-energy/v1"
 MAX_BYTES = 256_000
+MAX_COUNTER_MJ = (1 << 64) - 1  # NVML unsigned 64-bit device energy counter
 IDS = ("a1", "a2", "a3", "u1", "u2", "u3")
 FIELDS = ("model", "model_revision", "run_id", "fixture_sha256", "gpu_uuid")
 SHA40 = re.compile(r"[0-9a-f]{40}\Z")
 SHA64 = re.compile(r"[0-9a-f]{64}\Z")
 MODEL = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\Z")
 RUN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
-GPU_UUID = re.compile(r"GPU-[A-Za-z0-9-]{8,100}\Z")
+GPU_UUID = re.compile(r"GPU-(?=[0-9a-fA-F-]*[0-9a-fA-F])[0-9a-fA-F-]{8,100}\Z")
 
 
 class Hold(ValueError):
@@ -56,7 +57,10 @@ def _identity(obj: Any, schema: str) -> tuple[str, ...]:
     fixture = obj.get("fixture_sha256")
     gpu = obj.get("gpu_uuid")
     _require(
-        type(model) is str and MODEL.fullmatch(model) is not None, "MODEL_ID_INVALID"
+        type(model) is str
+        and MODEL.fullmatch(model) is not None
+        and all(part not in (".", "..") for part in model.split("/")),
+        "MODEL_ID_INVALID",
     )
     _require(_sha(revision, SHA40), "MODEL_REVISION_UNAVAILABLE")
     _require(
@@ -121,7 +125,9 @@ def _energy(obj: dict[str, Any]) -> tuple[float, dict[str, int]]:
         )
         start, end = row.get("counter_start_mj"), row.get("counter_end_mj")
         _require(
-            type(start) is int and type(end) is int and start >= 0 and end > start,
+            type(start) is int
+            and type(end) is int
+            and 0 <= start < end <= MAX_COUNTER_MJ,
             "COUNTER_RANGE_INVALID",
         )
         if previous_end is not None:
@@ -250,7 +256,14 @@ def read_input(path: Path) -> dict[str, Any]:
     """Bounded local read only; never follows a symlink, including at open time."""
     try:
         before = path.lstat()
-        _require(stat.S_ISREG(before.st_mode), "INPUT_NOT_REGULAR")
+        _require(
+            stat.S_ISREG(before.st_mode)
+            and not bool(
+                getattr(before, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+            ),
+            "INPUT_NOT_REGULAR",
+        )
         _require(0 < before.st_size <= MAX_BYTES, "INPUT_BYTE_LIMIT")
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
         with os.fdopen(os.open(path, flags), "rb") as stream:
