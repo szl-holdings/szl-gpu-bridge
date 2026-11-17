@@ -851,7 +851,7 @@ def run_training(a, api) -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.9-20261117",
+             "worker_version": "v3.9.1-20261117",
              "target_steps": a.max_steps,
              "prompt_completion_format": a.prompt_completion_format,
              "base_revision": a.base_revision or None,
@@ -944,7 +944,7 @@ def run_training(a, api) -> int:
 
     cfg = SFTConfig(
         output_dir=a.output_dir,
-        max_seq_length=2048,
+        max_length=2048,
         per_device_train_batch_size=1,          # spot-metal safe: fits 24GB cards
         gradient_accumulation_steps=16,
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
