@@ -95,7 +95,7 @@ stops training, and a missing final receipt returns exit 8 without claiming succ
 Local pending bytes are recovery evidence, not proof of publication.
 """
 from __future__ import annotations
-import argparse, datetime, hashlib, json, os, signal, sys, time
+import argparse, datetime, hashlib, inspect, json, os, signal, sys, time
 from pathlib import Path
 import re
 import uuid
@@ -110,6 +110,30 @@ from datasets import load_dataset
 from huggingface_hub import HfApi
 
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
+
+
+def sft_sequence_length_kwargs(constructor, length: int) -> dict:
+    """Bind the exact supported TRL API without treating **kwargs as acceptance.
+
+    The baked Salad image pins TRL 0.13.0 (max_seq_length); newer fleet lanes
+    use max_length. An unknown or ambiguous API is a hard stop, never a fallback.
+    """
+    try:
+        parameters = inspect.signature(constructor).parameters
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("SFTConfig signature is not inspectable") from exc
+    supported = ("max_seq_length", "max_length")
+    explicit = [
+        name for name in supported
+        if name in parameters
+        and parameters[name].kind not in (inspect.Parameter.VAR_KEYWORD,
+                                         inspect.Parameter.VAR_POSITIONAL)
+    ]
+    if len(explicit) != 1:
+        raise RuntimeError("SFTConfig must expose exactly one explicit sequence-bound field")
+    return {explicit[0]: length}
+
+
 STOP = {"flag": False}
 RECEIPTS = None
 # Trainer resume state is pickle-based (torch.save / pickle). It may live in the PRIVATE
@@ -896,6 +920,14 @@ def run_training(a, api) -> int:
                   "exiting without training", flush=True)
             return 0
 
+    # Reject an unrecognized TRL API *before* loading a base model or billing GPU.
+    try:
+        sequence_kw = sft_sequence_length_kwargs(SFTConfig, 2048)
+    except RuntimeError:
+        receipt("fail-closed", "SFTConfig API contract mismatch; no training started",
+                {"training_started": False, "completion_qualified": False})
+        return 8
+
     # A terminal resume does no training; probe CUDA only for an admitted run.
     if a.gpu_memory_budget_mib:
         try:
@@ -944,7 +976,7 @@ def run_training(a, api) -> int:
 
     cfg = SFTConfig(
         output_dir=a.output_dir,
-        max_length=2048,
+        **sequence_kw,
         per_device_train_batch_size=1,          # spot-metal safe: fits 24GB cards
         gradient_accumulation_steps=16,
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
