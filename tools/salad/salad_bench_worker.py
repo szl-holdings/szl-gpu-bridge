@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_bench_worker.py — MEASURE-station diff-eval worker (v1, 2026-11-17).
+"""salad_bench_worker.py — MEASURE-station diff-eval worker (v2, 2026-11-17).
 
 Same fail-closed doctrine as salad_worker.py v3.8 (receipts to the chain,
 MEASURED energy only, UNAVAILABLE is honest, no fabricated quality), applied
@@ -201,12 +201,24 @@ def main() -> int:
     if not torch.cuda.is_available():
         receipt(api, DS_RECEIPTS, run_id, a.lane, "fail-closed", "CUDA unavailable - refusing bench on CPU")
         return 4
+    # v2: the v1 check (x @ x with x=0.125, expecting grad 1/32) was
+    # mathematically wrong - the true gradient of mean((x @ x)**2) is 4*c**3
+    # = 1/128 - so it failed deterministically on every GPU (fail-closed
+    # receipt cc7e6081..., lane szl-ring-bench-v1, 2026-11-17). Replaced with
+    # the exact field-qualified known-result check from salad_worker.py v3.8
+    # (_cuda_bf16_smoke), which passed on RTX 5090 nodes in ring laps 1b and 2.
+    # No gate was weakened: loss, both input gradients, and finiteness are
+    # all verified against exact BF16-representable values.
     with torch.cuda.device(0), torch.enable_grad():
-        x = torch.full((32, 32), 0.125, device="cuda:0", dtype=torch.bfloat16, requires_grad=True)
-        loss = (x @ x).float().square().mean()
+        a = torch.full((32, 32), 0.125, device="cuda:0", dtype=torch.bfloat16, requires_grad=True)
+        b = torch.full((32, 32), 0.25, device="cuda:0", dtype=torch.bfloat16, requires_grad=True)
+        loss = (a @ b).float().square().mean()
         loss.backward()
+        # Launches are asynchronous: a queued kernel is not evidence of success.
         torch.cuda.synchronize(0)
-    if not bool((x.grad == 1.0 / 32).all().item()):
+    expected = ((loss, 1.0), (a.grad, 1.0 / 64), (b.grad, 1.0 / 128))
+    if any(value is None or not bool(torch.isfinite(value).all().item())
+           or not bool((value == want).all().item()) for value, want in expected):
         receipt(api, DS_RECEIPTS, run_id, a.lane, "fail-closed", "BF16 smoke failed")
         return 4
 
@@ -215,7 +227,7 @@ def main() -> int:
     receipt(api, DS_RECEIPTS, run_id, a.lane, "boot",
             f"bench worker started - base={a.base} adapter={a.adapter}",
             {"gpu": torch.cuda.get_device_name(0), "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "bench-v1-20261117", "prompts": len(PROMPTS),
+             "worker_version": "bench-v2-20261117", "prompts": len(PROMPTS),
              "max_new_tokens": a.max_new_tokens,
              "probe_scope": "FIXED_EMBEDDED_PROMPTS_NOT_HELDOUT_BENCHMARK",
              "energy_start": energy_start,
