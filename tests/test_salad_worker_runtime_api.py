@@ -36,6 +36,14 @@ class PinnedRuntimeContract(unittest.TestCase):
             "LoraConfig": LoraConfig,
         }
         cls.tree = ast.parse(WORKER.read_text(encoding="utf-8"))
+        fields = inspect.signature(SFTConfig).parameters
+        cls.sequence_keys = [
+            key for key in ("max_seq_length", "max_length") if key in fields
+        ]
+        if len(cls.sequence_keys) != 1:
+            raise AssertionError(
+                "pinned TRL must expose exactly one sequence-bound field"
+            )
 
     def calls(self, name):
         result = [
@@ -62,13 +70,19 @@ class PinnedRuntimeContract(unittest.TestCase):
                     self.assertFalse(
                         call.args, "review positional constructor arguments"
                     )
-                    self.assertTrue(
-                        all(keyword.arg is not None for keyword in call.keywords),
-                        "review expanded constructor keyword arguments",
-                    )
-                    signature.bind(
-                        **{keyword.arg: object() for keyword in call.keywords}
-                    )
+                    expanded = [kw for kw in call.keywords if kw.arg is None]
+                    if name == "SFTConfig":
+                        self.assertEqual(len(expanded), 1)
+                        self.assertIsInstance(expanded[0].value, ast.Name)
+                        self.assertEqual(expanded[0].value.id, "sequence_kw")
+                    else:
+                        self.assertFalse(expanded, "review expanded constructor kwargs")
+                    values = {
+                        kw.arg: object() for kw in call.keywords if kw.arg is not None
+                    }
+                    if name == "SFTConfig":
+                        values[self.sequence_keys[0]] = object()
+                    signature.bind(**values)
 
     def test_real_worker_config_constructs_with_cpu_test_overrides(self):
         # Use the worker's complete actual config expression. Only output location
@@ -89,22 +103,24 @@ class PinnedRuntimeContract(unittest.TestCase):
                     {
                         "__builtins__": {},
                         "SFTConfig": self.constructors["SFTConfig"],
+                        "sequence_kw": {self.sequence_keys[0]: 2048},
                         "os": os,
                         "a": types.SimpleNamespace(
                             max_steps=2, save_steps=1, gradient_checkpointing=False
                         ),
                     },
                 )
-                self.assertEqual(config.max_seq_length, 2048)
+                self.assertEqual(getattr(config, self.sequence_keys[0]), 2048)
                 self.assertEqual(config.max_steps, 2)
                 self.assertFalse(config.bf16)
                 self.assertTrue(config.use_cpu)
 
-    def test_pinned_trl_rejects_the_previous_max_length_keyword(self):
-        with self.assertRaisesRegex(TypeError, "max_length"):
+    def test_pinned_trl_rejects_the_other_sequence_keyword(self):
+        unsupported = ({"max_length", "max_seq_length"} - set(self.sequence_keys)).pop()
+        with self.assertRaisesRegex(TypeError, unsupported):
             self.constructors["SFTConfig"](
                 output_dir="/tmp/salad-rejected-config",
-                max_length=2048,
+                **{unsupported: 2048},
                 use_cpu=True,
                 bf16=False,
                 report_to=[],

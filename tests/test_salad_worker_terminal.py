@@ -188,10 +188,10 @@ class TerminalContract(unittest.TestCase):
         )
         modules["transformers"].TrainerCallback = object
 
-        def config(*, max_seq_length, **kwargs):
-            # TRL 0.13 uses this required sequence-bound keyword. A permissive
-            # **kwargs-only double previously hid the worker's max_length bug.
-            fixture.config_kwargs = {"max_seq_length": max_seq_length, **kwargs}
+        def config(*, max_length, **kwargs):
+            # Emulate modern TRL with an explicit required sequence keyword.
+            # A **kwargs-only double would mask unsupported worker arguments.
+            fixture.config_kwargs = {"max_length": max_length, **kwargs}
             return types.SimpleNamespace(**fixture.config_kwargs)
 
         modules["trl"].SFTConfig = config
@@ -286,10 +286,42 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(terminal["target_steps"], 200)
         self.assertIs(terminal["completion_qualified"], False)
 
-    def test_pinned_recipe_keeps_the_supported_sequence_bound(self):
+    def test_modern_recipe_keeps_explicit_sequence_bound(self):
         self.assertEqual(self.run_worker(), 0)
+        self.assertEqual(self.config_kwargs["max_length"], 2048)
+        self.assertNotIn("max_seq_length", self.config_kwargs)
+
+    def test_legacy_pinned_image_uses_legacy_explicit_field(self):
+        def legacy(*, max_seq_length, **kwargs):
+            fixture = {"max_seq_length": max_seq_length, **kwargs}
+            self.config_kwargs = fixture
+            return types.SimpleNamespace(**fixture)
+
+        self.assertEqual(
+            self.worker.sft_sequence_length_kwargs(legacy, 2048),
+            {"max_seq_length": 2048},
+        )
+        with patch.object(self.worker, "SFTConfig", legacy):
+            self.assertEqual(self.run_worker(), 0)
         self.assertEqual(self.config_kwargs["max_seq_length"], 2048)
         self.assertNotIn("max_length", self.config_kwargs)
+
+    def test_unknown_trl_signature_stops_before_model_loading(self):
+        with patch.object(self.worker, "SFTConfig", lambda **kwargs: None):
+            self.assertEqual(self.run_worker(), 8)
+        self.assertEqual(self.loaded, [])
+        self.assertEqual(self.trained, [])
+        self.assertFalse(any(e["event"] == "complete" for e in self.events))
+        self.assertEqual(self.events[-1]["event"], "fail-closed")
+
+    def test_ambiguous_or_kwargs_only_sft_api_fails_closed(self):
+        for constructor in (
+            lambda **kwargs: None,
+            lambda *, max_length=None, max_seq_length=None: None,
+        ):
+            with self.subTest(signature=str(constructor)):
+                with self.assertRaisesRegex(RuntimeError, "exactly one explicit"):
+                    self.worker.sft_sequence_length_kwargs(constructor, 2048)
 
     def test_interrupted_run_cannot_publish_final_or_claim_target(self):
         self.actual, self.interrupted = 50, True
