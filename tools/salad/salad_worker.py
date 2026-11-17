@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.8, 2026-11-16).
+"""salad_worker.py — the resumable burst-training worker (v3.9, 2026-11-17).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -140,7 +140,14 @@ def transport_label(error: Exception) -> str:
 
 
 def receipt_retry(operation, stage):
-    for attempt in range(3):
+    # v3.9: a fleet-wide Hub commit storm (many lanes sharing one receipt repo)
+    # was observed 2026-11-17 to sustain HTTP 429s for minutes; 15s of retry
+    # budget (3 attempts, 5-10s apart) fail-closed whole training runs. Transient
+    # failures now get 6 attempts with exponential backoff capped at 240s
+    # (~9 min worst case). Permanent 4xx still fails immediately and the
+    # fail-closed posture on exhaustion is unchanged.
+    attempts, base, ceiling = 6, 20, 240
+    for attempt in range(attempts):
         try:
             return operation()
         except ReceiptError:
@@ -150,9 +157,9 @@ def receipt_retry(operation, stage):
             # Permission/not-found/invalid-input failures require reconciliation,
             # not retries with another repository or stronger credentials.
             permanent = type(status) is int and 400 <= status < 500 and status not in (408, 429)
-            if permanent or attempt == 2:
+            if permanent or attempt == attempts - 1:
                 raise ReceiptError(f"{stage} failed ({transport_label(error)})") from None
-            time.sleep(5 * (attempt + 1))
+            time.sleep(min(base * (2 ** attempt), ceiling))
 
 
 class ReceiptChannel:
@@ -844,7 +851,7 @@ def run_training(a, api) -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.8-20261116",
+             "worker_version": "v3.9-20261117",
              "target_steps": a.max_steps,
              "prompt_completion_format": a.prompt_completion_format,
              "base_revision": a.base_revision or None,
@@ -1004,8 +1011,8 @@ def run_training(a, api) -> int:
                     return
                 try:
                     save_training_format(path, format_contract)
-                    commit = api.upload_folder(folder_path=path, path_in_repo=ck,
-                        repo_id=a.adapter_out, repo_type="model")
+                    commit = receipt_retry(lambda: api.upload_folder(folder_path=path, path_in_repo=ck,
+                        repo_id=a.adapter_out, repo_type="model"), "checkpoint upload")
                     revision = hub_revision(commit)
                 except Exception as e:
                     STOP["flag"] = True
@@ -1064,8 +1071,8 @@ def run_training(a, api) -> int:
         print(f"FAIL-CLOSED: {e}; final adapter kept local only", file=sys.stderr)
         return 3
     try:
-        final_commit = api.upload_folder(folder_path=final, path_in_repo="final",
-            repo_id=a.adapter_out, repo_type="model", ignore_patterns=PICKLE_PATTERNS)
+        final_commit = receipt_retry(lambda: api.upload_folder(folder_path=final, path_in_repo="final",
+            repo_id=a.adapter_out, repo_type="model", ignore_patterns=PICKLE_PATTERNS), "final adapter upload")
     except Exception as error:
         raise ArtifactError(f"final adapter upload failed ({transport_label(error)})") from None
     final_revision = hub_revision(final_commit)
