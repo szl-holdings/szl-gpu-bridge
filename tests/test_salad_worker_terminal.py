@@ -849,8 +849,11 @@ class TerminalContract(unittest.TestCase):
         self.readback_error = OSError("synthetic-sensitive-url-must-not-be-logged")
         self.assertEqual(self.real_run(), 8)
         self.assertEqual(len(self.receipt_uploads), 1)
-        self.assertEqual(len(self.receipt_downloads), 3)
-        self.assertEqual(self.sleep.call_count, 2)
+        # v3.9: the transient-retry budget is 6 attempts (5 exponential backoffs
+        # capped at 240s) so a multi-minute Hub 429 storm cannot fail-close a
+        # whole run; the outage stays bounded and never repeats the upload.
+        self.assertEqual(len(self.receipt_downloads), 6)
+        self.assertEqual(self.sleep.call_count, 5)
         self.assertEqual(self.published_events(), [])
         self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
 
