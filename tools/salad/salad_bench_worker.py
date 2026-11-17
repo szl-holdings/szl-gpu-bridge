@@ -75,9 +75,55 @@ def sanitized_public_results(results):
         "raw_generations": "WITHHELD",
         "prompt_text": "WITHHELD",
         "model_repository_ids": "WITHHELD",
-        "binding_status": "MODEL_REVISIONS_NOT_VERIFIED",
+        "binding_status": (
+            "IMMUTABLE_MODEL_REVISIONS_PINNED_WEIGHT_BYTES_NOT_VERIFIED"
+            if "model_binding" in results else "MODEL_REVISIONS_NOT_VERIFIED"
+        ),
     }
+    if "model_binding" in results:
+        binding = results["model_binding"]
+        sha = binding.get("revision_commitment_sha256") if isinstance(binding, dict) else None
+        if not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{64}", sha) is None:
+            raise ReceiptError("INVALID_PRIVATE_MODEL_REVISION_COMMITMENT")
+        public["model_binding"] = {
+            "revision_commitment_sha256": sha,
+            "scope": "IMMUTABLE_REPO_REVISIONS_NOT_MODEL_ARTIFACT_HASHES",
+        }
     return public
+
+
+def resolve_bench_model_pins(api, base_repo, adapter_repo):
+    """Pin both Hub repos before model hydration; never return raw IDs publicly."""
+    pins = {}
+    for role, repo in (("base", base_repo), ("adapter", adapter_repo)):
+        if not isinstance(repo, str) or re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*", repo
+        ) is None:
+            raise ReceiptError("BENCH_MODEL_ID_INVALID")
+        try:
+            info = api.model_info(repo, files_metadata=role == "adapter")
+        except Exception:
+            # No alternate identity, authentication bypass or retry on 401/403/429.
+            raise ReceiptError("BENCH_MODEL_METADATA_UNOBSERVED") from None
+        revision = getattr(info, "sha", None)
+        if not isinstance(revision, str) or re.fullmatch(
+            r"[0-9a-f]{40}", revision
+        ) is None:
+            raise ReceiptError("BENCH_MODEL_IMMUTABLE_REVISION_MISSING")
+        if role == "adapter":
+            siblings = getattr(info, "siblings", None)
+            if siblings is None:
+                raise ReceiptError("BENCH_ADAPTER_FILE_LIST_UNOBSERVED")
+            paths = {getattr(entry, "rfilename", None) for entry in siblings}
+            if not {"final/adapter_config.json", "final/adapter_model.safetensors"} <= paths:
+                raise ReceiptError("BENCH_ADAPTER_FINAL_CONTRACT_INCOMPLETE")
+        pins[role] = {"repo_id": repo, "revision": revision}
+    canonical = json.dumps(
+        {"schema": "szl.bench-model-revisions/v1", **pins},
+        sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    pins["revision_commitment_sha256"] = hashlib.sha256(canonical).hexdigest()
+    return pins
 
 
 def publish_bench_results(api, repo_id, lane, run_id, raw):
@@ -300,21 +346,38 @@ def main() -> int:
         receipt(api, DS_RECEIPTS, run_id, a.lane, "fail-closed", "BF16 smoke failed")
         return 4
 
+    try:
+        pins = resolve_bench_model_pins(api, a.base, a.adapter)
+    except ReceiptError:
+        # Stop on inaccessible/invalid model metadata; no unpinned evaluation.
+        print("FAIL-CLOSED: BENCH_INPUT_REVISION_UNOBSERVED", file=sys.stderr)
+        return 7
     energy_start = sample_energy_j()
     z = zeus_begin()
     receipt(api, DS_RECEIPTS, run_id, a.lane, "boot",
             "bench worker started - private model and node identities withheld",
             {"gpu": torch.cuda.get_device_name(0), "node": "WITHHELD",
-             "worker_version": "bench-v3-20261117", "prompts": len(PROMPTS),
+             "worker_version": "bench-v4-20261117", "prompts": len(PROMPTS),
+             "revision_commitment_sha256": pins["revision_commitment_sha256"],
              "max_new_tokens": a.max_new_tokens,
              "probe_scope": "FIXED_EMBEDDED_PROMPTS_NOT_HELDOUT_BENCHMARK",
              "energy_start": energy_start,
              "energy_scope": "DEVICE_TOTAL_NOT_JOB_ATTRIBUTION",
              "zeus_window": z["field"]})
 
-    tok = AutoTokenizer.from_pretrained(a.base)
-    model = AutoModelForCausalLM.from_pretrained(a.base, torch_dtype=torch.bfloat16, device_map="auto")
-    local_ad = snapshot_download(repo_id=a.adapter, repo_type="model", allow_patterns=["final/*"])
+    tok = AutoTokenizer.from_pretrained(
+        a.base, revision=pins["base"]["revision"], token=a.hf_token,
+        trust_remote_code=False,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        a.base, revision=pins["base"]["revision"], token=a.hf_token,
+        torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=False,
+    )
+    local_ad = snapshot_download(
+        repo_id=a.adapter, repo_type="model",
+        revision=pins["adapter"]["revision"], token=a.hf_token,
+        allow_patterns=["final/*"],
+    )
     final_dir = os.path.join(local_ad, "final")
     pmodel = PeftModel.from_pretrained(model, final_dir)
     pmodel.eval()
@@ -344,6 +407,10 @@ def main() -> int:
     results = {
         "kind": "szl.ring-bench-diff-eval/v1", "lane": a.lane, "run_id": run_id,
         "base": a.base, "adapter": a.adapter, "adapter_dir": "final",
+        "model_binding": {
+            "revision_commitment_sha256": pins["revision_commitment_sha256"],
+            "scope": "IMMUTABLE_HUB_REVISIONS_NOT_ARTIFACT_BYTES",
+        },
         "decoding": {"do_sample": False, "max_new_tokens": a.max_new_tokens},
         "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "probe_scope": "FIXED_EMBEDDED_PROMPTS_NOT_HELDOUT_BENCHMARK",

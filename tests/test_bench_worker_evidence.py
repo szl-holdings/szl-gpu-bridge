@@ -20,6 +20,7 @@ ALLOWED = {
     "valid_lane",
     "sanitized_public_results",
     "publish_bench_results",
+    "resolve_bench_model_pins",
 }
 nodes = [
     node
@@ -169,6 +170,123 @@ class Contracts(unittest.TestCase):
         ]
         self.assertEqual(len(assignments), 1)
         self.assertIn("parse_args", ast.unparse(assignments[0]))
+
+    def test_pin_base_and_adapter_revisions_before_hydration(self):
+        class ModelApi:
+            def __init__(self):
+                self.calls = []
+
+            def model_info(self, repo, files_metadata=False):
+                self.calls.append((repo, files_metadata))
+                if repo == "test/base":
+                    return types.SimpleNamespace(sha="a" * 40)
+                if repo == "test/adapter":
+                    entries = [
+                        types.SimpleNamespace(rfilename=p)
+                        for p in (
+                            "final/adapter_config.json",
+                            "final/adapter_model.safetensors",
+                        )
+                    ]
+                    return types.SimpleNamespace(sha="b" * 40, siblings=entries)
+                raise AssertionError("unexpected model")
+
+        api = ModelApi()
+        pins = scope["resolve_bench_model_pins"](api, "test/base", "test/adapter")
+        self.assertEqual(api.calls, [("test/base", False), ("test/adapter", True)])
+        self.assertEqual(pins["base"]["revision"], "a" * 40)
+        self.assertEqual(pins["adapter"]["revision"], "b" * 40)
+        self.assertEqual(len(pins["revision_commitment_sha256"]), 64)
+        public = scope["sanitized_public_results"](
+            {
+                "kind": "synthetic",
+                "pairs": [],
+                "no_verdict": True,
+                "model_binding": {
+                    "revision_commitment_sha256": pins["revision_commitment_sha256"]
+                },
+            }
+        )
+        self.assertNotIn("test/base", json.dumps(public))
+        self.assertNotIn("test/adapter", json.dumps(public))
+        self.assertEqual(
+            public["privacy"]["binding_status"],
+            "IMMUTABLE_MODEL_REVISIONS_PINNED_WEIGHT_BYTES_NOT_VERIFIED",
+        )
+
+    def test_model_revision_pin_missing_rejects(self):
+        for stage in ("base", "adapter"):
+
+            class BrokenApi:
+                def model_info(self, repo, files_metadata=False):
+                    if (stage == "base" and repo == "test/base") or (
+                        stage == "adapter" and repo == "test/adapter"
+                    ):
+                        return types.SimpleNamespace(sha="main", siblings=[])
+                    return types.SimpleNamespace(sha="a" * 40)
+
+            with self.subTest(stage=stage):
+                with self.assertRaises(scope["ReceiptError"]):
+                    scope["resolve_bench_model_pins"](
+                        BrokenApi(), "test/base", "test/adapter"
+                    )
+
+    def test_unobserved_final_files_reject_before_download(self):
+        class MissingFinal:
+            def model_info(self, repo, files_metadata=False):
+                return types.SimpleNamespace(sha="a" * 40, siblings=[])
+
+        with self.assertRaisesRegex(scope["ReceiptError"], "INCOMPLETE"):
+            scope["resolve_bench_model_pins"](
+                MissingFinal(), "test/base", "test/adapter"
+            )
+
+    def test_metadata_denial_makes_no_fallback_request(self):
+        class Denied:
+            def __init__(self):
+                self.calls = 0
+
+            def model_info(self, *args, **kwargs):
+                self.calls += 1
+                raise PermissionError("synthetic 403")
+
+        api = Denied()
+        with self.assertRaisesRegex(scope["ReceiptError"], "UNOBSERVED"):
+            scope["resolve_bench_model_pins"](api, "test/base", "test/adapter")
+        self.assertEqual(api.calls, 1)
+
+    def test_all_model_loaders_use_pinned_revisions(self):
+        main = next(
+            node
+            for node in TREE.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        calls = [node for node in ast.walk(main) if isinstance(node, ast.Call)]
+        named = {
+            ast.unparse(node.func): node
+            for node in calls
+            if ast.unparse(node.func)
+            in (
+                "AutoTokenizer.from_pretrained",
+                "AutoModelForCausalLM.from_pretrained",
+                "snapshot_download",
+            )
+        }
+        self.assertEqual(len(named), 3)
+        for method, role in (
+            ("AutoTokenizer.from_pretrained", "base"),
+            ("AutoModelForCausalLM.from_pretrained", "base"),
+            ("snapshot_download", "adapter"),
+        ):
+            kwargs = {x.arg: ast.unparse(x.value) for x in named[method].keywords}
+            self.assertEqual(kwargs["revision"], f"pins['{role}']['revision']")
+            self.assertEqual(kwargs["token"], "a.hf_token")
+        for method in (
+            "AutoTokenizer.from_pretrained",
+            "AutoModelForCausalLM.from_pretrained",
+        ):
+            kwargs = {x.arg: ast.unparse(x.value) for x in named[method].keywords}
+            self.assertEqual(kwargs["trust_remote_code"], "False")
 
 
 if __name__ == "__main__":
