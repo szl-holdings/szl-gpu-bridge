@@ -236,11 +236,16 @@ class SaladCoverageContracts(unittest.TestCase):
 
     def test_132_groups_no_default_120_loss(self):
         groups = [self.group(f"szl-group-{i}") for i in range(132)]
-        item = g.salad_group_page_evidence(groups)
+        item = g.salad_group_page_evidence(groups, listing_complete=True)
         self.assertEqual(item["returned_count"], 132)
         self.assertEqual(item["captured_count"], 132)
         self.assertEqual(item["omitted_count"], 0)
         self.assertTrue(item["coverage_complete"])
+
+    def test_coverage_defaults_to_unverified_pagination(self):
+        item = g.salad_group_page_evidence([self.group("szl-example")])
+        self.assertFalse(item["listing_complete"])
+        self.assertFalse(item["coverage_complete"])
 
     def test_explicit_120_cap_discloses_12_groups(self):
         groups = [self.group(f"szl-group-{i}") for i in range(132)]
