@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.7, 2026-11-16).
+"""salad_worker.py — the resumable burst-training worker (v3.8, 2026-11-16).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -78,6 +78,11 @@ for resumption; their durability is not asserted by this terminal guard.
 Receipts retain the v1 kind and add a distinct event field. A resumed complete
 checkpoint with a missing/unobservable final adapter returns failure, not success.
 
+v3.8 makes prompt/completion serialization explicit. Verbatim mode rejects an
+ambiguous join without boundary whitespace; chat mode uses the pinned tokenizer's
+template. A checkpoint records its formatting contract so resume cannot silently
+switch formats. These checks do not qualify dataset extraction or model quality.
+
 Fail-closed posture unchanged: private-repo verification before every upload,
 receipts to the chain, SIGTERM checkpointing, pickle patterns excluded from
 published adapters. Visibility flips remain human decisions.
@@ -153,7 +158,7 @@ def receipt_retry(operation, stage):
 class ReceiptChannel:
     """Publish current-run evidence only; no replay or historical receipt invention."""
 
-    def __init__(self, api, token, repo_id, repo_type, outbox, adapter):
+    def __init__(self, api, token, repo_id, repo_type, outbox, adapter, artifact_root=None):
         if not token:
             raise ReceiptError("a receipt-channel token is required")
         if not isinstance(repo_id, str) or re.fullmatch(
@@ -167,11 +172,11 @@ class ReceiptChannel:
         self.run_id = uuid.uuid4().hex
         self.adapter = adapter
         self.outbox = Path(outbox) / self.run_id
+        self.artifact_root = Path(artifact_root or os.path.expanduser("~/ckpt"))
         self.verify_outbox()
 
     def verify_outbox(self):
-        artifact_root = Path(os.path.expanduser("~/ckpt")).resolve()
-        if self.outbox.resolve().is_relative_to(artifact_root):
+        if self.outbox.resolve().is_relative_to(self.artifact_root.resolve()):
             raise ReceiptError("receipt outbox must be outside the artifact directory tree")
 
     def verify_channel(self):
@@ -269,9 +274,9 @@ def receipt(kind: str, detail: str, extra: dict | None = None):
 def on_term(signum, frame):
     if not STOP["flag"]:
         STOP["flag"] = True
-        # Signal handlers cannot safely perform blocking Hub I/O. The Trainer
-        # callback requests a save and emits terminal evidence in normal control.
-        print("PREEMPTED: checkpoint requested at next Trainer step boundary", flush=True)
+        # Signal handlers cannot spend the shutdown grace on network retries.
+        # The supervisor and normal terminal flow record the interruption.
+        STOP["signal"] = signum
 signal.signal(signal.SIGTERM, on_term)
 signal.signal(signal.SIGINT, on_term)
 
@@ -367,21 +372,105 @@ def resume_global_step(resume_dir: str) -> int | None:
         return None
 
 
+def _compatible_cuda_cubin(cap: tuple[int, int], arch_list: list[str]) -> str | None:
+    """Choose a generic cubin using NVIDIA's same-major, nondecreasing-minor rule.
+
+    In particular, sm_86 is valid on an Ada sm_89 GPU. Do not infer generic
+    compatibility from architecture/family-specific a/f suffixes. PTX-only
+    builds need separate qualification; a missing match means unqualified,
+    not proof that the runtime could never execute that build.
+    https://docs.nvidia.com/cuda/ada-compatibility-guide/
+    """
+    candidates = []
+    for arch in arch_list:
+        match = re.fullmatch(r"sm_([0-9]+)", arch)
+        if match:
+            target = int(match.group(1))
+            if target // 10 == cap[0] and target % 10 <= cap[1]:
+                candidates.append((target, arch))
+    return max(candidates)[1] if candidates else None
+
+
+def _cuda_bf16_smoke(device_index: int) -> dict:
+    """Exercise this worker's dtype, native kernels, GEMM, and autograd before load.
+
+    All constants and expected results are exactly representable in BF16.
+    This bounded probe is runtime evidence, not whole-model qualification.
+    """
+    with torch.cuda.device(device_index), torch.enable_grad():
+        a = torch.full((32, 32), 0.125, device=f"cuda:{device_index}",
+                       dtype=torch.bfloat16, requires_grad=True)
+        b = torch.full((32, 32), 0.25, device=f"cuda:{device_index}",
+                       dtype=torch.bfloat16, requires_grad=True)
+        loss = (a @ b).float().square().mean()
+        loss.backward()
+        # Launches are asynchronous: a queued kernel is not evidence of success.
+        torch.cuda.synchronize(device_index)
+        values = ((loss, 1.0), (a.grad, 1.0 / 64), (b.grad, 1.0 / 128))
+        for value, expected in values:
+            if value is None or not bool(torch.isfinite(value).all().item()):
+                raise RuntimeError("BF16 forward/backward produced non-finite or missing values")
+            if not bool((value == expected).all().item()):
+                raise RuntimeError("BF16 forward/backward failed the known-result check")
+        return {"dtype": "bfloat16", "forward_backward": "PASS", "loss": loss.item()}
+
+
 def cuda_arch_precheck() -> None:
-    """F4: fail-closed BEFORE training if this torch build lacks kernels for the GPU."""
-    if not torch.cuda.is_available():
-        receipt("fail-closed", "CUDA unavailable — refusing to train on CPU")
-        raise SystemExit(4)
-    cap = torch.cuda.get_device_capability(0)
-    sm = f"sm_{cap[0]}{cap[1]}"
-    arch_list = torch.cuda.get_arch_list()
-    if sm not in arch_list:
-        gpu = torch.cuda.get_device_name(0)
-        receipt("fail-closed",
-                f"torch {torch.__version__} lacks {sm} kernels for {gpu} "
-                f"(arch_list={arch_list}) — pin gpu_classes or use a newer CUDA build",
-                {"gpu": gpu, "sm": sm})
-        raise SystemExit(4)
+    """F4: qualify generic cubins AND real BF16 execution on every visible GPU."""
+    evidence = {"torch_version": torch.__version__,
+                "cuda_arch_policy": "generic-cubin-same-major-plus-bf16-smoke",
+                "devices": []}
+    try:
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA unavailable — refusing to train on CPU")
+        arch_list = torch.cuda.get_arch_list()
+        evidence["arch_list"] = arch_list
+        device_count = torch.cuda.device_count()
+        if device_count < 1:
+            raise RuntimeError("CUDA reports no visible devices")
+        # device_map='auto' can place model layers on any visible GPU.
+        for index in range(device_count):
+            cap = torch.cuda.get_device_capability(index)
+            device = {"index": index, "gpu": torch.cuda.get_device_name(index),
+                      "sm": f"sm_{cap[0]}{cap[1]}",
+                      "compatible_cubin": _compatible_cuda_cubin(cap, arch_list)}
+            evidence["devices"].append(device)
+            if device["compatible_cubin"] is None:
+                raise RuntimeError(
+                    f"GPU {index} ({device['gpu']}, {device['sm']}) has no qualified "
+                    "generic cubin target in this torch build; PTX-only and "
+                    "architecture-specific builds require separate qualification")
+            device["bf16_smoke"] = _cuda_bf16_smoke(index)
+    except Exception as error:
+        receipt("fail-closed", f"CUDA training precheck failed: {error}", evidence)
+        raise SystemExit(4) from error
+    receipt("cuda-precheck", "Generic cubins and BF16 forward/backward verified "
+            "on all visible GPUs; whole-model qualification still required", evidence)
+
+
+def configure_shared_gpu_budget(budget_mib: int, reserve_mib: int) -> dict:
+    """Admit one visible GPU and cap this process's PyTorch caching allocator.
+
+    This is not a hardware partition or a limit on non-PyTorch allocations.
+    The external supervisor must continue checking serving health/headroom.
+    """
+    if type(budget_mib) is not int or budget_mib <= 0:
+        raise ValueError("GPU budget must be a positive integer MiB value")
+    if type(reserve_mib) is not int or reserve_mib < 0:
+        raise ValueError("GPU reserve must be a nonnegative integer MiB value")
+    if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+        raise RuntimeError("shared-GPU admission requires exactly one visible CUDA device")
+    free, total = torch.cuda.mem_get_info(0)
+    budget, reserve = budget_mib * 1024**2, reserve_mib * 1024**2
+    if total <= 0 or budget + reserve > free:
+        raise RuntimeError("insufficient free GPU memory for budget plus serving reserve")
+    torch.cuda.set_per_process_memory_fraction(budget / total, device=0)
+    evidence = {"allocator_budget_mib": budget_mib, "serving_reserve_mib": reserve_mib,
+                "free_before_mib": free // 1024**2, "total_mib": total // 1024**2,
+                "scope": "PYTORCH_CACHING_ALLOCATOR_NOT_HARDWARE_PARTITION"}
+    receipt("gpu-admission", "Shared GPU memory admission passed; serving health "
+            "must remain supervised", evidence)
+    return evidence
 
 
 def _ensure_pynvml():
@@ -390,6 +479,8 @@ def _ensure_pynvml():
         import pynvml  # type: ignore
         return pynvml
     except Exception:
+        if os.environ.get("SZL_DISABLE_RUNTIME_INSTALL") == "1":
+            return None
         try:
             import subprocess as _sp
             _sp.run([sys.executable, "-m", "pip", "install", "-q", "pynvml"],
@@ -452,6 +543,8 @@ def _ensure_zeus():
         from zeus.monitor import ZeusMonitor  # type: ignore
         return ZeusMonitor
     except Exception:
+        if os.environ.get("SZL_DISABLE_RUNTIME_INSTALL") == "1":
+            return None
         if not _ZEUS_STATE["tried"]:
             _ZEUS_STATE["tried"] = True
             try:
@@ -509,6 +602,10 @@ def zeus_end_window() -> dict:
 def load_train_split(a, api: HfApi):
     """F2/F3: config-aware, split-safe train loading with train-only fallback."""
     kwargs = {"split": "train"}
+    if getattr(a, "dataset_revision", ""):
+        kwargs["revision"] = a.dataset_revision
+    if a.dataset_train_file:
+        kwargs["data_files"] = {"train": a.dataset_train_file}
     if a.dataset_config:
         kwargs["name"] = a.dataset_config
     try:
@@ -530,14 +627,22 @@ def load_train_split(a, api: HfApi):
         receipt("warn", f"dataset generation failed ({transport_label(e)}); retrying train-only load")
         train_file = a.dataset_train_file or "train.jsonl"
         try:
-            return load_dataset("json", data_files={"train": train_file},
+            # A pinned Hub revision must never fall back to an unrelated local file.
+            local_train_file = train_file
+            if getattr(a, "dataset_revision", ""):
+                from huggingface_hub import hf_hub_download
+                local_train_file = hf_hub_download(
+                    repo_id=a.dataset, repo_type="dataset", filename=train_file,
+                    token=a.hf_token, revision=a.dataset_revision)
+            return load_dataset("json", data_files={"train": local_train_file},
                                 split="train", token=a.hf_token)
         except Exception:
             from huggingface_hub import hf_hub_download
             from datasets import Dataset as _Dataset
             receipt("warn", f"loading {train_file} directly from the Hub")
             p = hf_hub_download(repo_id=a.dataset, repo_type="dataset",
-                                filename=train_file, token=a.hf_token)
+                                filename=train_file, token=a.hf_token,
+                                revision=getattr(a, "dataset_revision", "") or None)
             rows = None
             try:
                 rows = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
@@ -562,10 +667,85 @@ def load_train_split(a, api: HfApi):
             return _Dataset.from_list(rows)
 
 
+def training_format_contract(tok, columns, prompt_completion_format, base, base_revision):
+    """Describe the actual serializer without storing private example contents."""
+    if "text" in columns:
+        mode = "text"
+    elif "messages" in columns:
+        mode = "messages_chat"
+    elif "prompt" in columns and "completion" in columns:
+        mode = "prompt_completion_" + prompt_completion_format
+    else:
+        mode = "json"
+    template_hash = None
+    if mode in ("messages_chat", "prompt_completion_chat"):
+        template = tok.get_chat_template()
+        if not isinstance(template, str) or not template.strip():
+            raise ValueError("chat serialization requires an explicit tokenizer template")
+        template_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()
+    return {"schema": "szl.training-format/v1", "formatter_version": "v1",
+            "mode": mode, "chat_template_sha256": template_hash,
+            "tokenizer_base": base, "tokenizer_revision": base_revision or None}
+
+
+def format_training_example(example, tok, prompt_completion_format):
+    """Preserve raw text, or tokenize chat once without TRL adding another EOS."""
+    ex = dict(example)  # LazyRow -> plain dict.
+    if "text" in ex:
+        return {"text": ex["text"]}
+    if "messages" in ex:
+        return dict(tok.apply_chat_template(ex["messages"], tokenize=True,
+                    add_generation_prompt=False, return_dict=True))
+    if "prompt" in ex and "completion" in ex:
+        prompt, completion = ex["prompt"], ex["completion"]
+        if (not isinstance(prompt, str) or not isinstance(completion, str)
+                or not prompt.strip() or not completion.strip()):
+            raise ValueError("prompt/completion fields must be nonempty strings")
+        if prompt_completion_format == "chat":
+            return dict(tok.apply_chat_template(
+                [{"role": "user", "content": prompt},
+                 {"role": "assistant", "content": completion}],
+                tokenize=True, add_generation_prompt=False, return_dict=True))
+        if prompt_completion_format != "verbatim":
+            raise ValueError("unknown prompt/completion serialization mode")
+        if not (prompt[-1].isspace() or completion[0].isspace()):
+            raise ValueError("verbatim prompt/completion boundary requires whitespace; "
+                             "review extraction or explicitly select chat mode")
+        return {"text": prompt + completion}
+    return {"text": json.dumps(ex)}
+
+
+def verify_resume_training_format(resume, contract):
+    """Never apply chat conversion to an unqualified legacy continuation run."""
+    if not resume:
+        return
+    path = os.path.join(resume, "training_format.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            previous = json.load(f)
+    except FileNotFoundError:
+        if contract["mode"] in ("messages_chat", "prompt_completion_chat"):
+            raise ValueError("legacy checkpoint lacks a chat format contract; use a new target") from None
+        return  # Unchanged legacy serializers may resume after data validation.
+    if previous != contract:
+        raise ValueError("checkpoint training format differs; use a new target")
+
+
+def save_training_format(directory, contract):
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, "training_format.json"), "w", encoding="utf-8") as f:
+        json.dump(contract, f, sort_keys=True, indent=2)
+        f.write("\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--dataset", required=True)
+    ap.add_argument("--base-revision", default="",
+                    help="optional immutable base model revision")
+    ap.add_argument("--dataset-revision", default="",
+                    help="optional immutable dataset revision")
     ap.add_argument("--adapter-out", required=True)
     ap.add_argument("--max-steps", type=int, default=200)
     ap.add_argument("--save-steps", type=int, default=50)
@@ -578,6 +758,9 @@ def main() -> int:
                     help="F2: config name for multi-config datasets")
     ap.add_argument("--dataset-train-file", default="",
                     help="F3: explicit train data file for split-schema-broken datasets")
+    ap.add_argument("--prompt-completion-format", choices=("verbatim", "chat"),
+                    default="verbatim", help="verbatim requires boundary whitespace; "
+                    "chat serializes string pairs as user/assistant turns")
     ap.add_argument("--hf-token", default=os.environ.get("HF_TOKEN", ""))
     ap.add_argument("--receipts-repo", default=os.environ.get("SZL_RECEIPTS_REPO", DS_RECEIPTS),
                     help="existing authorized receipt repository; no automatic fallback")
@@ -590,11 +773,27 @@ def main() -> int:
                     help="publish at the first Trainer step boundary after this interval")
     ap.add_argument("--publish-final-to", default="",
                     help="optional separate repo for the final adapter (safetensors/config/tokenizer only)")
+    ap.add_argument("--output-dir", default="~/ckpt",
+                    help="dedicated local checkpoint directory for this lane")
+    ap.add_argument("--gradient-checkpointing", action="store_true",
+                    help="recompute activations to reduce training memory")
+    ap.add_argument("--gpu-memory-budget-mib", type=int, default=0,
+                    help="opt-in PyTorch allocator cap; requires one visible GPU")
+    ap.add_argument("--gpu-reserve-mib", type=int, default=8192,
+                    help="additional free memory required at shared-GPU admission")
     a = ap.parse_args()
     if min(a.max_steps, a.save_steps, a.max_examples, a.min_examples, a.heartbeat_seconds) < 1:
         ap.error("step, save, example and minimum-example bounds must be positive")
     if a.max_examples < a.min_examples:
         ap.error("max-examples cannot be smaller than min-examples")
+    if a.gpu_memory_budget_mib < 0 or a.gpu_reserve_mib < 0:
+        ap.error("GPU budget and reserve cannot be negative")
+    if not a.output_dir.strip():
+        ap.error("output-dir cannot be empty")
+    for revision in (a.base_revision, a.dataset_revision):
+        if revision and not re.fullmatch(r"[0-9a-f]{40}", revision):
+            ap.error("explicit revisions must be immutable 40-character commit SHAs")
+    a.output_dir = os.path.expanduser(a.output_dir)
     if not a.hf_token:
         print("FAIL-CLOSED: HF_TOKEN required (env or --hf-token)", file=sys.stderr)
         return 2
@@ -604,7 +803,7 @@ def main() -> int:
     try:
         RECEIPTS = ReceiptChannel(
             api, a.hf_token, a.receipts_repo, a.receipts_repo_type,
-            os.path.expanduser(a.receipt_outbox), a.adapter_out,
+            os.path.expanduser(a.receipt_outbox), a.adapter_out, a.output_dir,
         )
         return run_training(a, api)
     except ReceiptError as error:
@@ -619,6 +818,8 @@ def main() -> int:
 
 
 def run_training(a, api) -> int:
+    energy_scope = ("DEVICE_TOTAL_INCLUDES_CORESIDENT_WORKLOADS" if a.gpu_memory_budget_mib
+                    else "DEVICE_TOTAL_NOT_JOB_ATTRIBUTION")
     # The working repo holds resumable (pickle-bearing) checkpoints, so it is created PRIVATE.
     # create_repo(exist_ok=True) leaves an EXISTING public repo public, so verify explicitly.
     try:
@@ -627,7 +828,7 @@ def run_training(a, api) -> int:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
     try:
-        resume = fetch_resume_checkpoint(api, a.adapter_out, os.path.expanduser("~/ckpt"))
+        resume = fetch_resume_checkpoint(api, a.adapter_out, a.output_dir)
     except ResumeError as e:
         # F9 fail-closed: never silently restart from step 0 when resume
         # infrastructure is broken — that is an unbounded spot-GPU burn loop.
@@ -643,12 +844,14 @@ def run_training(a, api) -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.7-20261116",
+             "worker_version": "v3.8-20261116",
              "target_steps": a.max_steps,
+             "prompt_completion_format": a.prompt_completion_format,
+             "base_revision": a.base_revision or None,
+             "dataset_revision": a.dataset_revision or None,
              "energy_start": energy_start,
+             "energy_scope": energy_scope,
              "zeus_window": zeus_start})
-
-    cuda_arch_precheck()  # F4
 
     # F6: resume-past-complete honesty guard. Salad respawns a container whose
     # command exited; a finished lane would otherwise resume at global_step >=
@@ -674,6 +877,7 @@ def run_training(a, api) -> int:
                      "new_steps_this_boot": 0,
                      "completion_qualified": False,
                      "scope": "RESUME_TERMINAL_METADATA_NOT_NEW_TRAINING",
+                     "energy_scope": energy_scope,
                      "zeus_window": zeus_end_window(),
                      "energy_start": energy_start, "energy_end": energy_end,
                      "energy_j": energy_delta(energy_start, energy_end)})
@@ -685,9 +889,16 @@ def run_training(a, api) -> int:
                   "exiting without training", flush=True)
             return 0
 
-    tok = AutoTokenizer.from_pretrained(a.base)
-    model = AutoModelForCausalLM.from_pretrained(
-        a.base, dtype=torch.bfloat16, device_map="auto")
+    # A terminal resume does no training; probe CUDA only for an admitted run.
+    if a.gpu_memory_budget_mib:
+        try:
+            configure_shared_gpu_budget(a.gpu_memory_budget_mib, a.gpu_reserve_mib)
+        except Exception as error:
+            receipt("fail-closed", f"Shared GPU admission failed: {error}")
+            return 8
+    cuda_arch_precheck()  # F4: must still precede model loading/training.
+    base_kwargs = {"revision": a.base_revision} if a.base_revision else {}
+    tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
     ds = load_train_split(a, api)  # F2/F3
 
     # F5 honesty guard: stub-sized "datasets" (spec files, READMEs) are not training data.
@@ -702,21 +913,30 @@ def run_training(a, api) -> int:
     # F8: the cap is now an explicit, receipted argument (legacy default 2000).
     n_raw = len(ds)
     n_used = min(a.max_examples, n_raw)
-    receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
-            {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples})
     ds = ds.select(range(n_used))
-    def fmt(ex):
-        ex = dict(ex)  # F1: LazyRow -> plain dict; JSON-safe in every branch
-        if "text" in ex: return {"text": ex["text"]}
-        if "messages" in ex:
-            return {"text": tok.apply_chat_template(ex["messages"], tokenize=False)}
-        if "prompt" in ex and "completion" in ex:
-            return {"text": ex["prompt"] + ex["completion"]}
-        return {"text": json.dumps(ex)}
-    ds = ds.map(fmt, remove_columns=ds.column_names)
+    try:
+        format_contract = training_format_contract(
+            tok, ds.column_names, a.prompt_completion_format, a.base, a.base_revision)
+        verify_resume_training_format(resume, format_contract)
+        ds = ds.map(lambda ex: format_training_example(ex, tok, a.prompt_completion_format),
+                    remove_columns=ds.column_names, load_from_cache_file=False)
+    except Exception:
+        # Avoid echoing an exception that may contain private example text.
+        receipt("fail-closed", "training format validation failed; review string fields, "
+                "boundary whitespace, chat template and resume format before retrying",
+                {"prompt_completion_format": a.prompt_completion_format,
+                 "training_started": False})
+        return 9
+    receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
+            {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
+             "training_format": format_contract})
+    model = AutoModelForCausalLM.from_pretrained(
+        a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
+    if a.gradient_checkpointing:
+        model.config.use_cache = False
 
     cfg = SFTConfig(
-        output_dir=os.path.expanduser("~/ckpt"),
+        output_dir=a.output_dir,
         max_seq_length=2048,
         per_device_train_batch_size=1,          # spot-metal safe: fits 24GB cards
         gradient_accumulation_steps=16,
@@ -724,12 +944,15 @@ def run_training(a, api) -> int:
         max_steps=a.max_steps,
         save_steps=a.save_steps, save_total_limit=2,
         bf16=True, optim="adamw_torch", report_to=[], logging_steps=10,
-        gradient_checkpointing=False, packing=False)
+        gradient_checkpointing=a.gradient_checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False} if a.gradient_checkpointing else None,
+        packing=False)
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
         target_modules=["q_proj","k_proj","v_proj","o_proj"],
         task_type="CAUSAL_LM")
 
-    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft)
+    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft,
+                         processing_class=tok)
 
     from transformers import TrainerCallback
     class ReceiptCallback(TrainerCallback):
@@ -754,7 +977,7 @@ def run_training(a, api) -> int:
             if STOP["flag"]:
                 control.should_training_stop = True
                 control.should_save = True
-                return
+                return control
             now = time.monotonic()
             if now - self.last_heartbeat >= a.heartbeat_seconds:
                 observed = state.global_step
@@ -763,6 +986,7 @@ def run_training(a, api) -> int:
                     {"actual_steps": actual, "target_steps": a.max_steps,
                      "scope": "TRAINER_LIVENESS_NOT_CHECKPOINT_DURABILITY"}, request_save=True)
                 self.last_heartbeat = now
+            return control
 
         def on_save(self, args, state, control, **kw):
             # push the checkpoint to durable storage immediately
@@ -779,6 +1003,7 @@ def run_training(a, api) -> int:
                     self.publish_or_stop("checkpoint-blocked", f"upload refused: {e}", control)
                     return
                 try:
+                    save_training_format(path, format_contract)
                     commit = api.upload_folder(folder_path=path, path_in_repo=ck,
                         repo_id=a.adapter_out, repo_type="model")
                     revision = hub_revision(commit)
@@ -814,18 +1039,21 @@ def run_training(a, api) -> int:
         receipt("interrupted" if STOP["flag"] else "incomplete",
                 "training did not reach the exact admitted target; final publication withheld",
                 {"actual_steps": actual_steps, "target_steps": a.max_steps,
+                 "termination_signal": STOP.get("signal"),
                  "completion_qualified": False, "final_publication_attempted": False,
                  "receipt_channel_failed": bool(STOP.get("receipts")),
                  "checkpoint_publication_failed": bool(STOP.get("checkpoint")),
                  "checkpoint_durability": "UNVERIFIED_BY_TERMINAL_GUARD",
+                 "energy_scope": energy_scope,
                  "energy_start": energy_start, "energy_end": energy_end,
                  "zeus_window": zeus_end_window(),
                  "energy_j": energy_delta(energy_start, energy_end)})
         print("FAIL-CLOSED: incomplete or unqualified trainer state; final adapter not published",
               file=sys.stderr, flush=True)
         return 8 if STOP.get("receipts") else 7
-    final = os.path.expanduser("~/ckpt/final")
+    final = os.path.join(a.output_dir, "final")
     trainer.save_model(final)
+    save_training_format(final, format_contract)
     if STOP.get("visibility"):
         print("FAIL-CLOSED: working repo visibility could not be verified; final adapter kept local only",
               file=sys.stderr)
@@ -859,6 +1087,8 @@ def run_training(a, api) -> int:
             {"steps": actual_steps, "actual_steps": actual_steps,
              "target_steps": a.max_steps, "completion_qualified": True,
              "completion_scope": "EXACT_TRAINER_STEP_TARGET_NOT_MODEL_QUALITY",
+             "training_format": format_contract,
+             "energy_scope": energy_scope,
              "adapter": a.adapter_out,
              "final_artifact": {"repo_id": a.adapter_out, "repo_type": "model",
                                 "revision": final_revision, "directory": "final",

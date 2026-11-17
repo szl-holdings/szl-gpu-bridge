@@ -27,7 +27,7 @@ class Dataset:
     def select(self, rows):
         return self
 
-    def map(self, function, remove_columns):
+    def map(self, function, remove_columns, **kwargs):
         return self
 
 
@@ -63,6 +63,9 @@ class TerminalContract(unittest.TestCase):
         self.flip_receipt_visibility = False
         self.invoke_heartbeat = False
         self.invoke_checkpoint = False
+        self.trainer_configs = []
+        self.trainer_inputs = []
+        self.callbacks = []
         self.actual = 200
         self.interrupted = False
         self.final_present = True
@@ -132,9 +135,12 @@ class TerminalContract(unittest.TestCase):
             def __init__(self, **kwargs):
                 self.state = types.SimpleNamespace(global_step=fixture.actual)
                 self.args = kwargs["args"]
+                fixture.trainer_configs.append(kwargs["args"])
+                fixture.trainer_inputs.append(kwargs)
 
             def add_callback(self, callback):
                 self.callback = callback
+                fixture.callbacks.append(callback)
 
             def train(self, **kwargs):
                 fixture.trained.append(kwargs)
@@ -176,8 +182,9 @@ class TerminalContract(unittest.TestCase):
         modules["transformers"].AutoTokenizer = types.SimpleNamespace(
             from_pretrained=lambda *a, **k: object()
         )
+        self.model = types.SimpleNamespace(config=types.SimpleNamespace(use_cache=True))
         modules["transformers"].AutoModelForCausalLM = types.SimpleNamespace(
-            from_pretrained=lambda *a, **k: fixture.loaded.append(True) or object()
+            from_pretrained=lambda *a, **k: fixture.loaded.append(True) or self.model
         )
         modules["transformers"].TrainerCallback = object
 
@@ -374,10 +381,141 @@ class TerminalContract(unittest.TestCase):
                 self.worker, "fetch_resume_checkpoint", return_value="checkpoint-200"
             ),
             patch.object(self.worker, "resume_global_step", return_value=200),
+            patch.object(
+                self.worker,
+                "cuda_arch_precheck",
+                side_effect=AssertionError("terminal resume must not probe CUDA"),
+            ) as precheck,
         ):
             self.assertEqual(self.run_worker(), 0)
+        precheck.assert_not_called()
         self.assertEqual(self.trained, [])
         self.assertEqual(self.events[-1]["event"], "already-complete")
+
+    def test_cuda_precheck_failure_prevents_model_load_and_training(self):
+        with (
+            patch.object(self.worker, "cuda_arch_precheck", side_effect=SystemExit(4)),
+            patch.object(
+                self.worker.AutoModelForCausalLM, "from_pretrained"
+            ) as load_model,
+        ):
+            self.assertEqual(self.run_worker(), 4)
+        load_model.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_ambiguous_prompt_join_fails_before_model_load_or_training(self):
+        class AmbiguousDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                self.assert_cache_disabled = kwargs["load_from_cache_file"] is False
+                function({"prompt": "Complete the proof := by", "completion": "by rfl"})
+                return self
+
+        dataset = AmbiguousDataset()
+        with (
+            patch.object(self.worker, "load_train_split", return_value=dataset),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+        self.assertTrue(dataset.assert_cache_disabled)
+        self.assertFalse(self.events[-1]["training_started"])
+        self.assertNotIn("Complete the proof", json.dumps(self.events))
+
+    def test_chat_conversion_records_and_saves_checkpoint_format(self):
+        rendered = []
+
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+            def map(self, function, remove_columns, **kwargs):
+                rendered.append(
+                    function(
+                        {"prompt": "Complete the proof := by", "completion": "by rfl"}
+                    )
+                )
+                return self
+
+        tokenizer = types.SimpleNamespace(
+            get_chat_template=lambda: "synthetic template",
+            apply_chat_template=lambda *a, **kw: {
+                "input_ids": [100, 200, 300],
+                "attention_mask": [1, 1, 1],
+            },
+        )
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer, "from_pretrained", return_value=tokenizer
+            ),
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 0)
+        self.assertEqual(
+            rendered, [{"input_ids": [100, 200, 300], "attention_mask": [1, 1, 1]}]
+        )
+        dataset_event = next(e for e in self.events if e["event"] == "dataset")
+        contract = dataset_event["training_format"]
+        self.assertEqual(contract["mode"], "prompt_completion_chat")
+        self.assertEqual(self.events[-1]["training_format"], contract)
+        final = Path(self.saved[0]) / "training_format.json"
+        self.assertEqual(json.loads(final.read_text()), contract)
+
+        output = Path(self.trainer_configs[0].output_dir)
+        checkpoint = output / "checkpoint-50"
+        checkpoint.mkdir(parents=True)
+        self.callbacks[0].on_save(
+            types.SimpleNamespace(output_dir=str(output)),
+            types.SimpleNamespace(global_step=50),
+            types.SimpleNamespace(should_training_stop=False),
+        )
+        self.assertEqual(
+            json.loads((checkpoint / "training_format.json").read_text()), contract
+        )
+        self.assertEqual(self.uploads[-1]["folder_path"], str(checkpoint))
+
+    def test_chat_conversion_cannot_resume_an_unmarked_legacy_checkpoint(self):
+        class PromptDataset(Dataset):
+            column_names = ["prompt", "completion"]
+
+        with (
+            patch.object(self.worker, "load_train_split", return_value=PromptDataset()),
+            patch.object(
+                self.worker.AutoTokenizer,
+                "from_pretrained",
+                return_value=types.SimpleNamespace(
+                    get_chat_template=lambda: "template"
+                ),
+            ),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=self.temp.name
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=50),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker("--prompt-completion-format", "chat"), 9)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_formatting_exception_cannot_echo_private_row_content(self):
+        class FailingTemplateDataset(Dataset):
+            def map(self, function, remove_columns, **kwargs):
+                raise RuntimeError("SYNTHETIC_PRIVATE_ROW_CONTENT")
+
+        with (
+            patch.object(
+                self.worker, "load_train_split", return_value=FailingTemplateDataset()
+            ),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        load.assert_not_called()
+        self.assertNotIn("SYNTHETIC_PRIVATE_ROW_CONTENT", json.dumps(self.events))
+        self.assertEqual(self.trained, [])
 
     def test_nonpositive_limits_fail_before_api_effects(self):
         for flag in (
@@ -391,6 +529,107 @@ class TerminalContract(unittest.TestCase):
                 self.api_calls.clear()
                 self.assertEqual(self.run_worker(flag, "0"), 2)
                 self.assertEqual(self.api_calls, [])
+
+    def test_invalid_shared_gpu_limits_fail_before_api_effects(self):
+        for flag in ("--gpu-memory-budget-mib", "--gpu-reserve-mib"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_worker(flag, "-1"), 2)
+                self.assertEqual(self.api_calls, [])
+
+    def test_mutable_explicit_revision_is_refused_before_api_effects(self):
+        for flag in ("--base-revision", "--dataset-revision"):
+            with self.subTest(flag=flag):
+                self.assertEqual(self.run_worker(flag, "main"), 2)
+                self.assertEqual(self.api_calls, [])
+
+    def test_base_revision_pins_tokenizer_and_weights(self):
+        revision = "a" * 40
+        with (
+            patch.object(self.worker.AutoTokenizer, "from_pretrained") as tokenizer,
+            patch.object(
+                self.worker.AutoModelForCausalLM,
+                "from_pretrained",
+                return_value=self.model,
+            ) as model,
+        ):
+            self.assertEqual(self.run_worker("--base-revision", revision), 0)
+        self.assertEqual(tokenizer.call_args.kwargs["revision"], revision)
+        self.assertEqual(model.call_args.kwargs["revision"], revision)
+        self.assertIs(
+            self.trainer_inputs[0]["processing_class"], tokenizer.return_value
+        )
+        self.assertIn("torch_dtype", model.call_args.kwargs)
+        boot = next(event for event in self.events if event["event"] == "boot")
+        self.assertEqual(boot["base_revision"], revision)
+
+    def test_shared_gpu_refusal_prevents_model_load_and_training(self):
+        with (
+            patch.object(
+                self.worker,
+                "configure_shared_gpu_budget",
+                side_effect=RuntimeError("no headroom"),
+            ),
+            patch.object(self.worker.AutoModelForCausalLM, "from_pretrained") as load,
+        ):
+            self.assertEqual(self.run_worker("--gpu-memory-budget-mib", "24576"), 8)
+        load.assert_not_called()
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.uploads, [])
+
+    def test_lane_output_directory_applies_to_resume_training_and_final(self):
+        with patch.object(
+            self.worker, "fetch_resume_checkpoint", return_value=None
+        ) as resume:
+            self.assertEqual(self.run_worker("--output-dir", "~/lean-v2/ckpt"), 0)
+        expected = str(Path(self.temp.name) / "lean-v2" / "ckpt")
+        self.assertEqual(resume.call_args.args[2], expected)
+        self.assertEqual(self.trainer_configs[0].output_dir, expected)
+        self.assertEqual(self.saved, [str(Path(expected) / "final")])
+
+    def test_checkpointing_opt_in_disables_incompatible_model_cache(self):
+        self.assertEqual(self.run_worker("--gradient-checkpointing"), 0)
+        cfg = self.trainer_configs[0]
+        self.assertTrue(cfg.gradient_checkpointing)
+        self.assertEqual(cfg.gradient_checkpointing_kwargs, {"use_reentrant": False})
+        self.assertFalse(self.model.config.use_cache)
+
+    def test_stop_signal_requests_save_and_stop_at_next_optimizer_step(self):
+        self.assertEqual(self.run_worker(), 0)
+        callback = self.callbacks[0]
+        control = types.SimpleNamespace(should_save=False, should_training_stop=False)
+        callback.on_step_end(None, None, control)
+        self.assertFalse(control.should_save)
+        self.assertFalse(control.should_training_stop)
+        self.worker.STOP["flag"] = True
+        self.assertIs(callback.on_step_end(None, None, control), control)
+        self.assertTrue(control.should_save)
+        self.assertTrue(control.should_training_stop)
+
+    def test_signal_handler_never_waits_for_telemetry_or_network(self):
+        with patch.object(
+            self.worker,
+            "receipt",
+            side_effect=AssertionError("signal telemetry blocked"),
+        ) as telemetry:
+            self.worker.on_term(signal.SIGTERM, None)
+            self.worker.on_term(signal.SIGINT, None)
+        telemetry.assert_not_called()
+        self.assertTrue(self.worker.STOP["flag"])
+        self.assertEqual(self.worker.STOP["signal"], signal.SIGTERM)
+
+    def test_prebuilt_runtime_does_not_install_missing_energy_libraries(self):
+        with (
+            patch.dict(os.environ, {"SZL_DISABLE_RUNTIME_INSTALL": "1"}),
+            patch.dict(
+                sys.modules, {"pynvml": None, "zeus": None, "zeus.monitor": None}
+            ),
+            patch(
+                "subprocess.run",
+                side_effect=AssertionError("runtime installation forbidden"),
+            ),
+        ):
+            self.assertIsNone(self.worker._ensure_pynvml())
+            self.assertIsNone(self.worker._ensure_zeus())
 
     def test_max_examples_below_minimum_cannot_silently_train_stub(self):
         self.assertEqual(
@@ -517,6 +756,21 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(self.receipt_uploads, [])
         self.assertEqual(self.uploads, [])
         self.assertEqual(self.loaded, [])
+
+    def test_custom_output_directory_cannot_contain_receipt_outbox(self):
+        self.assertEqual(
+            self.run_worker(
+                "--output-dir",
+                "~/lane/ckpt",
+                "--receipt-outbox",
+                "~/lane/ckpt/final/receipts",
+            ),
+            8,
+        )
+        self.assertEqual(self.loaded, [])
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.receipt_uploads, [])
+        self.assertIn("outside the artifact directory", self.stderr)
 
     def test_default_outbox_is_outside_all_artifact_uploads(self):
         self.assertEqual(self.real_run(), 0)

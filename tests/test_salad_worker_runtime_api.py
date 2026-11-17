@@ -90,7 +90,9 @@ class PinnedRuntimeContract(unittest.TestCase):
                         "__builtins__": {},
                         "SFTConfig": self.constructors["SFTConfig"],
                         "os": os,
-                        "a": types.SimpleNamespace(max_steps=2, save_steps=1),
+                        "a": types.SimpleNamespace(
+                            max_steps=2, save_steps=1, gradient_checkpointing=False
+                        ),
                     },
                 )
                 self.assertEqual(config.max_seq_length, 2048)

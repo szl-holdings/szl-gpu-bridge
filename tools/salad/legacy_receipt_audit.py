@@ -17,6 +17,7 @@ SCHEMA = "szl.legacy-salad-receipt-audit/v1"
 PROFILES = {
     "f01d1886c7a0949616476e32b944be70184baa1b34688be1d6e8f5fb533db8a0": "heldout-v1",
     "a5cdcb8eb7e28a7cce4b94edeeb762405416b75125983241f21a09b56d90ddac": "bench-v1",
+    "2fe098dc2369455b48093fa42801bdd06e781758563ed0a33d08fec5f88e776d": "provingground-v1",
 }
 MAX_BYTES = 2 * 1024 * 1024
 
@@ -177,6 +178,61 @@ def _bench(result):
     }
 
 
+def _provingground(result):
+    """Interpret archived counters and heuristic verdicts, never Lean proofs."""
+    rows = result["receipts"]
+    tested = result["unproven_tested"]
+    if not isinstance(rows, list) or type(tested) is not int or tested < 0:
+        raise ValueError("invalid proving-ground observation count")
+    if tested != len(rows):
+        raise ValueError("proving-ground row count is inconsistent")
+    labels = ("ABSTAINED", "SKETCH_CANDIDATE", "WEAK_OR_FAKE")
+    recorded = result["verdicts"]
+    if not isinstance(recorded, dict) or set(recorded) != set(labels):
+        raise ValueError("invalid proving-ground verdict summary")
+    observed = dict.fromkeys(labels, 0)
+    for row in rows:
+        if not isinstance(row, dict) or row.get("verdict") not in observed:
+            raise ValueError("unknown proving-ground row verdict")
+        observed[row["verdict"]] += 1
+    for label in labels:
+        if type(recorded[label]) is not int or recorded[label] != observed[label]:
+            raise ValueError("proving-ground verdict counts are inconsistent")
+    counts = result["counts_declared"]
+    if not isinstance(counts, dict):
+        raise ValueError("invalid declared atlas counts")
+    for name in ("total", "locked", "unproven"):
+        if type(counts.get(name)) is not int or counts[name] < 0:
+            raise ValueError("invalid declared atlas count")
+    if counts["locked"] + counts["unproven"] != counts["total"]:
+        raise ValueError("declared atlas count identity is inconsistent")
+    if result.get("energy_label") != "MEASURED":
+        raise ValueError("legacy proving-ground energy was not reported measured")
+    findings = [
+        "NO_KERNEL_VERIFICATION: theorem/lemma/example text without sorry is only a heuristic sketch, not a Lean-checked proof",
+        "UNPINNED_INPUTS: archived source downloads adapter and atlas without immutable revisions",
+        "CHAIN_NOT_VERIFIED: this unit audit does not verify per-row hashes or execution authenticity",
+    ]
+    if tested != counts["unproven"]:
+        findings.append(
+            "PROBE_COUNT_MISMATCH: observed rows differ from declared unproven count"
+        )
+    if not tested:
+        findings.append("EMPTY_PROBE_SET: no quality conclusion is available")
+    return {
+        "unit_corrections": {
+            "provingground_window": energy_correction(result["energy_j"])
+        },
+        "reported_verdicts": observed,
+        "observed_rows": tested,
+        "declared_unproven_rows": counts["unproven"],
+        "probe_count_matches_declared_unproven": tested == counts["unproven"],
+        "kernel_verification_performed": False,
+        "receipt_chain_verification_performed": False,
+        "findings": findings,
+    }
+
+
 def audit(receipt_raw, source_raw):
     """Fingerprint-specific diagnosis, not proof that this code actually executed."""
     if len(receipt_raw) > MAX_BYTES or len(source_raw) > MAX_BYTES:
@@ -201,16 +257,18 @@ def audit(receipt_raw, source_raw):
             "status": "UNAVAILABLE",
             "reason": "unknown archived source fingerprint",
         }
-    expected = (
-        "szl.salad-heldout/v1" if profile == "heldout-v1" else "szl.salad-bench/v1"
-    )
+    expected, interpret = {
+        "heldout-v1": ("szl.salad-heldout/v1", _heldout),
+        "bench-v1": ("szl.salad-bench/v1", _bench),
+        "provingground-v1": ("szl.proving-ground/v1", _provingground),
+    }[profile]
     if (
         result.get("schema") != expected
         or result.get("status") != "OK"
         or result.get("kind") != "MEASURED"
     ):
         raise ValueError("receipt schema/status does not match its source profile")
-    out.update(_heldout(result) if profile == "heldout-v1" else _bench(result))
+    out.update(interpret(result))
     out["status"] = "AUDITED_LEGACY_NOT_QUALIFIED"
     return out
 

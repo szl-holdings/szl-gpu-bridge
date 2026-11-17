@@ -107,7 +107,8 @@ The controller must inspect that commit and the current run's pending evidence;
 retraining or fabricating a retrospective completion receipt is not recovery.
 
 The default local outbox is `~/salad-receipt-outbox/<run-id>/`. Overrides resolving
-inside the `~/ckpt` artifact tree are refused, so recovery records cannot be swept
+inside the configured `--output-dir` artifact tree (`~/ckpt` by default) are
+refused, so recovery records cannot be swept
 into checkpoint or final adapter folder uploads. Files ending in
 `.pending.json` retain the exact bytes attempted, including on ambiguous transport
 failures; `.publication.json` records successful readback. A pending file remains
@@ -164,3 +165,15 @@ a model or Trainer, load weights/data, execute CUDA, measure throughput, verify
 a GPU kernel, qualify a model, or authorize deployment. The source correction
 requires a separately identified rebuilt image; passing checks on a mounted
 source file does not change an already-built image.
+
+
+Run the focused contracts from the arranged source root inside the candidate
+container, with Docker networking disabled and no credentials or GPU:
+
+```sh
+SZL_TEST_PINNED_RUNTIME=1 python3 -m unittest discover -s tests -p 'test_salad_worker_*.py' -v
+```
+
+Use the worker bytes copied from the candidate image plus the tests and original
+Dockerfile from the exact reviewed revision. This avoids qualifying a mounted
+replacement worker instead of the image's actual entrypoint.

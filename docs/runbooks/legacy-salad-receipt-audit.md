@@ -3,7 +3,7 @@
 This offline tool answers a narrower question than a new model evaluation: what
 can the archived v1 receipt and its archived source actually support? It does not
 launch compute, change cloud resources, qualify quality, or authorize promotion.
-It recognizes two exact archived source fingerprints. Unknown bytes remain
+It recognizes three exact archived source fingerprints. Unknown bytes remain
 UNAVAILABLE rather than acquiring a guessed interpretation.
 
 ## Preserve first
@@ -20,7 +20,8 @@ python tools/salad/legacy_receipt_audit.py \
   --output /evidence/new/heldout-audit.json
 ```
 
-Use the corresponding archived `bench_eval.py` for the benchmark receipt.
+Use the corresponding archived `bench_eval.py` for the benchmark receipt, or
+`proving_ground_eval.py` for the proving-ground receipt.
 Exit 0 means an audit completed, NOT that a model qualified. Exit 3 means the
 source is unknown. Exit 2 means invalid inputs or output creation failed.
 Consumers must inspect `quality_qualification`, which is NOT_ESTABLISHED.
@@ -47,6 +48,13 @@ The contamination task is a first-training-row verbatim-continuation probe, not
 independent benchmark-leakage detection. Empty denominators remain UNAVAILABLE.
 The benchmark v1 uses input-token rather than shifted-prediction denominators;
 its old token/loss fields must not be relabelled as corrected v2 measurements.
+
+The recognized proving-ground source also stored NVML millijoule differences as
+`energy_j`. Its theorem/lemma/example keyword classifier never invokes Lean, so
+`SKETCH_CANDIDATE` and `sorry` absence establish no kernel-checked theorem. The
+audit reconciles recorded verdict counts and reports any mismatch between actual
+rows and the declared unproven count. It does not verify row-chain authenticity,
+qualify mathematical correctness, or change any quality threshold.
 
 ## Next evaluation boundary
 
