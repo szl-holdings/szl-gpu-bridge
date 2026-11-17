@@ -201,6 +201,19 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(selected, ["SZLHOLDINGS/mapped", "SZLHOLDINGS/abst-a"])
         self.assertEqual(cov["omitted_ids"], ["SZLHOLDINGS/abst-b"])
 
+    def test_absrl_successors_selected_without_salad_mapping(self):
+        candidates = [
+            "SZLHOLDINGS/absrl-synthetic-a",
+            "SZLHOLDINGS/absrl-synthetic-b",
+        ]
+        selected, coverage = g.select_training_repos(candidates, [], limit=1)
+        self.assertEqual(selected, ["SZLHOLDINGS/absrl-synthetic-a"])
+        self.assertEqual(coverage["eligible_count"], 2)
+        self.assertEqual(
+            coverage["omitted_ids"],
+            ["SZLHOLDINGS/absrl-synthetic-b"],
+        )
+
     def test_external_mapping_refused(self):
         selected, _ = g.select_training_repos([], ["foreign/repo", "SZLHOLDINGS/../x"])
         self.assertEqual(selected, [])
