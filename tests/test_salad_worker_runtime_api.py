@@ -41,7 +41,9 @@ class PinnedRuntimeContract(unittest.TestCase):
             key for key in ("max_seq_length", "max_length") if key in fields
         ]
         if len(cls.sequence_keys) != 1:
-            raise AssertionError("pinned TRL must expose exactly one sequence-bound field")
+            raise AssertionError(
+                "pinned TRL must expose exactly one sequence-bound field"
+            )
 
     def calls(self, name):
         result = [

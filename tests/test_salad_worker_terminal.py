@@ -296,6 +296,7 @@ class TerminalContract(unittest.TestCase):
             fixture = {"max_seq_length": max_seq_length, **kwargs}
             self.config_kwargs = fixture
             return types.SimpleNamespace(**fixture)
+
         self.assertEqual(
             self.worker.sft_sequence_length_kwargs(legacy, 2048),
             {"max_seq_length": 2048},
