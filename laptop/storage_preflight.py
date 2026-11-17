@@ -9,6 +9,7 @@ An unstable disk free-space reading refuses admission even if one sample
 is healthy. On success, only the *storage* gate passes; all other model,
 dataset, source, budget, signer and control-plane gates remain separate.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,7 +24,7 @@ import sys
 import time
 from typing import Callable
 
-GIB = 1024 ** 3
+GIB = 1024**3
 SCHEMA = "szl.windows_training_storage_preflight.v1"
 CODE_VERSION = "storage-capacity-sampled-20261117"
 MIN_SAMPLES = 3
@@ -32,6 +33,7 @@ MAX_INTERVAL_SEC = 5.0
 DEFAULT_MINIMUM_FREE_GIB = 50
 DEFAULT_MAX_SWING_GIB = 2
 REFUSED_EXIT = 78
+
 
 @dataclass(frozen=True)
 class Reading:
@@ -43,8 +45,7 @@ class Reading:
 
 def _canonical(obj: object) -> bytes:
     return (
-        json.dumps(obj, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-        + "\n"
+        json.dumps(obj, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
     ).encode("utf-8")
 
 
@@ -63,19 +64,27 @@ def classify(
     max_swing_gib: int = DEFAULT_MAX_SWING_GIB,
 ) -> dict:
     """Classify independently recorded samples; no fresh I/O or side effects."""
-    if (type(min_free_gib) is not int or not 1 <= min_free_gib <= 2048
-            or type(max_swing_gib) is not int or not 0 <= max_swing_gib <= 128):
+    if (
+        type(min_free_gib) is not int
+        or not 1 <= min_free_gib <= 2048
+        or type(max_swing_gib) is not int
+        or not 0 <= max_swing_gib <= 128
+    ):
         raise ValueError("INVALID_FIXED_STORAGE_POLICY")
     if not MIN_SAMPLES <= len(samples) <= MAX_SAMPLES:
         raise ValueError("INSUFFICIENT_OR_UNBOUNDED_SAMPLE_COUNT")
     for sample in samples:
         if not isinstance(sample, Reading):
             raise ValueError("BAD_READING_TYPE")
-        if (not all(_finite_nonnegative_int(x) for x in (
-                sample.total_bytes, sample.free_bytes, sample.used_bytes))
-                or sample.total_bytes == 0
-                or sample.free_bytes > sample.total_bytes
-                or sample.used_bytes > sample.total_bytes):
+        if (
+            not all(
+                _finite_nonnegative_int(x)
+                for x in (sample.total_bytes, sample.free_bytes, sample.used_bytes)
+            )
+            or sample.total_bytes == 0
+            or sample.free_bytes > sample.total_bytes
+            or sample.used_bytes > sample.total_bytes
+        ):
             raise ValueError("INVALID_CAPACITY_READING")
         if not isinstance(sample.observed_utc, str) or not sample.observed_utc:
             raise ValueError("MISSING_OBSERVATION_TIMESTAMP")
@@ -198,10 +207,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--samples", type=int, default=5)
     parser.add_argument("--interval-sec", type=float, default=2.0)
     parser.add_argument(
-        "--min-free-gib", type=int, default=DEFAULT_MINIMUM_FREE_GIB,
+        "--min-free-gib",
+        type=int,
+        default=DEFAULT_MINIMUM_FREE_GIB,
     )
     parser.add_argument(
-        "--max-swing-gib", type=int, default=DEFAULT_MAX_SWING_GIB,
+        "--max-swing-gib",
+        type=int,
+        default=DEFAULT_MAX_SWING_GIB,
     )
     parser.add_argument(
         "--receipt",
@@ -241,12 +254,17 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(public, sort_keys=True))
         return 0 if report["verdict"]["storage_only_passed"] else REFUSED_EXIT
     except (ValueError, OSError, FileExistsError) as error:
-        print(json.dumps({
-            "state": "HOLD_INVALID_CONFIGURATION_OR_RECEIPT",
-            "reason": type(error).__name__,
-            "storage_only_passed": False,
-            "other_training_gates_verified": False,
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "state": "HOLD_INVALID_CONFIGURATION_OR_RECEIPT",
+                    "reason": type(error).__name__,
+                    "storage_only_passed": False,
+                    "other_training_gates_verified": False,
+                },
+                sort_keys=True,
+            )
+        )
         return REFUSED_EXIT
 
 
