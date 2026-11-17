@@ -9,7 +9,9 @@ import tempfile
 import types
 import unittest
 
-SOURCE = Path(__file__).with_name("salad_bench_worker.py")
+SOURCE = Path(__file__).resolve().parents[1] / "tools/salad/salad_bench_worker.py"
+if not SOURCE.is_file():  # isolated private staging on BETTERWITHAGE
+    SOURCE = Path(__file__).with_name("salad_bench_worker.py")
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"))
 ALLOWED = {"ReceiptError", "hub_revision", "valid_lane",
            "sanitized_public_results", "publish_bench_results"}
