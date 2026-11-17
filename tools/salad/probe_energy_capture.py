@@ -98,7 +98,8 @@ class Meter(Protocol):
     device_uuid: str
     method: str
 
-    def read_mj(self) -> int | None: ...
+    def read_mj(self) -> int | None:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
