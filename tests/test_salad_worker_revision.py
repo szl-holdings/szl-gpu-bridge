@@ -12,15 +12,20 @@ WORKER = Path(__file__).resolve().parents[1] / "tools" / "salad" / "salad_worker
 class DatasetRevision(unittest.TestCase):
     def setUp(self):
         source = ast.parse(WORKER.read_text(encoding="utf-8"))
-        function = next(
+        functions = [
             node
             for node in source.body
-            if isinstance(node, ast.FunctionDef) and node.name == "load_train_split"
+            if isinstance(node, ast.FunctionDef)
+            and node.name in ("load_train_split", "transport_label")
+        ]
+        self.assertEqual(
+            {function.name for function in functions},
+            {"load_train_split", "transport_label"},
         )
         self.load = Mock(return_value="SYNTHETIC_DATASET")
         namespace = {"HfApi": object, "load_dataset": self.load, "receipt": Mock()}
         exec(
-            compile(ast.Module(body=[function], type_ignores=[]), str(WORKER), "exec"),
+            compile(ast.Module(body=functions, type_ignores=[]), str(WORKER), "exec"),
             namespace,
         )
         self.load_split = namespace["load_train_split"]
