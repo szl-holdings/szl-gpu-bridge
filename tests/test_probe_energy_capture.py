@@ -77,7 +77,9 @@ class CaptureTests(unittest.TestCase):
         self.assertIsNone(result["battery"])
         self.assertIsNone(result["energy"])
         self.assertIsNone(result["diagnostic"])
-        self.assertIs(result["external_writes"], False)
+        self.assertIsNone(result["external_writes"])
+        self.assertIs(result["producer_external_writes"], False)
+        self.assertEqual(result["callback_external_effects"], "UNVERIFIED")
         self.assertIs(result["promotion_authorized"], False)
         self.assertIs(result["production_authorization"], False)
 
@@ -121,7 +123,9 @@ class CaptureTests(unittest.TestCase):
         a = _capture()
         b = _capture()
         self.assertEqual(a, b)
-        self.assertIs(a["external_writes"], False)
+        self.assertIsNone(a["external_writes"])
+        self.assertIs(a["producer_external_writes"], False)
+        self.assertEqual(a["callback_external_effects"], "UNVERIFIED")
         self.assertIs(a["promotion_authorized"], False)
 
     def test_fixture_hash_blocks_any_inference(self):
@@ -237,8 +241,20 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(output["diagnostic"]["metric"]["joint_quality_geomean"], 0)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class CallbackAuthorityTests(unittest.TestCase):
+    def test_untrusted_callback_side_effects_are_not_reported_as_no_writes(self):
+        observed = []
+
+        def callback(prompt):
+            observed.append(prompt)
+            return answer(prompt)
+
+        report = _capture(invoke=callback)
+        self.assertEqual(len(observed), 6)
+        self.assertEqual(report["status"], "DERIVED_UNATTESTED")
+        self.assertIs(report["producer_external_writes"], False)
+        self.assertIsNone(report["external_writes"])
+        self.assertEqual(report["callback_external_effects"], "UNVERIFIED")
 
 
 class NvmlDeviceMeterTests(unittest.TestCase):
@@ -305,3 +321,7 @@ class NvmlDeviceMeterTests(unittest.TestCase):
                 producer.NvmlDeviceMeter()
         self.assertEqual(str(ctx.exception), "NVML_INIT_UNAVAILABLE")
         self.assertNotIn("DO_NOT_LEAK", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
