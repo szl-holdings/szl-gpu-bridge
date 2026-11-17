@@ -233,7 +233,9 @@ class CaptureTests(unittest.TestCase):
                     },
                 )
                 self.held(result, "ADJUDICATION_INVALID")
-                self.assertEqual(result["model_executed"], "CALLBACK_INVOKED_UNVERIFIED")
+                self.assertEqual(
+                    result["model_executed"], "CALLBACK_INVOKED_UNVERIFIED"
+                )
 
     def test_contradictory_adjudication_does_not_publish_receipts(self):
         def incorrect(case, _result):
