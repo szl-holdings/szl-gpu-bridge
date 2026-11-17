@@ -216,5 +216,132 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("not deletion", d["interpretation"])
 
 
+class SaladCoverageContracts(unittest.TestCase):
+    """Fixtures model the observed 132-group cap and provider state schemas."""
+
+    def group(self, name, *, running=0, creating=0, state="running"):
+        return {
+            "name": name,
+            "replicas": 1,
+            "current_state": {
+                "status": state,
+                "instance_status_counts": {
+                    "allocating_count": 0,
+                    "creating_count": creating,
+                    "running_count": running,
+                    "stopping_count": 0,
+                },
+            },
+        }
+
+    def test_132_groups_no_default_120_loss(self):
+        groups = [self.group(f"szl-group-{i}") for i in range(132)]
+        item = g.salad_group_page_evidence(groups)
+        self.assertEqual(item["returned_count"], 132)
+        self.assertEqual(item["captured_count"], 132)
+        self.assertEqual(item["omitted_count"], 0)
+        self.assertTrue(item["coverage_complete"])
+
+    def test_explicit_120_cap_discloses_12_groups(self):
+        groups = [self.group(f"szl-group-{i}") for i in range(132)]
+        item = g.salad_group_page_evidence(groups, capture_limit=120)
+        self.assertEqual(item["omitted_count"], 12)
+        self.assertEqual(item["omitted_names"][0], "szl-group-120")
+        self.assertEqual(item["omitted_names"][-1], "szl-group-131")
+        self.assertFalse(item["coverage_complete"])
+
+    def test_omitted_activity_is_not_lost(self):
+        groups = [self.group("szl-a"), self.group("szl-b", creating=1)]
+        item = g.salad_group_page_evidence(groups, capture_limit=1)
+        self.assertEqual(item["omitted_with_nonzero_provider_counts"], ["szl-b"])
+
+    def test_incomplete_transport_never_claims_full_coverage(self):
+        item = g.salad_group_page_evidence(
+            [self.group("szl-a")], listing_complete=False
+        )
+        self.assertFalse(item["coverage_complete"])
+
+    def test_unknown_group_counts_not_silent_zero(self):
+        item = g.salad_group_page_evidence(
+            [self.group("szl-a"), {"name": "szl-b"}],
+            capture_limit=1,
+        )
+        self.assertIn("szl-b", item["omitted_with_unknown_counts"])
+        self.assertIsNone(
+            g.salad_group_page_evidence([{"name": "szl-b"}])["captured"][0]["counts"][
+                "running_count"
+            ]
+        )
+
+    def test_duplicate_names_fail_closed(self):
+        with self.assertRaises(g.EvidenceHold):
+            g.salad_group_page_evidence([self.group("szl-a")] * 2)
+
+    def test_boolean_group_replica_does_not_become_one(self):
+        item = g.salad_group_page_evidence([{"name": "szl-x", "replicas": True}])
+        self.assertIsNone(item["captured"][0]["desired_replicas"])
+
+    def test_active_group_status_does_not_prove_process(self):
+        item = g.salad_group_page_evidence([self.group("szl-x", running=0)])
+        self.assertEqual(item["captured"][0]["group_status"], "running")
+        self.assertEqual(item["captured"][0]["counts"]["running_count"], 0)
+        self.assertIs(item["captured"][0]["process_liveness_verified"], False)
+
+    def test_real_provider_state_string_creating_is_preserved(self):
+        item = g.salad_instance_evidence([{"state": "creating", "update_time": "ts"}])
+        self.assertEqual(item["state_counts"]["creating"], 1)
+        self.assertEqual(item["state_counts"]["running"], 0)
+        self.assertFalse(item["trainer_process_liveness_verified"])
+
+    def test_nested_instance_state_is_supported(self):
+        item = g.salad_instance_evidence(
+            {"instances": [{"current_state": {"status": "running"}}]}
+        )
+        self.assertEqual(item["state_counts"]["running"], 1)
+
+    def test_conflicting_fields_never_become_silent_success(self):
+        item = g.salad_instance_evidence(
+            [{"state": "creating", "current_state": {"status": "running"}}]
+        )
+        self.assertEqual(item["captured_statuses"], ["UNOBSERVED"])
+        self.assertEqual(item["conflicting_status_fields"], 1)
+
+    def test_instance_cap_and_pagination_are_reported(self):
+        item = g.salad_instance_evidence(
+            {"instances": [{"state": "running"}] * 3, "next": "cursor"},
+            capture_limit=2,
+        )
+        self.assertEqual(item["captured_count"], 2)
+        self.assertTrue(item["capture_truncated"])
+        self.assertFalse(item["listing_complete"])
+
+    def test_reconcile_group_count_drift(self):
+        group = g.salad_group_page_evidence([self.group("szl-ring-v3", running=1)])[
+            "captured"
+        ][0]
+        instances = g.salad_instance_evidence([{"state": "creating"}])
+        self.assertEqual(
+            g.reconcile_salad_group_instance_counts(group, instances),
+            "PROVIDER_COUNT_DRIFT",
+        )
+
+    def test_reconcile_group_count_match_is_not_process_proof(self):
+        group = g.salad_group_page_evidence([self.group("szl-ring-v2", creating=1)])[
+            "captured"
+        ][0]
+        instances = g.salad_instance_evidence([{"state": "creating"}])
+        self.assertEqual(
+            g.reconcile_salad_group_instance_counts(group, instances),
+            "PROVIDER_COUNTS_AGREE_NOT_TRAINER_LIVENESS",
+        )
+
+    def test_reconcile_unknown_status_never_asserts_agreement(self):
+        group = g.salad_group_page_evidence([self.group("szl-x")])["captured"][0]
+        item = g.salad_instance_evidence([{"state": "pending"}])
+        self.assertEqual(
+            g.reconcile_salad_group_instance_counts(group, item), "UNOBSERVED"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
