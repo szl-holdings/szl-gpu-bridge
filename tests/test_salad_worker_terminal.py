@@ -306,13 +306,28 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(self.config_kwargs["max_seq_length"], 2048)
         self.assertNotIn("max_length", self.config_kwargs)
 
-    def test_unknown_trl_signature_stops_before_model_loading(self):
-        with patch.object(self.worker, "SFTConfig", lambda **kwargs: None):
-            self.assertEqual(self.run_worker(), 8)
-        self.assertEqual(self.loaded, [])
-        self.assertEqual(self.trained, [])
-        self.assertFalse(any(e["event"] == "complete" for e in self.events))
-        self.assertEqual(self.events[-1]["event"], "fail-closed")
+    def test_unknown_trl_signature_stops_before_any_provider_effect(self):
+        # A broken training runtime must not initialize even the Hub client or
+        # private adapter repository. A published receipt is not fabricated.
+        for constructor in (
+            lambda **kwargs: None,
+            lambda *, max_length=None, max_seq_length=None: None,
+        ):
+            with self.subTest(signature=str(constructor)):
+                self.api_calls.clear()
+                self.events.clear()
+                with patch.object(self.worker, "SFTConfig", constructor), \
+                     patch.object(self.worker, "ReceiptChannel",
+                                  side_effect=AssertionError("unexpected channel")):
+                    self.assertEqual(self.run_worker(), 8)
+                self.assertEqual(self.api_calls, [])
+                self.assertEqual(self.events, [])
+                self.assertEqual(self.uploads, [])
+                self.assertEqual(self.receipt_uploads, [])
+                self.assertEqual(self.loaded, [])
+                self.assertEqual(self.trained, [])
+                self.assertIn("SFTCONFIG_API_CONTRACT_UNSUPPORTED", self.stderr)
+                self.assertNotIn("unit-test-not-a-credential", self.stderr)
 
     def test_ambiguous_or_kwargs_only_sft_api_fails_closed(self):
         for constructor in (
