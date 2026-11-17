@@ -23,6 +23,17 @@ from tools.salad.training_snapshot import (
 )
 
 SALAD_BASE = "https://api.salad.com/api/public/organizations/alloyscape/projects/default/containers/"
+ACCESS_STOP_CODES = frozenset((401, 403, 429))
+
+
+def _http_status(exc):
+    """Typed status only; never log provider exception text or signed URLs."""
+    code = getattr(exc, "code", None)
+    if type(code) is int:
+        return code
+    response = getattr(exc, "response", None)
+    code = getattr(response, "status_code", None)
+    return code if type(code) is int else None
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -55,6 +66,14 @@ def provider_observation(group, token, *, opener=provider_open):
     try:
         with opener(request, timeout=12) as response:
             if response.status != 200:
+                status = response.status
+                if type(status) is int and status in ACCESS_STOP_CODES:
+                    return {
+                        **unavailable,
+                        "reason": "PROVIDER_HTTP_" + str(status),
+                        "http_status": status,
+                        "access_stop_required": True,
+                    }
                 return {**unavailable, "reason": "PROVIDER_HTTP_ERROR"}
             raw = response.read(1_000_001)
             if len(raw) > 1_000_000:
@@ -74,7 +93,13 @@ def provider_observation(group, token, *, opener=provider_open):
             "trainer_process_liveness_verified": False,
         }
     except urllib.error.HTTPError as exc:
-        return {**unavailable, "reason": "PROVIDER_HTTP_" + str(exc.code)}
+        code = _http_status(exc)
+        return {
+            **unavailable,
+            "reason": "PROVIDER_HTTP_" + str(code),
+            "http_status": code,
+            "access_stop_required": code in ACCESS_STOP_CODES,
+        }
     except Exception as exc:
         return {**unavailable, "reason": "PROVIDER_UNAVAILABLE:" + type(exc).__name__}
 
@@ -149,7 +174,13 @@ def observe_training(api, fetch, candidate):
     except EvidenceHold as exc:
         result["reason"] = str(exc)
     except Exception as exc:
-        result["reason"] = "OBSERVATION_UNAVAILABLE:" + type(exc).__name__
+        code = _http_status(exc)
+        if code in ACCESS_STOP_CODES:
+            result["reason"] = "HUB_HTTP_" + str(code)
+            result["http_status"] = code
+            result["access_stop_required"] = True
+        else:
+            result["reason"] = "OBSERVATION_UNAVAILABLE:" + type(exc).__name__
     return result
 
 
@@ -190,6 +221,10 @@ def main():
     from huggingface_hub import HfApi, hf_hub_download
 
     api = HfApi()
+    # These stop flags persist across bounded cycles. No alternate credential
+    # path or repeated request is permitted after a provider's 401/403/429.
+    hub_access_stopped = False
+    salad_access_stopped = False
     for cycle in range(1, args.cycles + 1):
         report = {
             "schema": "szl.training-observation/v1",
@@ -200,12 +235,39 @@ def main():
             "training_complete_verified": False,
         }
         for candidate in candidates:
-            entry = observe_training(api, hf_hub_download, candidate)
-            entry["provider"] = provider_observation(
-                candidate.get("salad_group"), os.environ.get("SALAD_API_KEY")
-            )
+            if hub_access_stopped:
+                entry = {
+                    "repo": candidate.get("repo"),
+                    "target_steps": candidate.get("target_steps"),
+                    "state": "UNAVAILABLE",
+                    "reason": "HUB_ACCESS_STOPPED_AFTER_DENIAL",
+                    "training_complete_verified": False,
+                    "promotion_authorized": False,
+                    "trainer_process_liveness_verified": False,
+                }
+            else:
+                entry = observe_training(api, hf_hub_download, candidate)
+                if entry.get("access_stop_required") is True:
+                    hub_access_stopped = True
+
+            if salad_access_stopped:
+                entry["provider"] = {
+                    "state": "UNAVAILABLE",
+                    "reason": "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL",
+                    "trainer_process_liveness_verified": False,
+                }
+            else:
+                entry["provider"] = provider_observation(
+                    candidate.get("salad_group"), os.environ.get("SALAD_API_KEY")
+                )
+                if entry["provider"].get("access_stop_required") is True:
+                    salad_access_stopped = True
             entry["observed_at_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
             report["candidates"].append(entry)
+        report["provider_lane_stops"] = {
+            "huggingface": hub_access_stopped,
+            "salad": salad_access_stopped,
+        }
         report["observed_at_utc"] = dt.datetime.now(dt.timezone.utc).isoformat()
         report["stale_after_seconds"] = 2 * args.interval + 60
         atomic_status(args.status, report)

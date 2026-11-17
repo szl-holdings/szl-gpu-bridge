@@ -31,6 +31,26 @@ prove deletion, lost artifacts or successful retirement. Reconcile a retirement
 receipt and its archival scope before making stronger claims. Partial listings
 leave prior identifiers unassessed.
 
+## Stop on denied provider access
+
+The source-controlled bounded `tools/salad/training_observer.py` observer
+treats Hub metadata/download 401, 403 and 429 and Salad instance-GET
+401, 403 and 429 as **provider-lane stops** for all remaining candidates
+and subsequent cycles in that same process. It records the HTTP status
+without exception contents, and reports later reads as `UNAVAILABLE`
+with an explicit stopped reason. A denial from one provider does not
+authorize an alternate credential, endpoint or account; the other
+independent provider lane may remain observable.
+
+HTTP 200 or Salad's group status does not establish trainer-process
+liveness, completion, artifact integrity, quality, or production
+qualification. A non-denial 404 is not falsely interpreted as a
+successful zero-instance result. The observer's periodic output
+remains bounded and observer-owned; this source repair neither creates
+another scheduler nor deploys, modifies or supplants the protected
+owner-device one-shot release. Verify any release change with its own
+hashes, integration checks and admission process.
+
 ## Historical evaluation correction
 
 The source card under `hf/abstention-v2-candidate/` preserves an existing six-probe
