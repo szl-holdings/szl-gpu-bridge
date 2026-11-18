@@ -103,6 +103,10 @@ test("exact Hub 307 cache path is allowed, unbound or cross-host final URL denie
   await assert.rejects(()=>fetchBounded(request,99,async()=>
     response([utf('{}')],2,"https://evil.example/file")),/IMMUTABLE_SOURCE_REDIRECT_INVALID/);
   await assert.rejects(()=>fetchBounded(request,99,async()=>
+    response([utf('{}')],2,"https://huggingface.co/api/resolve-cache/datasets/"+DATASET+"/"+REV+"/receipts%2Fother.json")),/IMMUTABLE_SOURCE_REDIRECT_INVALID/);
+  await assert.rejects(()=>fetchBounded(request,99,async()=>
+    response([utf('{}')],2,"https://huggingface.co/datasets/"+DATASET+"/resolve/"+REV+"/receipts/another.json")),/IMMUTABLE_SOURCE_REDIRECT_INVALID/);
+  await assert.rejects(()=>fetchBounded(request,99,async()=>
     response([utf('{}')],2,"https://huggingface.co/api/resolve-cache/datasets/"+DATASET+"/"+"d".repeat(40)+"/x")),/IMMUTABLE_SOURCE_REDIRECT_INVALID/);
   await assert.rejects(()=>fetchBounded(HUB_API,99,async()=>
     response([utf('{}')],2,cached)),/INDEX_SOURCE_REDIRECTED/);

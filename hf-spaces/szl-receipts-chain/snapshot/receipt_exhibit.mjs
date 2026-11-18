@@ -107,10 +107,27 @@ export async function fetchBounded(url, limit, fetcher=fetch) {
   if(url===HUB_API){
     if(r.url!==HUB_API)throw new EvidenceUnavailable("INDEX_SOURCE_REDIRECTED");
   } else {
-    const sha=url.split("/resolve/")[1]?.slice(0,40);
-    const original="https://huggingface.co/datasets/"+DATASET+"/resolve/"+sha+"/";
-    const cached="https://huggingface.co/api/resolve-cache/datasets/"+DATASET+"/"+sha+"/";
-    if(!SHA.test(sha)||!(r.url.startsWith(original)||r.url.startsWith(cached)))
+    const prefix="https://huggingface.co/datasets/"+DATASET+"/resolve/";
+    if(!url.startsWith(prefix))
+      throw new EvidenceUnavailable("IMMUTABLE_SOURCE_REDIRECT_INVALID");
+    const suffix=url.slice(prefix.length);
+    const sha=suffix.slice(0,40);
+    if(!SHA.test(sha)||suffix[40]!=="/")
+      throw new EvidenceUnavailable("IMMUTABLE_SOURCE_REDIRECT_INVALID");
+    const encodedPath=suffix.slice(41);
+    let path;
+    try {path=encodedPath.split("/").map(decodeURIComponent).join("/");}
+    catch {throw new EvidenceUnavailable("IMMUTABLE_SOURCE_REDIRECT_INVALID");}
+    if(!PATH.test(path)||path.includes("..")||
+       encodedPath!==path.split("/").map(encodeURIComponent).join("/"))
+      throw new EvidenceUnavailable("IMMUTABLE_SOURCE_REDIRECT_INVALID");
+    const final=new URL(r.url);
+    const originalPath=new URL(url).pathname;
+    // The HF resolve-cache endpoint URL-encodes all path separators as %2F.
+    const cachePath="/api/resolve-cache/datasets/"+DATASET+"/"+sha+"/"+
+      encodeURIComponent(path);
+    if(final.origin!=="https://huggingface.co" || final.hash ||
+       !(final.pathname===originalPath && !final.search || final.pathname===cachePath))
       throw new EvidenceUnavailable("IMMUTABLE_SOURCE_REDIRECT_INVALID");
   }
   const declared=Number(r.headers?.get?.("content-length")||0);
