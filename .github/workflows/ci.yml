@@ -62,6 +62,7 @@ jobs:
         run: >-
           python -m py_compile laptop/*.py tests/*.py
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -70,6 +71,7 @@ jobs:
         run: >-
           ruff format --check laptop tests
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -78,6 +80,7 @@ jobs:
         run: >-
           ruff check laptop tests
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
+          tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
