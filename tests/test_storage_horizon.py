@@ -101,9 +101,7 @@ class StorageHorizonTests(unittest.TestCase):
     def test_rising_pressure_holds_even_when_latest_above_reserve(self):
         result = h.assess(history((100, 85, 70)), now=NOW)
         self.assertGreater(result["max_observed_depletion_bytes_per_second"], 0)
-        self.assertIn(
-            "OBSERVED_TREND_EXHAUSTS_4H_PLANNING_RESERVE", result["reasons"]
-        )
+        self.assertIn("OBSERVED_TREND_EXHAUSTS_4H_PLANNING_RESERVE", result["reasons"])
         self.assertFalse(result["projection_is_statistical_confidence_bound"])
 
     def test_high_swing_is_not_hidden_by_minimum(self):
@@ -134,9 +132,9 @@ class StorageHorizonTests(unittest.TestCase):
     def test_samples_must_be_independent_and_valid(self):
         items = history()
         value = json.loads(items[0])
-        value["observed_samples"][1]["observed_utc"] = value["observed_samples"][
-            0
-        ]["observed_utc"]
+        value["observed_samples"][1]["observed_utc"] = value["observed_samples"][0][
+            "observed_utc"
+        ]
         items[0] = json.dumps(value).encode()
         with self.assertRaisesRegex(h.Hold, "SAMPLE_SPACING_INVALID"):
             h.assess(items, now=NOW)
@@ -177,15 +175,11 @@ class StorageHorizonTests(unittest.TestCase):
     def test_invalid_types_policy_and_version(self):
         for mutate, code in [
             (
-                lambda d: d["verdict"]["policy"].__setitem__(
-                    "minimum_free_gib", True
-                ),
+                lambda d: d["verdict"]["policy"].__setitem__("minimum_free_gib", True),
                 "SOURCE_POLICY_DRIFT",
             ),
             (
-                lambda d: d["observed_samples"][0].__setitem__(
-                    "free_bytes", True
-                ),
+                lambda d: d["observed_samples"][0].__setitem__("free_bytes", True),
                 "FREE_BYTES_INVALID",
             ),
             (
@@ -193,9 +187,7 @@ class StorageHorizonTests(unittest.TestCase):
                 "SOURCE_VERSION_MISMATCH",
             ),
             (
-                lambda d: d["observed_samples"][0].__setitem__(
-                    "used_bytes", -1
-                ),
+                lambda d: d["observed_samples"][0].__setitem__("used_bytes", -1),
                 "USED_BYTES_INVALID",
             ),
         ]:
