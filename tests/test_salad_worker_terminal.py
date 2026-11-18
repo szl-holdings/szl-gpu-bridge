@@ -316,9 +316,14 @@ class TerminalContract(unittest.TestCase):
             with self.subTest(signature=str(constructor)):
                 self.api_calls.clear()
                 self.events.clear()
-                with patch.object(self.worker, "SFTConfig", constructor), \
-                     patch.object(self.worker, "ReceiptChannel",
-                                  side_effect=AssertionError("unexpected channel")):
+                with (
+                    patch.object(self.worker, "SFTConfig", constructor),
+                    patch.object(
+                        self.worker,
+                        "ReceiptChannel",
+                        side_effect=AssertionError("unexpected channel"),
+                    ),
+                ):
                     self.assertEqual(self.run_worker(), 8)
                 self.assertEqual(self.api_calls, [])
                 self.assertEqual(self.events, [])
