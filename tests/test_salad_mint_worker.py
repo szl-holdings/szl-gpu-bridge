@@ -1,0 +1,72 @@
+import hashlib
+import importlib.util
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+WORKER = os.path.abspath(
+    os.path.join(HERE, os.pardir, "tools", "salad", "salad_mint_worker.py")
+)
+
+
+def load_worker():
+    spec = importlib.util.spec_from_file_location(
+        "salad_mint_worker_under_test", WORKER
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class MintWorkerContract(unittest.TestCase):
+    def test_module_imports_and_torch_is_lazy(self):
+        src = open(WORKER, encoding="utf-8").read()
+        self.assertNotIn(
+            "\nimport torch\n", src, "torch must be imported lazily inside main()"
+        )
+        mod = load_worker()
+        self.assertTrue(callable(mod.sha256_file))
+
+    def test_sha256_file_matches_hashlib(self):
+        mod = load_worker()
+        data = os.urandom(1 << 16) + b"\x00" * 1000
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(data)
+            path = f.name
+        try:
+            self.assertEqual(mod.sha256_file(path), hashlib.sha256(data).hexdigest())
+        finally:
+            os.unlink(path)
+
+    def test_help_contract(self):
+        r = subprocess.run(
+            [sys.executable, WORKER, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr[-400:])
+        for flag in (
+            "--base",
+            "--base-revision",
+            "--adapter-repo",
+            "--adapter-path",
+            "--out-repo",
+            "--receipts-repo",
+            "--meta",
+        ):
+            self.assertIn(flag, r.stdout, "missing flag: " + flag)
+
+    def test_doctrine_markers_present(self):
+        src = open(WORKER, encoding="utf-8", errors="replace").read()
+        self.assertIn("szl.mint/v1", src)
+        self.assertIn("repo_exists", src)
+        self.assertIn("never-overwrite", src)
+        self.assertIn("HF_TOKEN", src)
+
+
+if __name__ == "__main__":
+    unittest.main()
