@@ -20,6 +20,7 @@ import sys
 
 SCHEMA = "szl.training-observation-claim-graph/v1"
 WATCH = "szl.training-watch-once/v2"
+CANARY_WATCH = "szl.training-watch-once/v3-candidate-unadmitted"
 MAX_BYTES = 4_000_000
 MAX_GROUPS = 1000
 MAX_CANDIDATES = 500
@@ -94,7 +95,8 @@ def strict_json(raw):
 
 def _watch(report):
     _require(
-        isinstance(report, dict) and report.get("watch_version") == WATCH,
+        isinstance(report, dict)
+        and report.get("watch_version") in (WATCH, CANARY_WATCH),
         "UNRECOGNIZED_WATCH_VERSION",
     )
     _utc(report.get("observed_at_utc"))
@@ -214,6 +216,44 @@ def salad_coverage(report):
             "INVALID_PAGINATION",
         )
         omitted = returned - captured
+        capture = row.get("group_capture")
+        if report.get("watch_version") == CANARY_WATCH:
+            _require(isinstance(capture, dict), "V3_GROUP_CAPTURE_MISSING")
+            ceiling = _count(capture.get("capture_limit"))
+            omitted_names = capture.get("omitted_names")
+            flagged_names = capture.get("omitted_with_nonzero_provider_counts")
+            unknown_names = capture.get("omitted_with_unknown_counts")
+            _require(
+                ceiling is not None
+                and ceiling > 0
+                and ceiling >= captured
+                and capture.get("returned_count") == returned
+                and type(capture.get("returned_count")) is int
+                and capture.get("captured_count") == captured
+                and type(capture.get("captured_count")) is int
+                and capture.get("omitted_count") == omitted
+                and type(capture.get("omitted_count")) is int
+                and capture.get("listing_complete") is (not truncated)
+                and capture.get("coverage_complete") is (not truncated and omitted == 0)
+                and isinstance(omitted_names, list)
+                and len(omitted_names) == omitted
+                and len(set(omitted_names)) == omitted
+                and all(
+                    isinstance(n, str) and GROUP.fullmatch(n) for n in omitted_names
+                )
+                and not set(omitted_names).intersection(
+                    name for proj, name in indexed if proj == project
+                )
+                and isinstance(flagged_names, list)
+                and isinstance(unknown_names, list)
+                and all(
+                    isinstance(n, str) and n in omitted_names for n in flagged_names
+                )
+                and all(
+                    isinstance(n, str) and n in omitted_names for n in unknown_names
+                ),
+                "V3_GROUP_CAPTURE_MISMATCH",
+            )
         total_returned += returned
         total_omitted += omitted
         if omitted:
@@ -273,6 +313,13 @@ def salad_coverage(report):
             "projects": projects,
             "unobserved_projects": missed_projects,
             "project_discovery_complete": project_discovery_complete,
+            "known_project_group_details_complete": bool(projects)
+            and all(
+                row["state"] == "OBSERVED"
+                and row["listing_complete"]
+                and row["omitted_count"] == 0
+                for row in projects
+            ),
             "coverage_complete": not reasons,
             "findings": sorted(set(reasons)),
             "provider_instance_counts": {
@@ -290,6 +337,153 @@ def salad_coverage(report):
         },
         indexed,
     )
+
+
+def instance_coverage(report, indexed):
+    """Validate bounded selected instance GET coverage, never trainer liveness.
+
+    Provider group and instance requests are sequential, not atomic. A count
+    divergence is evidence to reconcile, not a restart or training claim.
+    """
+    salad = report["providers"].get("salad")
+    if not isinstance(salad, dict):
+        return {
+            "state": "UNOBSERVED",
+            "eligible_count": None,
+            "attempted_count": None,
+            "observed_count": 0,
+            "unattempted_count": None,
+            "coverage_complete_of_selected_eligible": False,
+            "provider_count_drift": None,
+            "findings": [],
+            "temporal_atomic": False,
+            "trainer_process_liveness_verified": False,
+        }
+    scope = salad.get("instance_scope")
+    if scope is None:
+        _require(report["watch_version"] != CANARY_WATCH, "V3_INSTANCE_SCOPE_MISSING")
+        return {
+            "state": "NOT_DECLARED_V2",
+            "eligible_count": None,
+            "attempted_count": None,
+            "observed_count": 0,
+            "unattempted_count": None,
+            "coverage_complete_of_selected_eligible": False,
+            "provider_count_drift": None,
+            "findings": [],
+            "temporal_atomic": False,
+            "trainer_process_liveness_verified": False,
+        }
+    _require(isinstance(scope, dict), "INVALID_INSTANCE_SCOPE")
+    eligible = _count(scope.get("eligible_count"))
+    attempted = _count(scope.get("attempted_count"))
+    limit = _count(scope.get("limit"))
+    all_names = scope.get("eligible_names")
+    omitted = scope.get("unattempted_names")
+    inspections = salad.get("instance_inspections")
+    _require(
+        eligible is not None
+        and attempted is not None
+        and limit is not None
+        and 1 <= limit <= 100
+        and attempted <= eligible
+        and attempted <= limit
+        and eligible <= MAX_GROUPS
+        and type(scope.get("provider_denial_stop")) is bool
+        and isinstance(all_names, list)
+        and len(all_names) == eligible
+        and all(isinstance(x, str) and GROUP.fullmatch(x) for x in all_names)
+        and len(set(all_names)) == len(all_names)
+        and isinstance(omitted, list)
+        and omitted == all_names[attempted:]
+        and isinstance(inspections, list)
+        and len(inspections) == attempted,
+        "INVALID_INSTANCE_SCOPE",
+    )
+    checked = set()
+    observed = 0
+    complete_observations = 0
+    drift = 0
+    downloading_unmappable = 0
+    for index, entry in enumerate(inspections):
+        _require(
+            isinstance(entry, dict)
+            and isinstance(entry.get("project"), str)
+            and isinstance(entry.get("group"), str)
+            and entry["group"] == all_names[index]
+            and (entry["project"], entry["group"]) in indexed
+            and (entry["project"], entry["group"]) not in checked,
+            "INSTANCE_IDENTITY_MISMATCH",
+        )
+        checked.add((entry["project"], entry["group"]))
+        state = entry.get("status")
+        _require(state in ("OBSERVED", "UNOBSERVED"), "INVALID_INSTANCE_STATUS")
+        if state == "OBSERVED":
+            observed += 1
+            proof = entry.get("instance_evidence")
+            _require(isinstance(proof, dict), "INVALID_INSTANCE_EVIDENCE")
+            returned = _count(proof.get("returned_count"))
+            captured = _count(proof.get("captured_count"))
+            _require(
+                returned is not None
+                and captured is not None
+                and returned >= captured
+                and type(proof.get("coverage_complete")) is bool
+                and _count(proof.get("unobserved_status_count")) is not None
+                and _count(proof.get("conflicting_status_fields")) is not None,
+                "INVALID_INSTANCE_EVIDENCE",
+            )
+            matched = entry.get("group_instance_count_reconciliation")
+            _require(
+                matched
+                in (
+                    "PROVIDER_COUNTS_AGREE_NOT_TRAINER_LIVENESS",
+                    "PROVIDER_COUNT_DRIFT",
+                    "UNOBSERVED",
+                    "PROVIDER_COUNTS_NOT_COMPARABLE_DOWNLOADING",
+                ),
+                "INVALID_COUNT_RECONCILIATION",
+            )
+            if matched == "PROVIDER_COUNT_DRIFT":
+                drift += 1
+            if matched == "PROVIDER_COUNTS_NOT_COMPARABLE_DOWNLOADING":
+                downloading_unmappable += 1
+            if (
+                proof["coverage_complete"]
+                and not proof["unobserved_status_count"]
+                and not proof["conflicting_status_fields"]
+            ):
+                complete_observations += 1
+    full = (
+        attempted == eligible
+        and observed == eligible
+        and complete_observations == observed
+        and not scope["provider_denial_stop"]
+    )
+    reasons = []
+    if attempted < eligible:
+        reasons.append("INSTANCE_GET_ELIGIBLE_OMISSIONS")
+    if observed < attempted or complete_observations < observed:
+        reasons.append("INSTANCE_GET_PARTIAL_OBSERVATIONS")
+    if scope["provider_denial_stop"]:
+        reasons.append("INSTANCE_PROVIDER_DENIAL_STOP")
+    if drift:
+        reasons.append("SEQUENTIAL_PROVIDER_COUNTS_DIFFER_NOT_ATOMIC")
+    if downloading_unmappable:
+        reasons.append("DOWNLOADING_INSTANCE_HAS_NO_GROUP_COUNT_COUNTER")
+    return {
+        "state": "OBSERVED_WITH_LIMITS",
+        "eligible_count": eligible,
+        "attempted_count": attempted,
+        "observed_count": observed,
+        "unattempted_count": eligible - attempted,
+        "coverage_complete_of_selected_eligible": full,
+        "provider_count_drift": drift,
+        "provider_count_not_comparable_downloading": downloading_unmappable,
+        "findings": reasons,
+        "temporal_atomic": False,
+        "trainer_process_liveness_verified": False,
+    }
 
 
 def _trainer(row):
@@ -360,7 +554,9 @@ def model_claims(report, previous, indexed):
             for g in indexed.values()
             if g["model_repo"] == repo
             and g["classification"] == "TRAINING"
-            and g["classification_basis"] == "COMMAND_TARGET"
+            and g["classification_basis"]
+            in ("COMMAND_TARGET", "COMMAND_TRAINING_TARGET")
+            and g["configured_max_steps"] is not None
         ]
         binding = (
             "UNOBSERVED"
@@ -434,6 +630,7 @@ def derive(current, previous=None):
             "OBSERVATION_TIME_ORDER_INVALID",
         )
     coverage, indexed = salad_coverage(current)
+    instance = instance_coverage(current, indexed)
     claims = model_claims(current, previous, indexed)
     hf = current["providers"].get("huggingface", {})
     capped = (
@@ -443,6 +640,9 @@ def derive(current, previous=None):
         and hf["datasets_count_returned"] >= hf["dataset_limit"]
     )
     findings = list(coverage["findings"])
+    findings.extend(instance["findings"])
+    if current["watch_version"] == CANARY_WATCH:
+        findings.append("CANDIDATE_RELEASE_NOT_ADMITTED")
     if capped:
         findings.append("HF_DATASET_LIST_CAPPED")
     if any(x["command_target_binding"] == "TARGET_MISMATCH" for x in claims):
@@ -458,9 +658,16 @@ def derive(current, previous=None):
         "schema": SCHEMA,
         "observed_at_utc": current["observed_at_utc"],
         "prior_observed_at_utc": previous.get("observed_at_utc") if previous else None,
-        "producer_watch_version": WATCH,
+        "producer_watch_version": current["watch_version"],
+        "previous_watch_version": previous["watch_version"] if previous else None,
+        "producer_admission": (
+            "OWNER_REVIEWED_V2_OBSERVER"
+            if current["watch_version"] == WATCH
+            else "V3_CANDIDATE_UNADMITTED_MANUAL_CANARY_ONLY"
+        ),
         "provider_coverage": {
             "salad": coverage,
+            "salad_instances": instance,
             "hf_dataset_listing_capped": bool(capped),
         },
         "model_claims": claims,
@@ -473,6 +680,7 @@ def derive(current, previous=None):
             "cloud_mutations": False,
             "qualification_conferred": False,
             "public_publication": False,
+            "candidate_release_deployed": False,
         },
         "scope": "Private unsigned metadata graph; no node liveness, durable backup, quality, deployment or settlement.",
     }

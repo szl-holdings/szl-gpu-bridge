@@ -311,6 +311,31 @@ class SaladCoverageContracts(unittest.TestCase):
         self.assertEqual(item["state_counts"]["running"], 0)
         self.assertFalse(item["trainer_process_liveness_verified"])
 
+    def test_official_downloading_state_is_preserved_not_running(self):
+        item = g.salad_instance_evidence(
+            [{"state": "downloading", "update_time": "synthetic-utc"}]
+        )
+        self.assertEqual(item["captured_statuses"], ["downloading"])
+        self.assertEqual(item["state_counts"]["downloading"], 1)
+        self.assertEqual(item["state_counts"]["running"], 0)
+        self.assertEqual(item["unobserved_status_count"], 0)
+        self.assertFalse(item["trainer_process_liveness_verified"])
+
+    def test_downloading_has_no_group_counter_comparison(self):
+        group = g.salad_group_page_evidence([self.group("szl-synthetic")])["captured"][
+            0
+        ]
+        item = g.salad_instance_evidence([{"state": "downloading"}])
+        self.assertEqual(
+            g.reconcile_salad_group_instance_counts(group, item),
+            "PROVIDER_COUNTS_NOT_COMPARABLE_DOWNLOADING",
+        )
+
+    def test_unknown_future_state_stays_unobserved(self):
+        item = g.salad_instance_evidence([{"state": "unknown-future-state"}])
+        self.assertEqual(item["captured_statuses"], ["UNOBSERVED"])
+        self.assertEqual(item["unobserved_status_count"], 1)
+
     def test_nested_instance_state_is_supported(self):
         item = g.salad_instance_evidence(
             {"instances": [{"current_state": {"status": "running"}}]}
