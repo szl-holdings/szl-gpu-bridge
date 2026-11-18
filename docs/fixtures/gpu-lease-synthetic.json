@@ -1,0 +1,1275 @@
+{
+  "checkpoint": {
+    "ack_us": 5,
+    "drain_us": 20,
+    "overhead_budget_ppm": 20000,
+    "pause_target_us": 500,
+    "publication_us": 10,
+    "slice_overhead_us": 2
+  },
+  "events": [
+    {
+      "backend": "finite_sliced",
+      "epoch": 1,
+      "generation": 1,
+      "memory_mib": 1024,
+      "op": "prepare",
+      "task": "alpha",
+      "trusted": true
+    },
+    {
+      "epoch": 1,
+      "extent": 10,
+      "generation": 1,
+      "op": "grant",
+      "start": 0,
+      "task": "alpha"
+    },
+    {
+      "committed": 10,
+      "completion_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "epoch": 1,
+      "generation": 1,
+      "grant_id": 1,
+      "op": "complete",
+      "task": "alpha"
+    },
+    {
+      "epoch": 1,
+      "generation": 1,
+      "op": "revoke",
+      "task": "alpha"
+    },
+    {
+      "epoch": 1,
+      "generation": 1,
+      "op": "ack",
+      "task": "alpha"
+    },
+    {
+      "epoch": 1,
+      "generation": 1,
+      "op": "retire",
+      "task": "alpha"
+    },
+    {
+      "next_epoch": 2,
+      "op": "publish_epoch"
+    }
+  ],
+  "memory_limit_mib": 49152,
+  "schema": "szl.gpu-lease-replay/v1",
+  "source": {
+    "evidence_kind": "SYNTHETIC",
+    "repository": "szl-holdings/szl-gpu-bridge",
+    "revision": "5d8f6034a84fe37a4116ff9d7cb4a35f7dcbe667",
+    "upstream_revision": "9eb66b9c68a3e449fdb3b2bd6edf3ddf6bd6d2ca"
+  },
+  "tail": {
+    "confidence_ppm": 950000,
+    "risk_budget_ppm": 10000,
+    "samples": [
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      },
+      {
+        "baseline_us": 100,
+        "shared_us": 104
+      }
+    ],
+    "slowdown_budget_ppm": 60000
+  }
+}

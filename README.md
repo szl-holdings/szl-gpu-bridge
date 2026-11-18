@@ -28,6 +28,28 @@ benchmark, evidence signer, or model-promotion gate. All authority flags remain
 false; a mathematical replica candidate cannot change a Salad resource group.
 See [the research, formula assumptions and replication contract](docs/runbooks/capacity-mathematics.md).
 
+## GPUOS/FuseOS-inspired frontier: proof-carrying GPU leases
+
+[The source-bound GPUOS/FuseOS study](docs/GPUOS_FUSEOS_FRONTIER_STUDY_20261117.md)
+compares the upstream MIT-licensed persistent CUDA/JIT research with vLLM,
+FlashInfer, XSched, NVIDIA Run:ai and existing SZL GPU supervision. The new
+[original Python lease protocol](tools/gpu/lease_protocol.py) simulates
+ordered grants, commit frontiers, revocation, backend resource-return masks,
+code epoch lifetime, buffer ownership and conservative paired-tail admission.
+It includes adversarial concurrency tests, a strict JSON replay CLI and
+self-contained static HTML output. The existing CI compiles, formats, lints
+and tests this module; the root package remains unchanged.
+
+**This is not a GPU scheduler deployed on the A6000s.** All records are
+synthetic, source/provenance declarations are unverified and actual training,
+production allocation, signing, multi-tenant isolation and billing remain
+unauthorized. See the study for exact prerequisites and competitor controls.
+
+```bash
+python -m unittest discover -s tests -p test_gpu_lease_protocol.py -v
+python tools/gpu/lease_protocol.py --input docs/fixtures/gpu-lease-synthetic.json --format json
+```
+
 ## Architecture
 
 ```text
