@@ -168,6 +168,93 @@ class FleetContractTests(unittest.TestCase):
             )
         )
 
+    def test_zero_replica_deploying_group_is_not_claimed_to_have_active_gpu(self):
+        g = group(75)
+        g["replicas"] = 0
+        result = watch.summarize_fleet({"items": [g]})
+        self.assertEqual(
+            result["state_by_replica_intent"],
+            {"deploying": {"parked_zero_replicas": 1}},
+        )
+        self.assertEqual(result["configured_replicas_known_subtotal"], 0)
+        self.assertFalse(result["billable_runtime_state_verified"])
+
+    def test_selected_instances_report_download_not_running_and_strip_machine_data(
+        self,
+    ):
+        g = group(0)
+        g["name"] = "szl-train-flagship54-v2"
+        g["current_state"]["instance_status_counts"]["running_count"] = 0
+        provider_calls = []
+
+        def reader(url, *, token=None):
+            provider_calls.append((url, bool(token)))
+            if url == watch.PROVIDER_URL:
+                return {"items": [g]}
+            if url == watch.INSTANCE_URLS["szl-train-flagship54-v2"]:
+                return {
+                    "instances": [
+                        {
+                            "state": "downloading",
+                            "ready": False,
+                            "started": True,
+                            "id": "DO_NOT_LEAK_SENTINEL",
+                            "ssh_ip": "DO_NOT_LEAK_SENTINEL",
+                        }
+                    ]
+                }
+            return []
+
+        result, drift = watch.collect("SYNTHETIC", reader=reader, now=NOW)
+        item = result["fleet"]["selected_instance_readbacks"]["szl-train-flagship54-v2"]
+        self.assertEqual(item["instance_states"], {"downloading": 1})
+        self.assertEqual(item["ready_count_provider_reported"], 0)
+        self.assertEqual(item["started_count_provider_reported"], 1)
+        self.assertFalse(item["trainer_process_verified"])
+        self.assertFalse(item["provider_group_snapshot_atomic"])
+        self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(result))
+        self.assertEqual(len(provider_calls), 3)
+        self.assertEqual(provider_calls[-1], (watch.CHAIN_URL, False))
+        self.assertEqual(drift, [])
+
+    def test_429_on_one_selected_group_blocks_other_selected_reads(self):
+        names = ["szl-train-a11oy-mini-r1", "szl-train-flagship54-v2"]
+        groups = []
+        for i, name in enumerate(names):
+            g = group(i)
+            g["name"] = name
+            groups.append(g)
+        calls = []
+
+        def reader(url, *, token=None):
+            calls.append((url, bool(token)))
+            if url == watch.PROVIDER_URL:
+                return {"items": groups}
+            if url == watch.CHAIN_URL:
+                return []
+            raise urllib.error.HTTPError(url, 429, "private trace", None, None)
+
+        result, drift = watch.collect("SYNTHETIC", reader=reader, now=NOW)
+        rb = result["fleet"]["selected_instance_readbacks"]
+        self.assertTrue(result["fleet"]["selected_instance_access_stopped"])
+        self.assertEqual(rb[names[0]]["reason"], "PROVIDER_HTTP_429")
+        self.assertEqual(rb[names[1]]["reason"], "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL")
+        self.assertIn("SALAD_SELECTED_INSTANCES_HTTP_429", drift)
+        self.assertEqual(len(calls), 3, "No retry or second selected instance GET")
+        self.assertNotIn("private trace", json.dumps(result))
+
+    def test_bad_instance_collection_is_not_zero_and_api_allowlist_is_exact(self):
+        with self.assertRaisesRegex(watch.Unavailable, "INVALID_INSTANCE_COLLECTION"):
+            watch.summarize_instances({"items": []})
+        with self.assertRaisesRegex(watch.Unavailable, "INSTANCE_LIST_BUDGET"):
+            watch.summarize_instances({"instances": [{}] * 65})
+        with self.assertRaisesRegex(watch.Unavailable, "UNAPPROVED_SOURCE"):
+            watch.read_json(
+                watch.PROVIDER_URL + "/unapproved/instances", token="SYNTHETIC"
+            )
+        with self.assertRaisesRegex(watch.Unavailable, "PROVIDER_KEY_REQUIRED"):
+            watch.read_json(watch.INSTANCE_URLS["szl-train-flagship54-v2"])
+
     def test_public_chain_commit_recency_is_global_not_per_lane(self):
         chain = [
             {"date": "2026-11-17T23:29:00Z", "title": "boot"},
