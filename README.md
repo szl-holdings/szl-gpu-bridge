@@ -17,6 +17,17 @@
 
 This repository is the controlled channel between SZL cloud sessions and the owner’s Windows/NVIDIA training host. The cloud cannot reach the laptop; the laptop polls this repository. Every executable job is DSSE-signed by the pinned SZL engine key. The laptop verifies the exact envelope bytes before reading job fields, then either executes an allowlisted local runner or records a permanent refusal.
 
+## Queueing and capacity research (offline, advisory)
+
+The pure-Python capacity experiment at [tools/salad/capacity_math.py](tools/salad/capacity_math.py)
+uses source-pinned **Little, Kingman, Netflix Vegas and Kubernetes-inspired**
+formulae against a bounded SYNTHETIC or unverified operator-supplied window.
+It produces JSON or Python-rendered static HTML without contacting a provider.
+This is **not a GPU scaler**, scheduler, billing agent, observed production
+benchmark, evidence signer, or model-promotion gate. All authority flags remain
+false; a mathematical replica candidate cannot change a Salad resource group.
+See [the research, formula assumptions and replication contract](docs/runbooks/capacity-mathematics.md).
+
 ## Architecture
 
 ```text
