@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.9, 2026-11-17).
+"""salad_worker.py — the resumable burst-training worker (v3.10, 2026-11-18).
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -93,6 +93,18 @@ model repo); credentials are never widened and there is no destination fallback.
 Boot admission precedes model loading, heartbeat loss requests a checkpoint and
 stops training, and a missing final receipt returns exit 8 without claiming success.
 Local pending bytes are recovery evidence, not proof of publication.
+
+v3.10 adds F10 - resume-time final restoration. F6 refused to retrain a terminal
+checkpoint but also refused to publish, so a preemption between the last trainer
+step and the final-adapter upload wedged the lane permanently: every respawn
+found checkpoint-N at target with no final/ and exited 7 (observed 2026-11-18 on
+chaski-r4-r3; the lane needed a manual final/ completion built from checkpoint
+bytes). The F6 branch now republishes the terminal checkpoint's non-pickle
+adapter artifacts as final/ under the same visibility checks and pickle
+exclusions, records a final_restored field in the already-complete receipt, and
+exits 0. A terminal checkpoint without adapter weights (or an unreadable
+checkpoint directory) still fails closed, and no new training steps ever run in
+this branch.
 """
 from __future__ import annotations
 import argparse, datetime, hashlib, inspect, json, os, signal, sys, time
@@ -885,7 +897,7 @@ def run_training(a, api) -> int:
                              else "GENESIS (no checkpoints on hub)"),
              "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU",
              "node": os.environ.get("HOSTNAME", "unknown"),
-             "worker_version": "v3.9.1-20261117",
+             "worker_version": "v3.10.0-20261118",
              "target_steps": a.max_steps,
              "prompt_completion_format": a.prompt_completion_format,
              "base_revision": a.base_revision or None,
@@ -909,12 +921,79 @@ def run_training(a, api) -> int:
                     a.adapter_out, repo_type="model")
             except Exception:
                 final_present = False
+            restored = None
+            if not final_present:
+                # F10: a preemption between the last trainer step and the final-adapter
+                # upload used to wedge the lane permanently: every respawn found a
+                # terminal checkpoint with no final/, emitted "incomplete", and
+                # exited 7 (observed 2026-11-18 on chaski-r4-r3; the lane needed a
+                # manual final/ completion built from checkpoint bytes). The
+                # terminal checkpoint's non-pickle adapter artifacts are the exact
+                # trained weights, so a respawn now republishes them as final/
+                # under the same visibility checks and pickle exclusions, records
+                # the restoration in the already-complete receipt, and exits 0.
+                import fnmatch, shutil
+                if not os.path.isdir(resume):
+                    receipt("fail-closed",
+                            f"terminal checkpoint {resume!r} is not a readable local "
+                            "directory; final restoration impossible",
+                            {"resume_global_step": rgs, "max_steps": a.max_steps,
+                             "final_adapter_present": False, "completion_qualified": False,
+                             "new_steps_this_boot": 0,
+                             "energy_scope": energy_scope,
+                             "zeus_window": zeus_end_window(),
+                             "energy_start": energy_start, "energy_end": energy_end,
+                             "energy_j": energy_delta(energy_start, energy_end)})
+                    print("FAIL-CLOSED: terminal checkpoint directory unavailable; "
+                          "refusing completion or automatic retraining",
+                          file=sys.stderr, flush=True)
+                    return 7
+                final_local = os.path.join(a.output_dir, "final")
+                os.makedirs(final_local, exist_ok=True)
+                copied = []
+                for name in sorted(os.listdir(resume)):
+                    source = os.path.join(resume, name)
+                    if not os.path.isfile(source):
+                        continue
+                    if any(fnmatch.fnmatch(name, pattern) for pattern in PICKLE_PATTERNS):
+                        continue
+                    shutil.copy2(source, os.path.join(final_local, name))
+                    copied.append(name)
+                if not os.path.isfile(os.path.join(final_local, "adapter_model.safetensors")):
+                    receipt("fail-closed",
+                            f"terminal checkpoint {os.path.basename(resume)} has no "
+                            "adapter_model.safetensors; final publication impossible",
+                            {"resume_global_step": rgs, "max_steps": a.max_steps,
+                             "final_adapter_present": False, "completion_qualified": False,
+                             "new_steps_this_boot": 0,
+                             "energy_scope": energy_scope,
+                             "zeus_window": zeus_end_window(),
+                             "energy_start": energy_start, "energy_end": energy_end,
+                             "energy_j": energy_delta(energy_start, energy_end)})
+                    print("FAIL-CLOSED: terminal checkpoint lacks adapter weights; "
+                          "refusing completion or automatic retraining",
+                          file=sys.stderr, flush=True)
+                    return 7
+                try:
+                    final_commit = receipt_retry(lambda: api.upload_folder(
+                        folder_path=final_local, path_in_repo="final",
+                        repo_id=a.adapter_out, repo_type="model",
+                        ignore_patterns=PICKLE_PATTERNS), "final adapter upload")
+                except Exception as error:
+                    raise ArtifactError(
+                        f"final adapter upload failed ({transport_label(error)})") from None
+                restored = {"restored_from": os.path.basename(resume),
+                            "files": copied,
+                            "final_revision": hub_revision(final_commit),
+                            "scope": "TERMINAL_CHECKPOINT_BYTES_REPUBLISHED_NOT_NEW_TRAINING"}
+                final_present = True
             receipt("already-complete" if final_present else "incomplete",
                     f"resumed checkpoint global_step={rgs} >= max_steps={a.max_steps} — "
                     "training already complete on this lane; no new steps this boot"
                     + ("" if final_present else "; FINAL ADAPTER MISSING — investigate"),
                     {"resume_global_step": rgs, "max_steps": a.max_steps,
                      "final_adapter_present": final_present,
+                     "final_restored": restored,
                      "new_steps_this_boot": 0,
                      "completion_qualified": False,
                      "scope": "RESUME_TERMINAL_METADATA_NOT_NEW_TRAINING",
