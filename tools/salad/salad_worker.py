@@ -829,6 +829,16 @@ def main() -> int:
         print("FAIL-CLOSED: HF_TOKEN required (env or --hf-token)", file=sys.stderr)
         return 2
 
+    # Never create a Hub client, receipt channel, or private adapter repository
+    # for a worker whose installed TRL constructor cannot bind the exact
+    # requested training sequence length. No provider receipt is claimed here.
+    try:
+        sft_sequence_length_kwargs(SFTConfig, 2048)
+    except RuntimeError:
+        print("FAIL-CLOSED: SFTCONFIG_API_CONTRACT_UNSUPPORTED; "
+              "no provider effects or training started", file=sys.stderr, flush=True)
+        return 8
+
     api = HfApi(token=a.hf_token)
     global RECEIPTS
     try:
