@@ -14,6 +14,10 @@ $Ledger = "$Root\jobs\seen.txt"
 $Py = "$env:USERPROFILE\miniconda3\envs\szl-bridge\python.exe"
 $Api = "https://api.github.com/repos/szl-holdings/szl-gpu-bridge/contents/queue/pending"
 $Raw = "https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/queue/pending"
+# Fixed operator storage gate (docs/runbooks/workstation-storage-preflight.md).
+# Its thresholds live here and are never read from a job spec.
+$Preflight = "$Root\storage_preflight.py"
+$PreflightEvidence = "$Root\logs\storage-preflight"
 
 function Log($m) { "$(Get-Date -Format o)  $m" | Add-Content -Path $Log }
 
@@ -53,6 +57,24 @@ try {
     $specPath = "$Root\jobs\$($f.name)"
     Invoke-WebRequest -Uri "$Raw/$($f.name)?t=$bust" -OutFile $specPath -Headers @{ "User-Agent" = "szl-gpu-bridge-daemon" }
     Log "picked up $jobId -- verify-first dispatcher will select an allowlisted local runner"
+
+    # Storage admission is re-measured immediately before every dispatch, so a
+    # restart or a retried job never relies on an earlier reading. A missing
+    # script or any non-zero exit (78 = HOLD) refuses this dispatch without a
+    # ledger mutation; the job is retried next cycle and this cycle stops here.
+    if (-not (Test-Path -LiteralPath $Preflight -PathType Leaf)) {
+      Log "$jobId STORAGE HOLD -- storage_preflight.py is absent; not dispatched, left off the ledger"
+      break
+    }
+    $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssfffZ")
+    $preflightReceipt = "$PreflightEvidence\$stamp-storage-preflight.json"
+    & $Py -I -B $Preflight --root 'C:\' --samples 5 --interval-sec 2 --min-free-gib 50 --max-swing-gib 2 --receipt $preflightReceipt *>> $Log
+    $preflightCode = $LASTEXITCODE
+    if ($preflightCode -ne 0) {
+      Log "$jobId STORAGE HOLD (preflight exit $preflightCode) -- not dispatched, left off the ledger for retry next cycle"
+      break
+    }
+    Log "$jobId storage preflight passed (storage only; every other gate remains the dispatcher's)"
 
     # dispatcher.py verifies the DSSE envelope and pinned engine identity before
     # reading kind/jobId/output fields. Exit codes:

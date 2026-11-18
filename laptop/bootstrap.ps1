@@ -229,6 +229,7 @@ $Files = @(
   @("laptop/runjob.py", "$Root\runjob.py"),
   @("laptop/runjob_frontier.py", "$Root\runjob_frontier.py"),
   @("laptop/runjob_nemo_v3.py", "$Root\runjob_nemo_v3.py"),
+  @("laptop/storage_preflight.py", "$Root\storage_preflight.py"),
   @("schema/jobspec.v1.json", "$Root\schema\jobspec.v1.json"),
   @("schema/jobspec.v2.json", "$Root\schema\jobspec.v2.json"),
   @("schema/nemo-v3-jobspec.v1.json", "$Root\schema\nemo-v3-jobspec.v1.json")
@@ -246,7 +247,8 @@ foreach ($Pair in $Files) {
   "$Root\finalize_nemo_v3_receipt.py" `
   "$Root\runjob.py" `
   "$Root\runjob_frontier.py" `
-  "$Root\runjob_nemo_v3.py"
+  "$Root\runjob_nemo_v3.py" `
+  "$Root\storage_preflight.py"
 if ($LASTEXITCODE -ne 0) { throw "downloaded bridge Python failed compilation" }
 
 # GGUF jobs are accepted only when a real llama-cli is discoverable for reload smoke.

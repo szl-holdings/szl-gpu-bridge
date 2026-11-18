@@ -71,13 +71,30 @@ private addresses, file names or personal details are required.
 The command never deletes files, installs tasks, downloads packages,
 stops jobs or attempts administrator access.
 
+## Dispatcher integration (owner-approved 2026-11-18)
+
+`laptop/daemon.ps1` now runs this script with fixed constants (`--samples 5
+--interval-sec 2 --min-free-gib 50 --max-swing-gib 2`) immediately before
+every `dispatcher.py` call. The thresholds are never read from a job spec.
+The gate sits after the single-flight lock and inside the dispatch loop, so
+the first cycle after a restart and every retry of a held job re-measure
+storage. A missing script or any non-zero exit stops that cycle without a
+ledger mutation; the job is retried on a later cycle. Each run writes an
+exclusive receipt under `C:\szl-bridge\logs\storage-preflight\`.
+`laptop/bootstrap.ps1` fetches and compiles the script. Ordering and argument
+contracts are tested in `tests/test_daemon_storage_preflight_contract.py`.
+
+This gate is not deployed by merging: a node only gets it when its installed
+`C:\szl-bridge\daemon.ps1` is replaced from reviewed main.
+`install_watchdog.ps1` keeps an existing installed daemon in place, so an
+older daemon keeps running without the gate until bootstrap reinstalls it.
+The runners' per-spec `minFreeDiskGb` check stays in place as a second,
+single-sample gate.
+
 ## Source and system protection
 
-The script is deliberately **not installed into any currently running
-dispatcher**, existing Task Scheduler entry, active HF Space, or GPU
-runtime by this source-only change. That integration is a separate
-owner-approved change that requires an exact signed-job boundary and
-tests for start/restart/resume ordering. Do not introduce a second task
+The script is **not installed into** any existing Task Scheduler entry,
+active HF Space, or GPU runtime by the integration above. Do not introduce a second task
 on BETTERWITHAGE just because a task was not present there; establish
 which machine currently owns the bridge first.
 
