@@ -10,8 +10,6 @@ def sha256_file(p):
 
 
 def main():
-    import torch
-
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--base-revision", default="")
@@ -23,6 +21,8 @@ def main():
     ap.add_argument("--meta", default="")
     ap.add_argument("--gpu", default="cuda")
     a = ap.parse_args()
+    import torch
+
     tok = os.environ.get("HF_TOKEN", "")
     assert tok, "HF_TOKEN required"
     from huggingface_hub import HfApi, hf_hub_download, snapshot_download
