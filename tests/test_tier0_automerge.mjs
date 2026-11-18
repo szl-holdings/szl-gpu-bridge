@@ -4,8 +4,11 @@ import test from 'node:test';
 
 // Execute the actual inline evaluator against an in-memory GitHub boundary.
 // No checkout, credential, provider call, or real merge is used by these tests.
-const workflow = readFileSync(new URL('../.github/workflows/auto-merge-tier0.yml', import.meta.url), 'utf8');
-const source = workflow.split('          script: |\n')[1]
+const workflow = readFileSync(new URL('../.github/workflows/auto-merge-tier0.yml', import.meta.url), 'utf8')
+  .replace(/\r\n/g, '\n'); // Windows checkout must not silently drop the real gate evaluator.
+const parts = workflow.split('          script: |\n');
+assert.equal(parts.length, 2, 'exactly one canonical Tier-0 evaluator is required');
+const source = parts[1]
   .split('\n').map(line => line.replace(/^            /, '')).join('\n');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const evaluate = new AsyncFunction('github', 'context', 'console', source);

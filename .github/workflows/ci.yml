@@ -102,7 +102,8 @@ jobs:
             tests/test_cloud_nemo_v3.mjs \
             tests/test_materialize_frontier_spec.mjs \
             tests/test_tier0_automerge.mjs \
-            tests/test_training_dashboard.mjs
+            tests/test_training_dashboard.mjs \
+            tests/test_receipts_exhibit.mjs
       - name: Validate JSON schemas and queued specs
         run: |
           python - <<'PY'

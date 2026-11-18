@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SZL Receipts Atlas">
+<rect width="64" height="64" rx="14" fill="#081321"/>
+<circle cx="32" cy="32" r="19" fill="none" stroke="#3e647d" stroke-width="2"/>
+<path d="M12 30a20 20 0 0 1 40 4" fill="none" stroke="#4ce0d8" stroke-width="3" stroke-linecap="round"/>
+<circle cx="18" cy="24" r="4" fill="#f3c66b"/>
+<circle cx="42" cy="20" r="4" fill="#809aff"/>
+<circle cx="42" cy="42" r="4" fill="#4ce0d8"/>
+<circle cx="25" cy="40" r="4" fill="#c5a0ef"/>
+<circle cx="32" cy="32" r="4" fill="#e9f4ff"/>
+</svg>
