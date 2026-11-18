@@ -412,7 +412,16 @@ class TerminalContract(unittest.TestCase):
         self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
         self.assertFalse(any(e["event"] == "complete" for e in self.events))
 
-    def test_resume_at_target_without_final_is_failure(self):
+    def make_checkpoint(self, *names):
+        # v3.10: the F10 restore branch reads terminal checkpoint bytes, so the
+        # restore tests need a real directory instead of a bare string path.
+        checkpoint = Path(self.temp.name) / "checkpoint-200"
+        checkpoint.mkdir(parents=True, exist_ok=True)
+        for name in names:
+            (checkpoint / name).write_bytes(b"synthetic-" + name.encode())
+        return checkpoint
+
+    def test_resume_without_final_and_missing_checkpoint_directory_fails_closed(self):
         self.final_present = False
         with (
             patch.object(
@@ -424,7 +433,94 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(self.trained, [])
         self.assertEqual(self.saved, [])
         self.assertEqual(self.uploads, [])
+        self.assertEqual(self.events[-1]["event"], "fail-closed")
         self.assertIs(self.events[-1]["final_adapter_present"], False)
+        self.assertFalse(any(e["event"] == "complete" for e in self.events))
+
+    def test_resume_without_final_and_without_adapter_weights_fails_closed(self):
+        self.final_present = False
+        checkpoint = self.make_checkpoint("adapter_config.json", "optimizer.pt")
+        with (
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.run_worker(), 7)
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.saved, [])
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.events[-1]["event"], "fail-closed")
+        self.assertIs(self.events[-1]["final_adapter_present"], False)
+        self.assertFalse(any(e["event"] == "complete" for e in self.events))
+
+    def test_resume_without_final_restores_terminal_checkpoint_bytes_as_final(self):
+        self.final_present = False
+        checkpoint = self.make_checkpoint(
+            "adapter_model.safetensors",
+            "adapter_config.json",
+            "training_format.json",
+            "optimizer.pt",
+            "scheduler.pt",
+        )
+        with (
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.run_worker(), 0)
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.saved, [])
+        terminal = self.events[-1]
+        self.assertEqual(terminal["event"], "already-complete")
+        self.assertIs(terminal["final_adapter_present"], True)
+        self.assertIs(terminal["new_steps_this_boot"], 0)
+        restored = terminal["final_restored"]
+        self.assertEqual(restored["restored_from"], "checkpoint-200")
+        self.assertEqual(
+            sorted(restored["files"]),
+            [
+                "adapter_config.json",
+                "adapter_model.safetensors",
+                "training_format.json",
+            ],
+        )
+        self.assertEqual(
+            restored["scope"],
+            "TERMINAL_CHECKPOINT_BYTES_REPUBLISHED_NOT_NEW_TRAINING",
+        )
+        self.assertEqual(restored["final_revision"], "a" * 40)
+        self.assertEqual(len(self.uploads), 1)
+        upload = self.uploads[0]
+        self.assertEqual(upload["path_in_repo"], "final")
+        self.assertEqual(upload["repo_id"], "fixture/private-adapter")
+        self.assertIn("*.pt", upload["ignore_patterns"])
+        final_local = Path(upload["folder_path"])
+        self.assertEqual(
+            sorted(path.name for path in final_local.iterdir()),
+            [
+                "adapter_config.json",
+                "adapter_model.safetensors",
+                "training_format.json",
+            ],
+        )
+        self.assertFalse(any(e["event"] == "complete" for e in self.events))
+
+    def test_final_restore_upload_failure_is_sanitized_artifact_failure(self):
+        self.final_present = False
+        self.upload_error = OSError("synthetic-sensitive-url-must-not-be-logged")
+        checkpoint = self.make_checkpoint("adapter_model.safetensors")
+        with (
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.run_worker(), 9)
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.saved, [])
+        self.assertNotIn("synthetic-sensitive", self.stderr + self.stdout)
         self.assertFalse(any(e["event"] == "complete" for e in self.events))
 
     def test_resume_at_target_with_final_does_not_retrain(self):
@@ -756,9 +852,10 @@ class TerminalContract(unittest.TestCase):
 
     def test_missing_final_closes_energy_window_without_retraining(self):
         self.final_present = False
+        checkpoint = self.make_checkpoint("adapter_config.json")
         with (
             patch.object(
-                self.worker, "fetch_resume_checkpoint", return_value="checkpoint-200"
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
             ),
             patch.object(self.worker, "resume_global_step", return_value=200),
             patch.object(
