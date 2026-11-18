@@ -104,8 +104,15 @@ class BuilderTests(unittest.TestCase):
             outside = Path(outside_dir) / "outside.json"
             outside.write_text(json.dumps({"kind": "outside-snapshot"}))
             self.fx.write("valid.json", sealed({"kind": "local"}))
-            (self.fx.root / "escape.json").symlink_to(outside)
-            (self.fx.root / "alias.json").symlink_to(self.fx.root / "valid.json")
+            try:
+                (self.fx.root / "escape.json").symlink_to(outside)
+                (self.fx.root / "alias.json").symlink_to(self.fx.root / "valid.json")
+            except OSError as exc:
+                if getattr(exc, "winerror", None) == 1314:
+                    # Local Windows symlinks need a privilege; do not fake an
+                    # anti-traversal PASS. Linux CI still exercises real links.
+                    self.skipTest("SYMLINK_TEST_UNAVAILABLE_WINERROR_1314")
+                raise
             self.assertEqual(
                 [row["path"] for row in B.build_rows(self.fx.root)], ["valid.json"]
             )

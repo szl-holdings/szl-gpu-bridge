@@ -14,6 +14,7 @@ import time
 import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -79,11 +80,23 @@ class EnergyMeterTests(unittest.TestCase):
         sys.modules.pop("pynvml", None)
 
     def test_no_gpu_reports_unavailable_never_zero(self):
-        r = self.em.self_test()
+        # Simulate NVML absence explicitly: CI/dev machines may have real GPUs.
+        with patch.dict(sys.modules, {"pynvml": None}):
+            r = self.em.self_test()
         self.assertEqual(r["self_test"], "PASS")
         self.assertEqual(r["energy_state"], "UNAVAILABLE")
         self.assertIsNone(r["energy_joules"])
         self.assertIsNone(r["energy_mode"])
+
+    def test_self_test_uses_measured_counter_when_available(self):
+        # Explicit synthetic NVML, not ambient workstation hardware.
+        fake = make_fake_nvml(energy_values=[1000.0, 2000.0, 3500.0])
+        with patch.dict(sys.modules, {"pynvml": fake}):
+            r = self.em.self_test()
+        self.assertEqual(r["self_test"], "PASS")
+        self.assertEqual(r["energy_mode"], "total-energy")
+        self.assertEqual(r["energy_state"], "MEASURED")
+        self.assertEqual(r["energy_joules"], 1.5)
 
     def test_total_energy_mode_measures_joules(self):
         # mJ: probe, start, stop -> 2000, 3500 => 1.5 J
