@@ -31,6 +31,18 @@ prove deletion, lost artifacts or successful retirement. Reconcile a retirement
 receipt and its archival scope before making stronger claims. Partial listings
 leave prior identifiers unassessed.
 
+## Official instance-state coverage
+
+The source-owned instance parser accepts Salad's documented five states:
+allocating, downloading, creating, running and stopping. A downloading
+instance remains a separate observed state. The four group status counters
+have no downloading_count, so the group-to-instance comparison is
+PROVIDER_COUNTS_NOT_COMPARABLE_DOWNLOADING rather than a fabricated equality.
+Unrecognized future states and conflicting fields remain UNOBSERVED; no
+lifecycle label establishes training-process liveness.
+
+See https://salad-tech.readme.io/reference/saladcloud-openapi-spec.
+
 ## Stop on denied provider access
 
 The source-controlled bounded `tools/salad/training_observer.py` observer

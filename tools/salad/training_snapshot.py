@@ -193,7 +193,7 @@ SALAD_INSTANCE_COUNT_FIELDS = (
     "running_count",
     "stopping_count",
 )
-SALAD_INSTANCE_STATES = ("allocating", "creating", "running", "stopping")
+SALAD_INSTANCE_STATES = ("allocating", "downloading", "creating", "running", "stopping")
 
 
 def salad_group_page_evidence(groups, *, capture_limit=256, listing_complete=False):
@@ -349,6 +349,11 @@ def reconcile_salad_group_instance_counts(group, instances):
         for name in SALAD_INSTANCE_COUNT_FIELDS
     ):
         return "UNOBSERVED"
+    # Salad's instance enum includes "downloading"; the group count schema has
+    # no downloading_count. Never compare those four counters as though the
+    # downloading instance did not exist or as though it were already creating.
+    if instances.get("state_counts", {}).get("downloading", 0):
+        return "PROVIDER_COUNTS_NOT_COMPARABLE_DOWNLOADING"
     if any(
         counts[field] != instances["state_counts"].get(field.removesuffix("_count"))
         for field in SALAD_INSTANCE_COUNT_FIELDS

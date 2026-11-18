@@ -38,6 +38,38 @@ An explicit command-derived model_repo and configured_max_steps is a
 **declared command binding**, not proof of image execution, scheduler ownership,
 model identity in GPU memory, or successful training.
 
+## V3 candidate observations (not an admitted release)
+
+The reducer also accepts the explicitly labeled *unadmitted* one-shot
+v3-candidate schema, keeping it separate from the approved v2 watch. This
+supports private, source-bound assessment of a manually authorized canary; it
+does **not** approve its installation, update a scheduler, replace the
+Flagship54 guard, or make the candidate production-ready. Mixed v2/v3
+snapshots may be compared only as different-time evidence, not as continuous
+training-process execution.
+
+For v3, the reducer verifies the producer's explicit group capture ledger
+against the returned and retained group counts. False zero omissions,
+missing capture metadata, inconsistent pagination, and conflicting project
+identities fail closed. A reported zero group omission establishes only the
+checked *project's* listing scope. Unsupported organization project discovery
+remains UNOBSERVED.
+
+The v3 instance ledger separately reports eligible, attempted, observed,
+unattempted and incomplete instance GETs. Even if every selected GET
+returns 200, this is not a trainer heartbeat. Salad's documented
+instance-state enum includes DOWNLOADING in addition to ALLOCATING,
+CREATING, RUNNING and STOPPING. The group count schema has no
+downloading_count; a downloading instance must not be silently converted to
+creating or claimed to match four group counters.
+
+Group and instance requests are sequential; a counter disagreement has
+a non-atomic provenance warning, not an inferred restart loop. A missing
+source field is unavailable, never zero. All quality and publication gates
+remain false for both v2 and v3.
+
+Source reference: https://salad-tech.readme.io/reference/saladcloud-openapi-spec
+
 ## Independent evidence gates
 
 The reducer always leaves training_execution_verified,
