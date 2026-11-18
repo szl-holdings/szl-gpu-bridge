@@ -45,6 +45,7 @@ try {
             {"report": serialized, "existing": existing, "script": script}
         ),
         text=True,
+        encoding="utf-8",  # Node writes UTF-8; Windows' locale is not evidence encoding.
         capture_output=True,
         check=True,
         timeout=10,
