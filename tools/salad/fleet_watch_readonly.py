@@ -26,6 +26,33 @@ CHAIN_URL = (
 )
 MAX_BYTES = 3_000_000
 MAX_GROUPS = 300
+MAX_SELECTED_INSTANCE_CALLS = 5
+MAX_INSTANCES_PER_GROUP = 64
+SOURCE_PRIORITY_GROUPS = frozenset(
+    {
+        "szl-train-flagship54-v2",
+        "szl-train-flagship54-khipu-r2",
+        "szl-train-absrl-grpo-r1",
+        "szl-train-a11oy-mini-r1",
+        "szl-train-prime-principle-r1",
+    }
+)
+INSTANCE_URLS = {
+    name: PROVIDER_URL.split("?", 1)[0] + "/" + name + "/instances"
+    for name in SOURCE_PRIORITY_GROUPS
+}
+INSTANCE_STATES = frozenset(
+    {
+        "allocating",
+        "downloading",
+        "creating",
+        "running",
+        "stopping",
+        "stopped",
+        "failed",
+        "error",
+    }
+)
 ALLOWED_STATES = frozenset(
     {"running", "deploying", "pending", "stopped", "failed", "stopping"}
 )
@@ -43,13 +70,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def read_json(url: str, *, token: str | None = None, opener=None) -> object:
-    if url not in (PROVIDER_URL, CHAIN_URL):
+    if url not in (PROVIDER_URL, CHAIN_URL, *INSTANCE_URLS.values()):
         raise Unavailable("UNAPPROVED_SOURCE")
     headers = {"Accept": "application/json", "User-Agent": "szl-fleet-evidence/1.0"}
     if token is not None:
-        if url != PROVIDER_URL:
+        if url == CHAIN_URL:
             raise Unavailable("CREDENTIAL_SCOPE_REFUSED")
         headers["Salad-Api-Key"] = token
+    elif url != CHAIN_URL:
+        raise Unavailable("PROVIDER_KEY_REQUIRED")
     request = urllib.request.Request(url, headers=headers, method="GET")
     client = opener or urllib.request.build_opener(NoRedirect())
     with client.open(request, timeout=12) as response:
@@ -134,6 +163,16 @@ def summarize_fleet(payload: object) -> dict:
     # A provider's item order is not an immutable identity. Canonicalize by
     # group name before hashing or selecting bounded per-group review samples.
     groups.sort(key=lambda group: group["name"])
+    by_intent = {}
+    for group in groups:
+        intent = (
+            "unknown"
+            if group["configured_replicas"] is None
+            else "parked_zero_replicas"
+            if group["configured_replicas"] == 0
+            else "positive_replica_intent"
+        )
+        by_intent.setdefault(group["state"], Counter())[intent] += 1
     # The provider's collection endpoint does not prove completeness for every
     # project/account. Do not misstate first-response coverage as an estate census.
     canonical = json.dumps(
@@ -155,6 +194,10 @@ def summarize_fleet(payload: object) -> dict:
         "provider_collection_scope": "ONE_BOUNDED_RESPONSE_NOT_PROVEN_EXHAUSTIVE",
         "groups_observed": len(groups),
         "group_state_counts": dict(sorted(state_counts.items())),
+        "state_by_replica_intent": {
+            state: dict(sorted(intents.items()))
+            for state, intents in sorted(by_intent.items())
+        },
         "training_named_group_states": dict(
             sorted(
                 Counter(
@@ -166,16 +209,7 @@ def summarize_fleet(payload: object) -> dict:
             g["name"].startswith("szl-train-") for g in groups
         ),
         "source_priority_group_sample": [
-            g
-            for g in groups
-            if g["name"]
-            in {
-                "szl-train-flagship54-v2",
-                "szl-train-flagship54-khipu-r2",
-                "szl-train-absrl-grpo-r1",
-                "szl-train-a11oy-mini-r1",
-                "szl-train-prime-principle-r1",
-            }
+            g for g in groups if g["name"] in SOURCE_PRIORITY_GROUPS
         ],
         "priority_counts": dict(sorted(priorities.items())),
         "configured_replicas_known_subtotal": known_replicas,
@@ -191,6 +225,41 @@ def summarize_fleet(payload: object) -> dict:
         "ready_instances_independently_verified": False,
         "billable_runtime_state_verified": False,
         "source_deployment_parity_verified": False,
+    }
+
+
+def summarize_instances(payload: object) -> dict:
+    """Bounded provider instance state without machine identities or host data."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("instances"), list):
+        raise Unavailable("INVALID_INSTANCE_COLLECTION")
+    instances = payload["instances"]
+    if len(instances) > MAX_INSTANCES_PER_GROUP:
+        raise Unavailable("INSTANCE_LIST_BUDGET")
+    states: Counter = Counter()
+    ready = started = unknown_ready = 0
+    for value in instances:
+        if not isinstance(value, dict):
+            raise Unavailable("INVALID_INSTANCE_ITEM")
+        state = value.get("state")
+        if not isinstance(state, str) or state not in INSTANCE_STATES:
+            state = "unknown"
+        states[state] += 1
+        if value.get("ready") is True:
+            ready += 1
+        elif value.get("ready") is not False:
+            unknown_ready += 1
+        if value.get("started") is True:
+            started += 1
+    return {
+        "state": "PROVIDER_INSTANCE_METADATA_OBSERVED",
+        "instance_count": len(instances),
+        "instance_states": dict(sorted(states.items())),
+        "ready_count_provider_reported": ready,
+        "started_count_provider_reported": started,
+        "ready_state_unknown_instances": unknown_ready,
+        "trainer_process_verified": False,
+        "source_image_digest_verified": False,
+        "provider_group_snapshot_atomic": False,
     }
 
 
@@ -252,6 +321,41 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
             report["fleet"] = summarize_fleet(reader(PROVIDER_URL, token=key))
             if report["fleet"]["groups_observed"] == 0:
                 drift.append("SALAD_EMPTY_COLLECTION_NOT_PROVEN_COMPLETE")
+            # Up to five immutable-name allowlisted API GETs; 401/403/429
+            # stops subsequent reads without retry or credential fallback.
+            samples = report["fleet"].get("source_priority_group_sample", [])
+            readbacks = {}
+            access_stopped = False
+            for group in samples[:MAX_SELECTED_INSTANCE_CALLS]:
+                name = group["name"]
+                if access_stopped:
+                    readbacks[name] = {
+                        "state": "UNAVAILABLE",
+                        "reason": "PROVIDER_ACCESS_STOPPED_AFTER_DENIAL",
+                    }
+                    continue
+                try:
+                    readbacks[name] = summarize_instances(
+                        reader(INSTANCE_URLS[name], token=key)
+                    )
+                except urllib.error.HTTPError as exc:
+                    code = exc.code if type(exc.code) is int else None
+                    readbacks[name] = {
+                        "state": "UNAVAILABLE",
+                        "reason": "PROVIDER_HTTP_" + str(code),
+                    }
+                    if code in (401, 403, 429):
+                        access_stopped = True
+                        drift.append("SALAD_SELECTED_INSTANCES_HTTP_" + str(code))
+                except Unavailable as exc:
+                    readbacks[name] = {"state": "UNAVAILABLE", "reason": str(exc)}
+                except (OSError, TimeoutError) as exc:
+                    readbacks[name] = {
+                        "state": "UNAVAILABLE",
+                        "reason": type(exc).__name__,
+                    }
+            report["fleet"]["selected_instance_readbacks"] = readbacks
+            report["fleet"]["selected_instance_access_stopped"] = access_stopped
         except urllib.error.HTTPError as exc:
             status = exc.code if type(exc.code) is int else None
             code = "SALAD_HTTP_" + str(status)
