@@ -1,5 +1,4 @@
 import argparse, glob, hashlib, json, os, re, sys, time
-import torch
 
 
 def sha256_file(p):
@@ -11,6 +10,8 @@ def sha256_file(p):
 
 
 def main():
+    import torch
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--base-revision", default="")
