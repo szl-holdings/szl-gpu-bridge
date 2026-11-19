@@ -151,7 +151,8 @@ class StopPreflightTests(unittest.TestCase):
             lambda i, e: e.update(observed_at_utc="2026-11-19T14:30:00Z")
         )
         self.assertEqual(r["reason"], "EVIDENCE_STALE_OR_CLOCK_UNCERTAIN")
-        self.assertEqual(self.run_witness(now="local-now")["reason"], "CLOCK_UNOBSERVED")
+        clock = self.run_witness(now="local-now")
+        self.assertEqual(clock["reason"], "CLOCK_UNOBSERVED")
 
     def test_provider_counts_and_pending(self):
         r = self.run_witness(
