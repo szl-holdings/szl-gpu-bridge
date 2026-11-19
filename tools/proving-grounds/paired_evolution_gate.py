@@ -45,8 +45,10 @@ def exact(value: object, keys: set[str], code: str) -> dict:
 
 
 def pinned(value: object, pattern: re.Pattern) -> bool:
-    return type(value) is str and pattern.fullmatch(value) is not None and any(
-        ch != "0" for ch in value
+    return (
+        type(value) is str
+        and pattern.fullmatch(value) is not None
+        and any(ch != "0" for ch in value)
     )
 
 
@@ -117,7 +119,9 @@ def evaluate(payload: object) -> dict:
         },
         "ROOT_FIELDS_INVALID",
     )
-    require(data["schema"] == SCHEMA and data["repository"] == REPOSITORY, "SCHEMA_INVALID")
+    require(
+        data["schema"] == SCHEMA and data["repository"] == REPOSITORY, "SCHEMA_INVALID"
+    )
     for key in ("source_revision", "plan_revision", "baseline_revision"):
         require(pinned(data[key], REV), "REVISION_NOT_IMMUTABLE")
     require(
@@ -126,16 +130,24 @@ def evaluate(payload: object) -> dict:
     )
     m = data["registered_candidate_count"]
     require(type(m) is int and 1 <= m <= MAX_CANDIDATES, "FAMILY_SIZE_INVALID")
-    require(data["holdout_exposure_rounds"] == 1 and type(data["holdout_exposure_rounds"]) is int,
-            "HOLDOUT_REUSE_NOT_PRE_REGISTERED")
+    require(
+        data["holdout_exposure_rounds"] == 1
+        and type(data["holdout_exposure_rounds"]) is int,
+        "HOLDOUT_REUSE_NOT_PRE_REGISTERED",
+    )
     alpha_ppm = data["alpha_ppm"]
     margin_ppm = data["min_effect_ppm"]
     require(type(alpha_ppm) is int and 100 <= alpha_ppm <= 50_000, "ALPHA_INVALID")
-    require(type(margin_ppm) is int and 0 <= margin_ppm <= 500_000, "EFFECT_MARGIN_INVALID")
+    require(
+        type(margin_ppm) is int and 0 <= margin_ppm <= 500_000, "EFFECT_MARGIN_INVALID"
+    )
 
     cases = data["cases"]
     candidates = data["candidates"]
-    require(type(cases) is list and MIN_CASES <= len(cases) <= MAX_CASES, "CASE_COVERAGE_INVALID")
+    require(
+        type(cases) is list and MIN_CASES <= len(cases) <= MAX_CASES,
+        "CASE_COVERAGE_INVALID",
+    )
     require(type(candidates) is list and len(candidates) == m, "FAMILY_NOT_COMPLETE")
     n = len(cases)
     require(n * m <= MAX_OUTCOMES, "FAMILY_BYTE_BUDGET")
@@ -173,7 +185,10 @@ def evaluate(payload: object) -> dict:
         )
         ident = candidate["id"]
         revision = candidate["revision"]
-        require(type(ident) is str and LABEL.fullmatch(ident) is not None, "CANDIDATE_ID_INVALID")
+        require(
+            type(ident) is str and LABEL.fullmatch(ident) is not None,
+            "CANDIDATE_ID_INVALID",
+        )
         require(ident not in observed_ids, "DUPLICATE_CANDIDATE")
         require(
             pinned(revision, REV) and revision != data["baseline_revision"],
@@ -210,7 +225,9 @@ def evaluate(payload: object) -> dict:
                 "ties": ties,
                 "observed_paired_gain": round(observed_gain, 8),
                 "conditional_familywise_lower_bound": round(lower_bound, 8),
-                "signal": "RESEARCH_REVIEW_ONLY" if signal else "HOLD_NO_SUPPORTED_GAIN",
+                "signal": "RESEARCH_REVIEW_ONLY"
+                if signal
+                else "HOLD_NO_SUPPORTED_GAIN",
             }
         )
     assessments.sort(key=lambda x: x["id"])
@@ -246,13 +263,23 @@ def evaluate(payload: object) -> dict:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Research-only frozen paired-evolution gate")
+    parser = argparse.ArgumentParser(
+        description="Research-only frozen paired-evolution gate"
+    )
     parser.add_argument("--input", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         report = evaluate(load_input(args.input))
     except Hold as error:
-        print(json.dumps({"state": "HOLD", "reason_code": str(error), "release_authorized": False}))
+        print(
+            json.dumps(
+                {
+                    "state": "HOLD",
+                    "reason_code": str(error),
+                    "release_authorized": False,
+                }
+            )
+        )
         return 2
     print(json.dumps(report, sort_keys=True, separators=(",", ":")))
     # Never turn successful source-only research analysis into a release PASS.
