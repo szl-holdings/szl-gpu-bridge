@@ -41,6 +41,8 @@ class BootstrapOwnerAdmissionContract(unittest.TestCase):
         self.assertLess(refuse, active)
         self.assertLess(active, principal)
         self.assertLess(principal, mkdir)
+        self.assertIn("-UserId $TaskOwner -LogonType S4U", source)
+        self.assertNotIn('-UserId "$env:USERDOMAIN', source)
 
     def test_checkout_sources_prechecked_and_copied_without_network(self) -> None:
         source = self.source
