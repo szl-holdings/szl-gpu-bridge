@@ -106,6 +106,17 @@ class WitnessTests(unittest.TestCase):
         group["pending_change"] = True
         self.assertEqual(sample(group=group)["state"], "PROVIDER_UPDATE_PENDING")
 
+    def test_malformed_provider_status_fails_closed(self):
+        for malformed in ([], {}, None, "unexpected"):
+            with self.subTest(status=repr(malformed)):
+                group = sample_group()
+                group["current_state"]["status"] = malformed
+                result = sample(group=group)
+                self.assertEqual(result["state"], "READBACK_STATUS_INVALID")
+                self.assertFalse(result["group_state_reconciled"])
+                self.assertFalse(result["training_launch_authorized"])
+                self.assertFalse(result["shutdown_authorized"])
+
     def test_zero_counts_do_not_prove_completion(self):
         group = sample_group(
             replicas=0,
