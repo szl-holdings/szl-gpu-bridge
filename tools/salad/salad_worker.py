@@ -58,7 +58,7 @@ lanes), it is receipted in a dataset receipt BEFORE training starts, and
 receipt uploads retry (3 attempts, 60s apart) so a transient Hub 429 cannot
 silently drop a proof receipt.
 
-v3.5 adds F9 - verified, honest resume-on-start. Resume existed since v1, but
+v3.5 adds F9 - guarded resume-on-start (F11 source repair further pins full file bytes). Resume existed since v1, but
 every failure mode degraded SILENTLY to GENESIS: a repo-listing error returned
 None, a partial local checkpoint dir (worker killed mid-save) shadowed the
 durable Hub copy, and a failed checkpoint download crashed or restarted from
@@ -353,65 +353,42 @@ def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model")
 
 
 def latest_checkpoint(api: HfApi, repo: str) -> str | None:
-    """The resume-on-start contract: find the newest checkpoint-* revision.
+    """Inspect one immutable metadata revision, never moving-main filename lists."""
+    from tools.salad.resume_integrity import ResumeHold, inspect_pinned_checkpoint
 
-    F9: a listing failure is never silently folded into GENESIS — it raises so
-    the boot receipt can say 'could not check' instead of pretending the lane
-    has no checkpoints. On a spot fleet a silent GENESIS is an unbounded
-    from-scratch respawn loop with zero durable progress.
-    """
     try:
-        files = api.list_repo_files(repo_id=repo, repo_type="model")
-    except Exception as e:
-        raise ResumeError(f"cannot list checkpoints of {repo}: {transport_label(e)}") from None
-    stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
-                   if f.startswith("checkpoint-") and "/" in f
-                   and f.split("/")[0].split("-")[-1].isdigit())
-    return f"checkpoint-{stops[-1]}" if stops else None
+        plan = inspect_pinned_checkpoint(api, repo)
+    except ResumeHold as error:
+        raise ResumeError(str(error)) from None
+    return plan["checkpoint"] if plan else None
 
 
-def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | None:
-    """F9: verified, honest resume-on-start.
+def fetch_resume_checkpoint(
+    api: HfApi, repo: str, output_dir: str, *, expected_target_steps: int
+) -> str | None:
+    """Use exact-revision opaque bytes, not stale local folders or unsigned paths.
 
-    The Hub listing is authoritative. A LOCAL checkpoint dir is trusted only
-    if its trainer_state.json is readable — a worker killed mid-save leaves a
-    partial dir that would otherwise silently shadow the durable Hub copy and
-    force a from-scratch restart (observed 2026-11-15 on the v4 lane: a
-    respawn trained step 1 at full compute despite checkpoint-50 on the Hub).
-    Partial local dirs are deleted and re-downloaded; a download that still
-    fails after retries raises instead of degrading into silent GENESIS.
+    An unavailable checkpoint or metadata readback never degrades into GENESIS.
+    Retain historical local files untouched and use a revision-scoped cache.
     """
-    ck = latest_checkpoint(api, repo)  # raises ResumeError on listing failure
-    if not ck:
-        return None
-    local = os.path.join(output_dir, ck)
-    if os.path.isdir(local) and resume_global_step(local) is None:
-        import shutil
-        shutil.rmtree(local, ignore_errors=True)
-        receipt("warn", f"local {ck} had no readable trainer_state.json "
-                "(killed mid-save?) — deleted; re-downloading the durable Hub copy")
-    if not os.path.isdir(local):
-        for attempt in range(3):
-            try:
-                api.snapshot_download(repo_id=repo, repo_type="model",
-                                      allow_patterns=[f"{ck}/*"], local_dir=output_dir)
-                break
-            except Exception as e:
-                if attempt == 2:
-                    raise ResumeError(f"download of {ck} failed after 3 attempts: {transport_label(e)}") from None
-                time.sleep(60)
-    gs = resume_global_step(local)
-    if gs is None:
-        raise ResumeError(f"{ck} present but trainer_state.json unreadable — refusing silent GENESIS")
-    return local
+    from tools.salad.resume_integrity import ResumeHold, verified_resume_checkpoint
+
+    try:
+        return verified_resume_checkpoint(
+            api, repo, output_dir, expected_steps=expected_target_steps
+        )
+    except ResumeHold as error:
+        raise ResumeError(str(error)) from None
 
 
 def resume_global_step(resume_dir: str) -> int | None:
-    """F6: read the resumed checkpoint's global_step without loading weights."""
+    """Read strict integer Trainer step; never coerce float, bool or text."""
     try:
         with open(os.path.join(resume_dir, "trainer_state.json"), encoding="utf-8") as f:
-            return int(json.load(f).get("global_step", 0))
-    except Exception:
+            state = json.load(f)
+        value = state.get("global_step") if isinstance(state, dict) else None
+        return value if type(value) is int and value >= 0 else None
+    except (OSError, UnicodeError, ValueError, TypeError):
         return None
 
 
@@ -941,7 +918,9 @@ def run_training(a, api) -> int:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
     try:
-        resume = fetch_resume_checkpoint(api, a.adapter_out, a.output_dir)
+        resume = fetch_resume_checkpoint(
+            api, a.adapter_out, a.output_dir, expected_target_steps=a.max_steps
+        )
     except ResumeError as e:
         # F9 fail-closed: never silently restart from step 0 when resume
         # infrastructure is broken — that is an unbounded spot-GPU burn loop.
