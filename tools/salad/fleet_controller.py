@@ -429,7 +429,14 @@ def stop_settled_for_zero_patch(provider, expected_replicas):
     or training completion. The desired replica count is expected to remain
     positive until the subsequent PATCH to zero.
     """
-    if type(provider) is not dict or provider.get("group_state_reconciled") is not True:
+    if (
+        type(provider) is not dict
+        or provider.get("group_state_reconciled") is not True
+        or type(expected_replicas) is not int
+        or expected_replicas <= 0
+        or type(provider.get("desired_replicas")) is not int
+        or type(provider.get("instances_returned")) is not int
+    ):
         return False
     counts = provider.get("actual_counts")
     return (
