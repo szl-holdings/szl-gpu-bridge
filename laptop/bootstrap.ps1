@@ -321,7 +321,7 @@ $Triggers = @(
   (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15))
 )
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Hours 26) -MultipleInstances IgnoreNew
-$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
+$Principal = New-ScheduledTaskPrincipal -UserId $TaskOwner -LogonType S4U -RunLevel Highest
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Triggers -Settings $Settings -Principal $Principal -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Write-Host "scheduled task '$TaskName' registered (startup + every 15 min; single-flight) and started."
