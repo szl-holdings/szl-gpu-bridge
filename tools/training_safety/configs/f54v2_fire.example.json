@@ -1,0 +1,29 @@
+{
+ "salad_key_file": "<OWNER: path to the Salad API key file>",
+ "receipt": "<OWNER: receipts .jsonl path>",
+ "group": "<OWNER: Salad container group name>",
+ "replicas": 1,
+ "admission_polls": 45,
+ "admission_interval": 60,
+ "container": {
+  "image": "<OWNER: image pinned by @sha256: digest>",
+  "command": [
+   "bash",
+   "-lc",
+   "<OWNER: eval pipeline: no inline credentials; pip installs must use --require-hashes>"
+  ],
+  "environment_variables": {
+   "HF_HOME": "/workspace/hf",
+   "PIP_NO_CACHE_DIR": "1"
+  },
+  "resources": {
+   "cpu": 8,
+   "gpu_classes": [
+    "<OWNER: GPU class id(s)>"
+   ],
+   "memory": 65536,
+   "shm_size": 64
+  },
+  "image_caching": true
+ }
+}

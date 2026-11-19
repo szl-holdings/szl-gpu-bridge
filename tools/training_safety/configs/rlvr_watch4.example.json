@@ -1,0 +1,25 @@
+{
+ "salad_key_file": "<OWNER: path to the Salad API key file>",
+ "hf_token_file": "<OWNER: path to the Hugging Face token file>",
+ "churn_threshold": 3,
+ "zero_polls": 10,
+ "zero_interval": 30,
+ "log": "<OWNER: log file path>",
+ "receipts": "<OWNER: receipts .jsonl path>",
+ "cycles": 288,
+ "interval": 300,
+ "max_consecutive_failed_cycles": 12,
+ "groups": [
+  {
+   "name": "<OWNER: Salad container group name>",
+   "repo": "<OWNER: Hub repo holding the artifacts>",
+   "reason": "lane_log",
+   "target_steps": null,
+   "cache_dir": "<OWNER: local cache dir>",
+   "backup_dir": "<OWNER: independent backup dir, not the cache and not the credential dir>",
+   "backup_independent": false,
+   "lane_log_url": "<OWNER: https://huggingface.co/... lane.log URL (huggingface.co only)>",
+   "completion_marker": null
+  }
+ ]
+}

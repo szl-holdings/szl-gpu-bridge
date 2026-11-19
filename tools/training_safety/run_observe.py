@@ -6,6 +6,7 @@ weights are downloaded or copied while owner config fields are blank.
 Credentials are read from the files named in the config by watch_safe/salad_io
 at request time; nothing is put on the command line or printed.
 """
+
 import os
 import sys
 

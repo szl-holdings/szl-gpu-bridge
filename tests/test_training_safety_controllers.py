@@ -120,6 +120,7 @@ class TestProviderStatus(unittest.TestCase):
             {"Salad-Api-Key": "k"},
             {"replicas": 1},
             opener=opener,
+            allowed_hosts=frozenset({"example.invalid"}),
         )
         self.assertEqual(r["status"], 400)
         self.assertFalse(gate.classify_write(r)[0])
@@ -376,7 +377,7 @@ class TestStopPredicate(unittest.TestCase):
         self.assertFalse(gate.decide_stop({"reason": "EVAL_STALLED"})["stop_allowed"])
 
     def test_eval_receipt(self):
-        data = b'{"battery_admissible": true}'
+        data = b'{"schema": "eval/v1", "battery_admissible": true}'
         e = blob(data)
         ev = {
             "reason": "eval_receipt",
@@ -386,6 +387,14 @@ class TestStopPredicate(unittest.TestCase):
             "hub_entries": {"r.json": e},
             "local_readback": {"r.json": e},
             "backup": {"location": "D:/b", "independent": True, "files": {"r.json": e}},
+            "receipt_schema": "eval/v1",
+            "receipt_required_fields": ["battery_admissible"],
+            "receipt_observed": {
+                "r.json": {
+                    "schema": "eval/v1",
+                    "fields": ["battery_admissible", "schema"],
+                }
+            },
         }
         self.assertTrue(gate.decide_stop(ev)["stop_allowed"])
         ev["required_paths"] = []
@@ -440,7 +449,7 @@ class TestHubEvidence(unittest.TestCase):
         }
 
     def download(self, truncate=None):
-        def dl(url, headers, dest):
+        def dl(url, headers, dest, **kw):
             self.assertIn("/resolve/" + REV + "/", url)  # pinned revision
             path = url.split("/resolve/" + REV + "/")[1]
             data = self.files[path]
@@ -709,7 +718,7 @@ class TestLauncher(unittest.TestCase):
         "admission_polls": 3,
         "admission_interval": 0,
         "container": {
-            "image": "img",
+            "image": "img@sha256:" + "a" * 64,
             "command": ["bash", "-lc", "python3 eval.py"],
             "environment_variables": {"HF_HOME": "/workspace/hf"},
         },
