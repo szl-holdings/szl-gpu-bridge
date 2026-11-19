@@ -1,0 +1,155 @@
+name: Workforce officer cycle
+
+# Reusable: one officer, one cycle, one record. Called only by workforce.yml.
+#
+# Two jobs, split by privilege:
+#   duty    reads untrusted network data and writes ONE JSON record. It has
+#           contents: read only: no id-token, no attestations, no OIDC
+#           environment, and no github.token in any step's environment.
+#   attest  alone holds id-token: write + attestations: write. It treats the
+#           record (passed as a run artifact) as untrusted input, admits it
+#           only through workforce/intake.py, signs it (Sigstore keyless via
+#           actions/attest), verifies the attestation against the PINNED
+#           identity below, and only then publishes (gated, fail-closed).
+#
+# The pinned identity is repeated as literals in the verify step and in
+# workforce/publish.py (which re-verifies cryptographically before any upload);
+# tests/test_workforce_actions.py keeps the two in step. A signature made by
+# any other repository, workflow file or ref is refused.
+
+on:
+  workflow_call:
+    inputs:
+      role:
+        required: true
+        type: string
+    secrets:
+      WORKFORCE_HF_TOKEN:
+        required: false
+      WORKFORCE_LLM_URL:
+        required: false
+      WORKFORCE_CF_ACCESS_CLIENT_ID:
+        required: false
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET:
+        required: false
+
+permissions: {}
+
+jobs:
+  duty:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    concurrency:
+      group: workforce-${{ inputs.role }}
+      cancel-in-progress: false
+    env:
+      ROLE: ${{ inputs.role }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      # No GitHub token here: duties read public endpoints unauthenticated.
+      - name: Run one cycle (read-only duty, writes one JSON record)
+        id: run
+        env:
+          COMPUTE_GATEWAY: ${{ vars.COMPUTE_GATEWAY }}
+          WORKFORCE_LLM_URL: ${{ secrets.WORKFORCE_LLM_URL }}
+          WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_ID }}
+          WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET }}
+          WORKFORCE_LLM_MODEL: ${{ vars.WORKFORCE_LLM_MODEL }}
+        run: python -B -m workforce.cycle --role "$ROLE" --out "$RUNNER_TEMP/officer"
+
+      - name: Hand the record to the attest job (run artifact, 1 day)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workforce-record-${{ inputs.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/officer/
+          retention-days: 1
+          if-no-files-found: error
+
+  attest:
+    needs: duty
+    # main only: the verify step pins refs/heads/main, so a branch run could
+    # never pass it. Branch runs keep the unsigned record from the duty job.
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      ROLE: ${{ inputs.role }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Fetch the record from the duty job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: workforce-record-${{ inputs.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/incoming
+
+      - name: Admit exactly one well-formed, secret-free record
+        id: admit
+        run: python -B -m workforce.intake --dir "$RUNNER_TEMP/incoming" --role "$ROLE"
+
+      - name: Sign the record (Sigstore keyless attestation)
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.admit.outputs.record }}
+
+      - name: Verify the attestation against the pinned identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECORD: ${{ steps.admit.outputs.record }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "$RECORD" \
+            --bundle "$BUNDLE" \
+            --repo szl-holdings/szl-gpu-bridge \
+            --signer-workflow szl-holdings/szl-gpu-bridge/.github/workflows/workforce-cycle.yml \
+            --source-ref refs/heads/main \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+          out="$RUNNER_TEMP/attested"
+          mkdir -p "$out"
+          cp "$RECORD" "$out/"
+          cp "$BUNDLE" "$out/$(basename "${RECORD%.json}").sigstore.json"
+
+      - name: Keep record + attestation as a run artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workforce-${{ inputs.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/attested/
+          retention-days: 90
+          if-no-files-found: error
+
+      # publish.py verifies the attestation cryptographically AGAIN (same pins)
+      # before any upload; the HF token is not passed to that gh subprocess.
+      - name: Publish to the HF receipts dataset (gated, fail-closed)
+        if: ${{ success() && github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && vars.WORKFORCE_PUBLISH == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+          WORKFORCE_DATASET: ${{ vars.WORKFORCE_DATASET }}
+          RECORD: ${{ steps.admit.outputs.record }}
+        run: >-
+          python -B -m workforce.publish
+          --record "$RECORD"
+          --bundle "$RUNNER_TEMP/attested/$(basename "${RECORD%.json}").sigstore.json"
