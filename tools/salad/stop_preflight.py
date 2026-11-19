@@ -165,6 +165,57 @@ def assess_stop_preflight(*, intent: object, evidence: object, now_utc: str) -> 
         return _hold("PROVIDER_INSTANCE_COUNTS_INVALID")
     if provider.get("update_pending") is not False:
         return _hold("PROVIDER_PENDING_CHANGE_UNCERTAIN")
+    status = provider.get("status")
+    if type(status) is not str or status not in {
+        "pending", "deploying", "running", "stopping", "stopped", "failed"
+    }:
+        return _hold("PROVIDER_STATUS_UNVERIFIED")
+    if status == "stopped" and any(
+        provider["instance_counts"][key] for key in COUNTS
+    ):
+        return _hold("PROVIDER_STOPPED_COUNTS_CONFLICT")
+
+    # Group counters and an independently obtained instance listing are
+    # different observations. One cannot silently stand in for the other.
+    readback = provider.get("instance_readback")
+    if type(readback) is not dict:
+        return _hold("INSTANCE_READBACK_UNOBSERVED")
+    if not _fresh(readback.get("observed_at_utc"), now):
+        return _hold("INSTANCE_READBACK_STALE")
+    if readback.get("group") != group:
+        return _hold("INSTANCE_READBACK_GROUP_MISMATCH")
+    first = _utc(provider["observed_at_utc"])
+    second = _utc(readback["observed_at_utc"])
+    if abs(first - second) > timedelta(seconds=60):
+        return _hold("INSTANCE_READBACK_TIME_DIVERGENCE")
+    instances = readback.get("instances")
+    if type(instances) is not list or len(instances) > 64:
+        return _hold("INSTANCE_READBACK_INVALID")
+    seen = set()
+    actual = {key: 0 for key in COUNTS}
+    for instance in instances:
+        if type(instance) is not dict:
+            return _hold("INSTANCE_RECORD_INVALID")
+        instance_id = instance.get("instance_id")
+        if (
+            type(instance_id) is not str
+            or not 0 < len(instance_id) <= 128
+            or instance_id in seen
+        ):
+            return _hold("INSTANCE_IDENTITY_UNVERIFIED")
+        seen.add(instance_id)
+        state = instance.get("state")
+        if state == "downloading":
+            # There is no downloading_count in the group summary.
+            return _hold("INSTANCE_COUNTS_NOT_COMPARABLE_DOWNLOADING")
+        count_key = state + "_count" if type(state) is str else None
+        if count_key not in actual:
+            return _hold("INSTANCE_STATE_UNRECOGNIZED")
+        actual[count_key] += 1
+    if actual != provider["instance_counts"]:
+        return _hold("INSTANCE_AND_GROUP_COUNTS_DIFFER")
+    if desired == 0 and not instances:
+        return _hold("GROUP_ALREADY_DRAINED_STOP_NOT_REQUIRED")
 
     # This is not an authorization token. It reports an inspectable candidate,
     # not independently authenticated receipt provenance or owner approval.
