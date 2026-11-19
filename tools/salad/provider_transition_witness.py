@@ -111,11 +111,26 @@ def witness(*, transport_exit: int, http_status: int | None, body: bytes,
         return _out("INSTANCE_LIST_UNAVAILABLE", acknowledged=ack)
     if any(type(i) is not dict for i in items):
         return _out("INSTANCE_LIST_INVALID", acknowledged=ack)
+    # The provider's group-level state is a summary, not proof that the
+    # separate instance GET has the same membership or lifecycle state.
+    # Unknown/download states are not represented in the four-count summary;
+    # do not silently interpret them as running or as zero.
+    list_counts = {key: 0 for key in COUNTS}
+    for instance in items:
+        instance_state = instance.get("state")
+        key = instance_state + "_count" if type(instance_state) is str else None
+        if key not in list_counts:
+            return _out("INSTANCE_STATE_UNCLASSIFIED", acknowledged=ack)
+        list_counts[key] += 1
+    if any(list_counts[key] != counts[key] for key in COUNTS):
+        return _out("INSTANCE_GROUP_COUNT_MISMATCH", acknowledged=ack)
     raw_status = state.get("status")
     if type(raw_status) is not str or raw_status not in {
         "pending", "deploying", "running", "stopping", "stopped", "failed"
     }:
         return _out("READBACK_STATUS_INVALID", acknowledged=ack)
+    if raw_status == "stopped" and any(counts[key] > 0 for key in COUNTS):
+        return _out("STOPPED_STATUS_COUNT_CONFLICT", acknowledged=ack)
     observed = _out("PROVIDER_STATE_OBSERVED_NOT_TRAINING", acknowledged=ack)
     observed["group_state_reconciled"] = True
     observed["provider_status"] = raw_status
