@@ -40,7 +40,7 @@ def _check_template(template: str) -> None:
         components = list(Formatter().parse(template))
     except ValueError as exc:
         raise ValueError("PROMPT_TEMPLATE_MALFORMED") from exc
-    variables = [(name, fmt, conv) for _, name, fmt, conv in components if name]
+    variables = [(name, fmt, conv) for _, name, fmt, conv in components if name is not None]
     if variables != [("question_json", "", None)]:
         raise ValueError("PROMPT_TEMPLATE_FIELDS_INVALID")
     if (
