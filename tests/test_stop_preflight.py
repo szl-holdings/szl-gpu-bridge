@@ -65,6 +65,12 @@ def valid():
                 allocating_count=0, creating_count=0, running_count=1, stopping_count=0
             ),
             update_pending=False,
+            status="running",
+            instance_readback=dict(
+                group=intent["group"],
+                observed_at_utc=NOW,
+                instances=[dict(instance_id="test-instance-1", state="running")],
+            ),
         ),
     )
     return intent, evidence
@@ -165,6 +171,108 @@ class StopPreflightTests(unittest.TestCase):
             lambda i, e: e["provider"].update(observed_at_utc="2026-11-19T14:40:00Z")
         )
         self.assertEqual(r["reason"], "PROVIDER_READBACK_STALE")
+
+    def test_independent_instances_are_required(self):
+        r = self.run_witness(
+            lambda i, e: e["provider"].pop("instance_readback")
+        )
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_UNOBSERVED")
+
+    def test_instance_readback_must_be_fresh_and_same_group(self):
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_readback"].update(
+                observed_at_utc="2026-11-19T14:40:00Z"
+            )
+        )
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_STALE")
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_readback"].update(
+                group="other-group"
+            )
+        )
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_GROUP_MISMATCH")
+
+    def test_separate_readbacks_must_have_bounded_clock_skew(self):
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_readback"].update(
+                observed_at_utc="2026-11-19T14:58:00Z"
+            )
+        )
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_TIME_DIVERGENCE")
+
+    def test_instance_identity_must_be_unique(self):
+        def duplicate(i, e):
+            instances = e["provider"]["instance_readback"]["instances"]
+            instances.append(dict(instances[0]))
+
+        r = self.run_witness(duplicate)
+        self.assertEqual(r["reason"], "INSTANCE_IDENTITY_UNVERIFIED")
+
+    def test_instance_identity_cannot_be_missing(self):
+        def remove_identity(i, e):
+            instance = e["provider"]["instance_readback"]["instances"][0]
+            instance.pop("instance_id")
+
+        r = self.run_witness(remove_identity)
+        self.assertEqual(r["reason"], "INSTANCE_IDENTITY_UNVERIFIED")
+
+    def test_downloading_is_not_in_four_group_counts(self):
+        def downloading(i, e):
+            e["provider"]["instance_readback"]["instances"][0]["state"] = (
+                "downloading"
+            )
+
+        r = self.run_witness(downloading)
+        self.assertEqual(r["reason"], "INSTANCE_COUNTS_NOT_COMPARABLE_DOWNLOADING")
+
+    def test_independent_instances_must_match_summary_counts(self):
+        def mismatched(i, e):
+            e["provider"]["instance_readback"]["instances"][0]["state"] = (
+                "creating"
+            )
+
+        r = self.run_witness(mismatched)
+        self.assertEqual(r["reason"], "INSTANCE_AND_GROUP_COUNTS_DIFFER")
+
+    def test_unknown_instance_state_is_hold(self):
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_readback"]["instances"][0].update(
+                state="unexpected"
+            )
+        )
+        self.assertEqual(r["reason"], "INSTANCE_STATE_UNRECOGNIZED")
+
+    def test_stopped_group_with_positive_counts_is_hold(self):
+        r = self.run_witness(
+            lambda i, e: e["provider"].update(status="stopped")
+        )
+        self.assertEqual(r["reason"], "PROVIDER_STOPPED_COUNTS_CONFLICT")
+
+    def test_already_drained_group_requires_no_new_stop(self):
+        def drained(i, e):
+            e["provider"]["status"] = "stopped"
+            e["provider"]["desired_replicas"] = 0
+            e["provider"]["instance_counts"]["running_count"] = 0
+            e["provider"]["instance_readback"]["instances"] = []
+
+        r = self.run_witness(drained)
+        self.assertEqual(r["reason"], "GROUP_ALREADY_DRAINED_STOP_NOT_REQUIRED")
+
+    def test_instance_list_limit_and_type(self):
+        def too_many(i, e):
+            e["provider"]["instance_readback"]["instances"] = [
+                dict(instance_id=f"test-{n}", state="running")
+                for n in range(65)
+            ]
+
+        r = self.run_witness(too_many)
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_INVALID")
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_readback"].update(
+                instances="unknown"
+            )
+        )
+        self.assertEqual(r["reason"], "INSTANCE_READBACK_INVALID")
 
     def test_no_secret_or_private_identity_echo(self):
         intent, evidence = valid()
