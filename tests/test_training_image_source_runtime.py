@@ -125,6 +125,9 @@ class SourceRuntimeTests(unittest.TestCase):
         self.assertNotIn("COPY training-image/salad_worker.py", docker)
         self.assertNotIn("COPY readiness_probe.py step_heartbeat.py salad_worker.py", docker)
 
+    def test_retired_duplicate_worker_is_not_in_working_tree(self):
+        self.assertFalse((ROOT / "training-image" / "salad_worker.py").exists())
+
     def test_build_context_and_provenance_source(self):
         workflow = (
             ROOT / ".github" / "workflows" / "training-image-ghcr.yml"
