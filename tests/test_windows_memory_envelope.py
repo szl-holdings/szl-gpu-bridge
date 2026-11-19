@@ -2,11 +2,10 @@
 
 import importlib.util
 import json
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 SOURCE = (
@@ -24,7 +23,7 @@ spec.loader.exec_module(m)
 def fixture(n=5, free_gib=8, commit_ppm=700000, pagefile_gib=12):
     total = 32 * m.GIB
     limit = 64 * m.GIB
-    base = datetime(2026, 11, 19, 22, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 11, 19, 22, 0, tzinfo=timezone.utc)  # noqa: UP017 - retain Python 3.10 support
     rows = []
     for i in range(n):
         rows.append(
