@@ -263,6 +263,59 @@ def summarize_instances(payload: object) -> dict:
     }
 
 
+def reconcile_selected_instances(group: dict, sample: dict) -> dict:
+    """Reconcile two non-atomic provider GETs; NEVER attest trainer liveness.
+
+    A reported mismatch means investigation is warranted, not that the same
+    instant was sampled or that paid GPUs, source parity, or training exist.
+    Only normalized, allowlisted group and instance fields are exposed.
+    """
+    if sample.get("state") != "PROVIDER_INSTANCE_METADATA_OBSERVED":
+        raise Unavailable("INSTANCE_READBACK_UNAVAILABLE")
+    desired = group.get("configured_replicas")
+    collection_running = group.get("provider_running_instances")
+    if desired is not None and nonnegative_int(desired) is None:
+        raise Unavailable("GROUP_REPLICA_FIELD_INVALID")
+    if collection_running is not None and nonnegative_int(collection_running) is None:
+        raise Unavailable("GROUP_RUNNING_FIELD_INVALID")
+    observed_instances = sample["instance_count"]
+    running = sample["instance_states"].get("running", 0)
+    ready = sample["ready_count_provider_reported"]
+    reasons = []
+    if desired is None:
+        reasons.append("DESIRED_REPLICAS_UNAVAILABLE")
+    elif desired == 0 and observed_instances > 0:
+        reasons.append("ZERO_REPLICA_GROUP_HAS_INSTANCE_SAMPLE")
+    elif desired > 0 and observed_instances == 0:
+        reasons.append("POSITIVE_REPLICA_INTENT_WITHOUT_INSTANCE_SAMPLE")
+    if collection_running is None:
+        reasons.append("COLLECTION_RUNNING_COUNT_UNAVAILABLE")
+    elif collection_running != running:
+        reasons.append("NONATOMIC_RUNNING_COUNT_DIFFERENCE")
+    if group["state"] == "running" and desired is not None and desired > 0:
+        if running == 0:
+            reasons.append("RUNNING_LABEL_WITHOUT_RUNNING_INSTANCE")
+    if ready > running:
+        reasons.append("READY_REPORT_DOES_NOT_ESTABLISH_RUNNING")
+    if not group["immutable_image_reference"]:
+        reasons.append("IMAGE_REFERENCE_NOT_IMMUTABLE")
+    return {
+        "state": "HOLD" if reasons else "STRUCTURAL_ONLY",
+        "scope": "TWO_NONATOMIC_PROVIDER_GETS_NOT_A_TRAINER_WITNESS",
+        "reason_codes": sorted(set(reasons)),
+        "desired_replicas": desired,
+        "collection_running_count": collection_running,
+        "instance_sample_count": observed_instances,
+        "instance_sample_running_count": running,
+        "instance_sample_ready_count": ready,
+        "trainer_liveness_verified": False,
+        "checkpoint_bytes_verified": False,
+        "source_image_digest_verified": False,
+        "billing_verified": False,
+        "production_admission": "HOLD",
+    }
+
+
 def summarize_chain(payload: object, *, now: datetime) -> dict:
     if not isinstance(payload, list):
         raise Unavailable("INVALID_CHAIN_COLLECTION")
@@ -343,6 +396,9 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                 try:
                     readbacks[name] = summarize_instances(
                         reader(INSTANCE_URLS[name], token=key)
+                    )
+                    readbacks[name]["reconciliation"] = (
+                        reconcile_selected_instances(group, readbacks[name])
                     )
                 except urllib.error.HTTPError as exc:
                     code = exc.code if type(exc.code) is int else None
