@@ -173,9 +173,7 @@ class StopPreflightTests(unittest.TestCase):
         self.assertEqual(r["reason"], "PROVIDER_READBACK_STALE")
 
     def test_independent_instances_are_required(self):
-        r = self.run_witness(
-            lambda i, e: e["provider"].pop("instance_readback")
-        )
+        r = self.run_witness(lambda i, e: e["provider"].pop("instance_readback"))
         self.assertEqual(r["reason"], "INSTANCE_READBACK_UNOBSERVED")
 
     def test_instance_readback_must_be_fresh_and_same_group(self):
