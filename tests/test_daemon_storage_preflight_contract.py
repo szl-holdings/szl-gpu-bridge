@@ -126,7 +126,9 @@ class BootstrapShipsPreflightTests(unittest.TestCase):
         self.assertIn(
             '@("laptop/storage_preflight.py", "$Root\\storage_preflight.py")', source
         )
-        source_precheck = source.index("Reviewed checkout missing required bridge source")
+        source_precheck = source.index(
+            "Reviewed checkout missing required bridge source"
+        )
         first_write = source.index("New-Item -ItemType Directory -Force -Path $Root")
         source_copy = source.index(
             "Copy-Item -LiteralPath $source -Destination $Pair[1] -Force"
