@@ -19,7 +19,7 @@ import urllib.request
 
 PROVIDER_URL = (
     "https://api.salad.com/api/public/organizations/"
-    "alloyscape/projects/default/containers?per_page=100"
+    "alloyscape/projects/default/containers"
 )
 CHAIN_URL = (
     "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/commits/main"
@@ -38,7 +38,7 @@ SOURCE_PRIORITY_GROUPS = frozenset(
     }
 )
 INSTANCE_URLS = {
-    name: PROVIDER_URL.split("?", 1)[0] + "/" + name + "/instances"
+    name: PROVIDER_URL + "/" + name + "/instances"
     for name in SOURCE_PRIORITY_GROUPS
 }
 INSTANCE_STATES = frozenset(
@@ -173,8 +173,20 @@ def summarize_fleet(payload: object) -> dict:
             else "positive_replica_intent"
         )
         by_intent.setdefault(group["state"], Counter())[intent] += 1
-    # The provider's collection endpoint does not prove completeness for every
-    # project/account. Do not misstate first-response coverage as an estate census.
+    # The documented list endpoint has no pagination query parameter. A
+    # returned collection covers only this one known project; it cannot attest
+    # other projects, account permissions, or provider snapshot atomicity.
+    # Intent/lifecycle disagreement may be a transient provider transition.
+    # Keep these counts separate from a verified training or cost failure.
+    lifecycle_recheck = Counter()
+    for group in groups:
+        desired = group["configured_replicas"]
+        if group["state"] in {"deploying", "pending"} and desired == 0:
+            lifecycle_recheck["DEPLOYING_ZERO_DESIRED_RECHECK"] += 1
+        if group["state"] == "stopped" and desired is not None and desired > 0:
+            lifecycle_recheck["STOPPED_POSITIVE_DESIRED_RECHECK"] += 1
+    # A provider's collection endpoint does not prove completeness for every
+    # project/account. Do not misstate one response as an estate census.
     canonical = json.dumps(
         groups, sort_keys=True, ensure_ascii=True, separators=(",", ":")
     )
@@ -193,6 +205,10 @@ def summarize_fleet(payload: object) -> dict:
         "provider_observation": "OBSERVED_GROUP_METADATA",
         "provider_collection_scope": "ONE_BOUNDED_RESPONSE_NOT_PROVEN_EXHAUSTIVE",
         "groups_observed": len(groups),
+        "provider_list_endpoint_documented_pagination": False,
+        "lifecycle_recheck_total": sum(lifecycle_recheck.values()),
+        "lifecycle_recheck_counts": dict(sorted(lifecycle_recheck.items())),
+        "lifecycle_recheck_is_proven_failure": False,
         "group_state_counts": dict(sorted(state_counts.items())),
         "state_by_replica_intent": {
             state: dict(sorted(intents.items()))
@@ -327,6 +343,8 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                 drift.append("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH")
             if report["fleet"]["groups_observed"] == 0:
                 drift.append("SALAD_EMPTY_COLLECTION_NOT_PROVEN_COMPLETE")
+            if report["fleet"]["lifecycle_recheck_total"] > 0:
+                drift.append("SALAD_PROVIDER_LIFECYCLE_RECHECK")
             # Up to five immutable-name allowlisted API GETs; 401/403/429
             # stops subsequent reads without retry or credential fallback.
             samples = report["fleet"].get("source_priority_group_sample", [])
