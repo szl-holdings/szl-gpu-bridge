@@ -64,6 +64,41 @@ def _versions():
         raise AssertionError(f"python {sys.version}")
 
 
+@step("requirements.lock closure is internally consistent")
+def _closure():
+    # `pip check` also flags dev tools that ship in the base image (e.g. spin) and are not ours, so check
+    # exactly the packages in the lock: every non-extra requirement of each must be installed and satisfied.
+    import importlib.metadata as md
+    import re
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+    text = open(os.path.join(WORK, "requirements.lock")).read()
+    names = {canonicalize_name(m.group(1)) for m in re.finditer(r"(?m)^([A-Za-z0-9_.-]+)(?:\[[^\]]*\])?==", text)}
+    problems = []
+    for name in sorted(names):
+        try:
+            dist = md.distribution(name)
+        except md.PackageNotFoundError:
+            problems.append(f"{name}: in lock but not installed")
+            continue
+        locked = re.search(rf"(?mi)^{re.escape(dist.metadata['Name'])}==(\S+)", text)
+        if locked and dist.version != locked.group(1).rstrip("\\").strip():
+            problems.append(f"{name}: installed {dist.version}, locked {locked.group(1)}")
+        for raw in dist.requires or []:
+            req = Requirement(raw)
+            if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+                continue
+            try:
+                have = md.version(req.name)
+            except md.PackageNotFoundError:
+                problems.append(f"{name} requires {raw}: not installed")
+                continue
+            if req.specifier and not req.specifier.contains(have, prereleases=True):
+                problems.append(f"{name} requires {raw}: have {have}")
+    if problems:
+        raise AssertionError("; ".join(problems[:20]))
+
+
 @step("torchvision.ops.nms on CPU")
 def _nms():
     import torch

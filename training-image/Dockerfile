@@ -29,8 +29,7 @@ COPY requirements.lock /work/requirements.lock
 # The pytorch cu126 index is listed only so the "+cu126" torch builds resolve if the base ever drifts; hashes
 # still gate every file. Already-identical packages from the base are left alone.
 RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
-      --extra-index-url https://download.pytorch.org/whl/cu126 -r /work/requirements.lock \
- && PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip check
+      --extra-index-url https://download.pytorch.org/whl/cu126 -r /work/requirements.lock
 
 COPY readiness_probe.py step_heartbeat.py salad_worker.py build_gate.py /work/
 # Run-receipt uploader (proofrun step 4): one commit per run / checkpoint save, never per heartbeat.
