@@ -146,6 +146,29 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     return {explicit[0]: length}
 
 
+def quantized_load_kwargs(enabled: bool) -> tuple[dict, str, dict]:
+    """Return (from_pretrained kwargs, optimizer, receipt fields) for --load-in-4bit.
+
+    Off: bf16 weights and adamw_torch, exactly as before. On: QLoRA NF4 with
+    double quantization, bf16 compute and the paged 8-bit optimizer, which is
+    what lets a 27B base train on one 24 GB card. bitsandbytes missing is a hard
+    stop, never a silent fallback to bf16 that would OOM later on a paid GPU.
+    """
+    if not enabled:
+        return {"torch_dtype": torch.bfloat16}, "adamw_torch", {"quantization": "none"}
+    try:
+        import bitsandbytes  # noqa: F401
+    except Exception as exc:
+        raise RuntimeError("--load-in-4bit requires bitsandbytes; it is not importable") from exc
+    from transformers import BitsAndBytesConfig
+    qcfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                              bnb_4bit_compute_dtype=torch.bfloat16,
+                              bnb_4bit_use_double_quant=True)
+    return ({"torch_dtype": torch.bfloat16, "quantization_config": qcfg},
+            "paged_adamw_8bit",
+            {"quantization": "nf4-4bit-double-quant", "optim": "paged_adamw_8bit"})
+
+
 STOP = {"flag": False}
 RECEIPTS = None
 # Trainer resume state is pickle-based (torch.save / pickle). It may live in the PRIVATE
@@ -820,6 +843,8 @@ def main() -> int:
                     help="dedicated local checkpoint directory for this lane")
     ap.add_argument("--gradient-checkpointing", action="store_true",
                     help="recompute activations to reduce training memory")
+    ap.add_argument("--load-in-4bit", action="store_true",
+                    help="QLoRA: load the base in NF4 4-bit with a paged 8-bit optimizer")
     ap.add_argument("--gpu-memory-budget-mib", type=int, default=0,
                     help="opt-in PyTorch allocator cap; requires one visible GPU")
     ap.add_argument("--gpu-reserve-mib", type=int, default=8192,
@@ -1082,8 +1107,18 @@ def run_training(a, api) -> int:
     receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
             {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
              "training_format": format_contract})
+    try:
+        load_kw, optim_name, quant_fields = quantized_load_kwargs(a.load_in_4bit)
+    except RuntimeError as exc:
+        receipt("fail-closed", str(exc), {"training_started": False, "quantization": "requested-unavailable"})
+        return 9
+    receipt("model-load", "loading base", quant_fields)
     model = AutoModelForCausalLM.from_pretrained(
-        a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
+        a.base, device_map="auto", **load_kw, **base_kwargs)
+    if a.load_in_4bit:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=a.gradient_checkpointing)
     if a.gradient_checkpointing:
         model.config.use_cache = False
 
@@ -1095,7 +1130,7 @@ def run_training(a, api) -> int:
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
         max_steps=a.max_steps,
         save_steps=a.save_steps, save_total_limit=2,
-        bf16=True, optim="adamw_torch", report_to=[], logging_steps=10,
+        bf16=True, optim=optim_name, report_to=[], logging_steps=10,
         gradient_checkpointing=a.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False} if a.gradient_checkpointing else None,
         packing=False)
