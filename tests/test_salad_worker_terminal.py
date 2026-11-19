@@ -296,7 +296,7 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(terminal["target_steps"], 200)
         self.assertIs(terminal["completion_qualified"], False)
 
-    def test_script_entrypoint_imports_first_party_resume_module_without_repo_pythonpath(self):
+    def test_direct_script_resolves_resume_verifier(self):
         root = WORKER.parents[2]
         isolated = [
             path for path in sys.path if Path(path or ".").resolve() != root
