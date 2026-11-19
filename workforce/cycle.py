@@ -33,7 +33,7 @@ def run(role, out_dir, net, env=None, now=None):
     else:
         findings = fn(net)
     _, blob = core.build_record(role, findings, env=env, now=now)
-    core.refuse_secrets(blob)
+    core.refuse_secrets(blob, env=env)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     path = out / core.record_name(role, blob)

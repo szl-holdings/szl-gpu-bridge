@@ -25,7 +25,13 @@ ORG_HF = "SZLHOLDINGS"
 ORG_GH = "szl-holdings"
 
 # Bounded, documented samples (recorded in every finding).
-SPACE_CENSUS_CAP = 100
+SPACE_CENSUS_CAP = 40
+# The census is serial; each Hub call can take up to SPACE_CALL_TIMEOUT_S, so
+# a bare cap could overrun the job's 10-minute timeout. This wall-clock budget
+# (and the per-call timeout clipped to what is left of it) keeps one census
+# well under that, and a census cut short says so in the record.
+SPACE_CENSUS_BUDGET_S = 120
+SPACE_CALL_TIMEOUT_S = 10
 GARDEN_LIST_LIMIT = 100
 GARDEN_SCAN_CAP = 30
 
@@ -50,16 +56,32 @@ FRONTIER_ISSUES = (135, 136, 137, 138)
 DEFAULT_GATEWAY = "https://inference.a-11-oy.com"
 
 
-def _space_census(net, cap=SPACE_CENSUS_CAP):
-    """Public SZLHOLDINGS Spaces by runtime stage (unauthenticated: public only)."""
-    spaces = net.get_json(f"{HF}/api/spaces?author={ORG_HF}&limit=1000")
+def _space_census(
+    net, cap=SPACE_CENSUS_CAP, budget_s=SPACE_CENSUS_BUDGET_S, clock=time.monotonic
+):
+    """Public SZLHOLDINGS Spaces by runtime stage (unauthenticated: public only).
+
+    Bounded by ``cap`` Spaces AND ``budget_s`` seconds overall; anything not
+    reached is counted in ``unsampled_deadline`` and ``truncated`` is set.
+    """
+    t0 = clock()
+    spaces = net.get_json(
+        f"{HF}/api/spaces?author={ORG_HF}&limit=1000", timeout=SPACE_CALL_TIMEOUT_S
+    )
     if not isinstance(spaces, list):
         return None
     stages, not_running = {}, []
     sampled = spaces[:cap]
+    done = 0
     for s in sampled:
+        remaining = budget_s - (clock() - t0)
+        if remaining <= 0:
+            break
         sid = s.get("id", "")
-        full = net.get_json(f"{HF}/api/spaces/{sid}")
+        full = net.get_json(
+            f"{HF}/api/spaces/{sid}", timeout=min(SPACE_CALL_TIMEOUT_S, remaining)
+        )
+        done += 1
         stage = ((full or {}).get("runtime") or {}).get("stage") or "UNKNOWN"
         if full is None:
             stage = "UNAVAILABLE"
@@ -71,8 +93,13 @@ def _space_census(net, cap=SPACE_CENSUS_CAP):
             )
     return {
         "listed_public": len(spaces),
-        "sampled": len(sampled),
-        "sample_rule": f"first {cap} of the public listing (private Spaces not visible)",
+        "sampled": done,
+        "sample_rule": (
+            f"first {cap} of the public listing within {budget_s} s "
+            "(private Spaces not visible)"
+        ),
+        "truncated": done < len(sampled),
+        "unsampled_deadline": len(sampled) - done,
         "stages": stages,
         "not_running": not_running,
     }
@@ -114,6 +141,7 @@ def eternal_auditor(net, now=None):
                 "listed_public": census["listed_public"],
                 "sampled": census["sampled"],
                 "sample_rule": census["sample_rule"],
+                "truncated": census["truncated"],
                 "running": census["stages"].get("RUNNING", 0),
             }
         )
@@ -246,6 +274,7 @@ def infra_warden(net, now=None):
                 "listed_public": census["listed_public"],
                 "sampled": census["sampled"],
                 "sample_rule": census["sample_rule"],
+                "truncated": census["truncated"],
                 "stages": census["stages"],  # TIGHTENED: PAUSED/SLEEPING kept apart
                 "not_running": census["not_running"][:25],
                 "unexpected_not_running": len(unexpected),

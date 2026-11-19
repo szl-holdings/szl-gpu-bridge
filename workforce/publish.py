@@ -7,12 +7,19 @@ Stop rules (fail closed):
   * bundle missing, not a Sigstore DSSE bundle, no signature, no signing
     certificate, or its in-toto subject digest != sha256(record) -> refuse,
     upload nothing, exit 2;
-  * record carries a credential-shaped string -> refuse, exit 2.
+  * the bundle fails CRYPTOGRAPHIC verification (``gh attestation verify``
+    against the Sigstore trust root, pinned to this repository, the
+    workforce-cycle.yml signer workflow and refs/heads/main) -> refuse, exit 2.
+    A missing ``gh``, a timeout or any non-zero exit is a refusal;
+  * record carries a credential-shaped string, or the live value of a
+    WORKFORCE_* secret -> refuse, exit 2.
 
-The workflow additionally runs ``gh attestation verify`` (cryptographic check
-against the Sigstore trust root and this repo's workflow identity) before
-this step; this module re-checks the binding so an unsigned or mismatched
-record can never be uploaded even if the workflow is edited carelessly.
+``check_bundle`` is only a cheap structural pre-filter (shape and digest
+binding). It proves nothing about who signed: a forged bundle with a dummy
+certificate passes it, so it is never sufficient on its own. The trust
+decision is ``verify_attestation``. The identity constants below are the only
+copy: workforce-cycle.yml repeats them as literals and a test keeps the two
+in step. The Hugging Face token is never passed to the ``gh`` subprocess.
 Uses the Hub commit API directly (stdlib only, no huggingface_hub).
 """
 
@@ -20,6 +27,8 @@ import argparse
 import base64
 import json
 import os
+import re
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -27,6 +36,20 @@ from pathlib import Path
 from . import core
 
 HF_COMMIT = "https://huggingface.co/api/datasets/{repo}/commit/main"
+
+# Pinned signer identity. Hard-coded on purpose: never derived from the run's
+# own environment, so a fork, a renamed repo or a different workflow cannot
+# satisfy it. ``--signer-workflow`` takes [host/]<owner>/<repo>/<path>; for a
+# reusable workflow the signer is the called workflow file (the certificate's
+# job_workflow_ref), which is workforce-cycle.yml.
+PINNED_REPO = "szl-holdings/szl-gpu-bridge"
+PINNED_SIGNER_WORKFLOW = (
+    "szl-holdings/szl-gpu-bridge/.github/workflows/workforce-cycle.yml"
+)
+PINNED_SOURCE_REF = "refs/heads/main"
+GH_VERIFY_TIMEOUT_S = 90
+# Only what ``gh`` needs. No WORKFORCE_* variable (the HF token) crosses.
+_GH_ENV_KEYS = ("PATH", "HOME", "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "TMPDIR", "LANG")
 
 
 def check_bundle(record_bytes, bundle_bytes):
@@ -59,6 +82,48 @@ def check_bundle(record_bytes, bundle_bytes):
     return None
 
 
+def verify_attestation(record_path, bundle_path, env=None, run=subprocess.run):
+    """Cryptographically verify the bundle with ``gh attestation verify``,
+    pinned to the identity above. Returns None on success, else a reason.
+    Fails closed on anything other than a clean zero exit."""
+    env = os.environ if env is None else env
+    cmd = [
+        "gh",
+        "attestation",
+        "verify",
+        str(record_path),
+        "--bundle",
+        str(bundle_path),
+        "--repo",
+        PINNED_REPO,
+        "--signer-workflow",
+        PINNED_SIGNER_WORKFLOW,
+        "--source-ref",
+        PINNED_SOURCE_REF,
+        "--deny-self-hosted-runners",
+    ]
+    sha = env.get("GITHUB_SHA", "")
+    if re.fullmatch(r"[0-9a-f]{40}", sha):
+        cmd += ["--source-digest", sha]
+    clean_env = {k: env[k] for k in _GH_ENV_KEYS if env.get(k)}
+    try:
+        proc = run(
+            cmd,
+            env=clean_env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=GH_VERIFY_TIMEOUT_S,
+            check=False,
+        )
+    except FileNotFoundError:
+        return "gh is not available; cannot verify the attestation"
+    except (subprocess.TimeoutExpired, OSError):
+        return "attestation verification did not complete"
+    if proc.returncode != 0:
+        return "attestation failed cryptographic verification"
+    return None
+
+
 def _commit(repo, token, files, summary, opener=None):
     lines = [{"key": "header", "value": {"summary": summary, "description": ""}}]
     for path, data in files:
@@ -88,7 +153,9 @@ def _commit(repo, token, files, summary, opener=None):
         return r.status
 
 
-def publish(record_path, bundle_path, env=None, committer=_commit):
+def publish(
+    record_path, bundle_path, env=None, committer=_commit, verifier=verify_attestation
+):
     env = os.environ if env is None else env
     token = env.get("WORKFORCE_HF_TOKEN", "")
     if not token:
@@ -98,10 +165,13 @@ def publish(record_path, bundle_path, env=None, committer=_commit):
         return "REFUSED: record or attestation bundle missing (unsigned)", 2
     record = rp.read_bytes()
     try:
-        core.refuse_secrets(record)
+        core.refuse_secrets(record, env=env)
     except ValueError as e:
         return f"REFUSED: {e}", 2
     reason = check_bundle(record, bp.read_bytes())
+    if reason:
+        return f"REFUSED: {reason}", 2
+    reason = verifier(rp, bp, env=env)
     if reason:
         return f"REFUSED: {reason}", 2
     repo = env.get("WORKFORCE_DATASET") or core.DEFAULT_DATASET

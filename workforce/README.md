@@ -14,7 +14,7 @@ them.
 
 | Officer | Cadence | Duty (as coded, with the RVO item-4 tightening) |
 |---|---|---|
-| eternal-auditor | hourly | receipts-dataset head age (UTC fixed) + public Space RUNNING census (first 100, recorded) |
+| eternal-auditor | hourly | receipts-dataset head age (UTC fixed) + public Space RUNNING census (first 40 within a 120 s budget; `truncated` recorded) |
 | estate-gardener | daily | append-only license-block *proposals* for untagged public datasets; never writes |
 | szl-chief-engineer | 30 min | latest **default-branch** CI conclusion for a11oy, szl-forge, .github, szl-frontier (only `success` is OK) + honesty bus + gateway probe |
 | szl-infra-warden | 15 min | Space stages counted separately (PAUSED / SLEEPING / BUILD_ERROR ...), the 7 paused workforce Spaces marked expected; DNS + HTTPS status for anatomy/router hosts |
@@ -29,13 +29,37 @@ them.
   repo is public). The certificate names `szl-holdings/szl-gpu-bridge`,
   `.github/workflows/workforce-cycle.yml` and the ref, so identity is
   persistent and checkable with `gh attestation verify`.
-* **No upload when unsigned.** `workforce/publish.py` refuses (exit 2) unless a
-  Sigstore DSSE bundle with a signing certificate binds the record's sha256;
-  the workflow also runs `gh attestation verify` first. No token -> skip.
-* **No credential-shaped strings in records** (refused before writing).
+* **Privilege split.** The `duty` job (untrusted network reads) has
+  `contents: read` only: no `id-token`, no `attestations`, no OIDC environment
+  and no `github.token` (duties call public endpoints unauthenticated). The
+  `attest` job alone holds `id-token: write` + `attestations: write`; it takes
+  the record as a run artifact, admits it only via `workforce/intake.py`
+  (exactly one file, name = role + sha256 prefix, officer schema, no secrets),
+  then signs and verifies it.
+* **Pinned signer identity.** `gh attestation verify` is hard-pinned to
+  `--repo szl-holdings/szl-gpu-bridge`, `--signer-workflow
+  szl-holdings/szl-gpu-bridge/.github/workflows/workforce-cycle.yml` and
+  `--source-ref refs/heads/main` (never derived from the run), so a signature
+  from a fork, another workflow or another ref is refused. The `attest` job
+  runs on main only, so branch runs keep just the unsigned record artifact.
+* **No upload when unsigned or unverified.** `workforce/publish.py` refuses
+  (exit 2) unless the bundle passes a structural check AND
+  `gh attestation verify` (same pins) succeeds; a missing `gh`, a timeout or any
+  non-zero exit is a refusal. The structural check alone is not trust: a fake
+  bundle with a dummy certificate passes it and is refused by the verify. The
+  HF token is never passed to the `gh` subprocess. No token -> skip.
+* **Every job is gated.** All jobs (manual `workflow_dispatch` included) need
+  `WORKFORCE_ENABLED == 'true'` and the canonical non-fork repository; publish
+  also needs `WORKFORCE_PUBLISH == 'true'`, `success()` and main.
+* **No credential-shaped strings in records** (refused before writing and again
+  at intake and publish): token shapes, Cloudflare Access client id/secret
+  shapes, and the exact live value of any `WORKFORCE_*` secret in the
+  environment (named in the error, never printed).
 * **dream-architect never calls a private IP or plain HTTP.** LLM drafting only
   over `https://<hostname>` with a Cloudflare Access service token; URL must
-  be a DNS hostname; half-configuration is refused; unconfigured -> template,
+  be a DNS hostname that resolves only to public addresses (private,
+  loopback, link-local, CGNAT and cloud-metadata answers refuse; DNS rebinding
+  between check and connect is a documented residual); half-configuration is refused; unconfigured -> template,
   labelled as template.
 * **No hidden state.** No `/data`; each record stands alone and is ordered by
   attested time and run id.
@@ -59,9 +83,13 @@ Nothing runs on a schedule until the repository variable
 | `WORKFORCE_CF_ACCESS_CLIENT_ID` / `_SECRET` | secrets (optional) | Cloudflare Access service token |
 | `WORKFORCE_LLM_MODEL` | variable (optional) | model id; default first of `/v1/models` |
 
-Manual one-off: Actions -> "Workforce officers" -> Run workflow -> pick a role.
-It produces the record + attestation artifact; it publishes only on main with
-`WORKFORCE_PUBLISH=true`.
+Manual one-off: Actions -> "Workforce officers" -> Run workflow -> pick a role
+(main only, and only with `WORKFORCE_ENABLED=true`). It produces the record +
+attestation artifact; it publishes only with `WORKFORCE_PUBLISH=true`.
+
+First live proof (gated, needs merge + Stephen's yes): one manual run on main
+with `WORKFORCE_ENABLED=true` and `WORKFORCE_PUBLISH` unset, to see attest and
+verify pass before anything is published.
 
 ## Tests
 

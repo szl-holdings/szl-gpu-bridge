@@ -6,9 +6,16 @@ name: Workforce officers
 #
 # STOP RULE / ENABLE GATE: scheduled runs do nothing until the repository
 # variable WORKFORCE_ENABLED is set to "true" (Stephen's call, after merge).
-# Publishing to the HF dataset additionally needs WORKFORCE_PUBLISH == "true",
-# the WORKFORCE_HF_TOKEN secret, a run on main, and a verified attestation.
-# Without them each run only keeps its record + attestation as an artifact.
+# EVERY job below, the manual (workflow_dispatch) one included, needs
+# WORKFORCE_ENABLED == "true", the canonical non-fork repository, and (manual)
+# refs/heads/main. Publishing to the HF dataset additionally needs
+# WORKFORCE_PUBLISH == "true", the WORKFORCE_HF_TOKEN secret, a run on main,
+# and a cryptographically verified attestation pinned to this repository, the
+# workforce-cycle.yml signer workflow and refs/heads/main. Without them each
+# run only keeps its record (+ attestation, on main) as an artifact.
+#
+# The id-token/attestations grants on the jobs below are the CEILING for the
+# called workflow; workforce-cycle.yml gives them to its attest job alone.
 
 on:
   schedule:
@@ -35,7 +42,7 @@ permissions: {}
 
 jobs:
   every-15m:
-    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '7,22,37,52 * * * *' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '7,22,37,52 * * * *' }}
     permissions:
       contents: read
       id-token: write
@@ -47,7 +54,7 @@ jobs:
       WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
 
   every-30m:
-    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '12,42 * * * *' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '12,42 * * * *' }}
     permissions:
       contents: read
       id-token: write
@@ -59,7 +66,7 @@ jobs:
       WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
 
   hourly:
-    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '17 * * * *' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '17 * * * *' }}
     strategy:
       fail-fast: false
       matrix:
@@ -75,7 +82,7 @@ jobs:
       WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
 
   daily:
-    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
     strategy:
       fail-fast: false
       matrix:
@@ -91,7 +98,7 @@ jobs:
       WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
 
   daily-dream:
-    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
     permissions:
       contents: read
       id-token: write
@@ -106,7 +113,7 @@ jobs:
       WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET }}
 
   manual:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     permissions:
       contents: read
       id-token: write
