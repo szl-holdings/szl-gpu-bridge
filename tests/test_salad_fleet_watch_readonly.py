@@ -228,10 +228,104 @@ class FleetContractTests(unittest.TestCase):
         self.assertEqual(item["started_count_provider_reported"], 1)
         self.assertFalse(item["trainer_process_verified"])
         self.assertFalse(item["provider_group_snapshot_atomic"])
+        self.assertIn(
+            "RUNNING_LABEL_WITHOUT_RUNNING_INSTANCE",
+            item["reconciliation"]["reason_codes"],
+        )
+        self.assertEqual(item["reconciliation"]["production_admission"], "HOLD")
         self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(result))
         self.assertEqual(len(provider_calls), 3)
         self.assertEqual(provider_calls[-1], (watch.CHAIN_URL, False))
         self.assertIn("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH", drift)
+
+    def test_positive_replica_intent_without_instances_is_explicit_hold(self):
+        selected = watch.summarize_fleet({"items": [
+            dict(group(0), name="szl-train-flagship54-v2")
+        ]})["source_priority_group_sample"][0]
+        sample = watch.summarize_instances({"instances": []})
+        evidence = watch.reconcile_selected_instances(selected, sample)
+        self.assertEqual(evidence["state"], "HOLD")
+        self.assertIn(
+            "POSITIVE_REPLICA_INTENT_WITHOUT_INSTANCE_SAMPLE",
+            evidence["reason_codes"],
+        )
+        self.assertIn(
+            "RUNNING_LABEL_WITHOUT_RUNNING_INSTANCE", evidence["reason_codes"]
+        )
+        self.assertEqual(evidence["production_admission"], "HOLD")
+        self.assertFalse(evidence["trainer_liveness_verified"])
+
+    def test_parked_group_with_instance_is_not_training_or_billing_proof(self):
+        item = dict(group(0), name="szl-train-flagship54-v2", replicas=0)
+        selected = watch.summarize_fleet({"items": [item]})[
+            "source_priority_group_sample"
+        ][0]
+        instance = watch.summarize_instances({
+            "instances": [{"state": "downloading", "ready": False}],
+        })
+        evidence = watch.reconcile_selected_instances(selected, instance)
+        self.assertIn(
+            "ZERO_REPLICA_GROUP_HAS_INSTANCE_SAMPLE", evidence["reason_codes"]
+        )
+        self.assertFalse(evidence["billing_verified"])
+        self.assertEqual(evidence["instance_sample_running_count"], 0)
+
+    def test_nonatomic_count_difference_does_not_infer_causal_failure(self):
+        selected = watch.summarize_fleet({"items": [
+            dict(group(0), name="szl-train-flagship54-v2")
+        ]})["source_priority_group_sample"][0]
+        sample = watch.summarize_instances({
+            "instances": [{"state": "downloading", "ready": True}],
+        })
+        evidence = watch.reconcile_selected_instances(selected, sample)
+        self.assertIn("NONATOMIC_RUNNING_COUNT_DIFFERENCE", evidence["reason_codes"])
+        self.assertIn(
+            "READY_REPORT_DOES_NOT_ESTABLISH_RUNNING", evidence["reason_codes"]
+        )
+        self.assertEqual(
+            evidence["scope"], "TWO_NONATOMIC_PROVIDER_GETS_NOT_A_TRAINER_WITNESS"
+        )
+        self.assertFalse(evidence["source_image_digest_verified"])
+
+    def test_unknown_group_counts_are_unavailable_not_zero(self):
+        selected = watch.summarize_fleet({"items": [
+            dict(group(0), name="szl-train-flagship54-v2", replicas=None)
+        ]})["source_priority_group_sample"][0]
+        selected["provider_running_instances"] = None
+        sample = watch.summarize_instances({"instances": []})
+        evidence = watch.reconcile_selected_instances(selected, sample)
+        self.assertIsNone(evidence["desired_replicas"])
+        self.assertIsNone(evidence["collection_running_count"])
+        self.assertIn("DESIRED_REPLICAS_UNAVAILABLE", evidence["reason_codes"])
+        self.assertIn(
+            "COLLECTION_RUNNING_COUNT_UNAVAILABLE", evidence["reason_codes"]
+        )
+
+    def test_selected_readback_reconciles_without_exposing_instance_ids(self):
+        item = dict(group(0), name="szl-train-flagship54-v2")
+        calls = []
+
+        def reader(url, *, token=None):
+            calls.append(url)
+            if url == watch.PROVIDER_URL:
+                return {"items": [item]}
+            if url == watch.CHAIN_URL:
+                return []
+            return {"instances": [{
+                "state": "running",
+                "ready": True,
+                "id": "DO_NOT_LEAK_SENTINEL",
+            }]}
+
+        result, _ = watch.collect("SYNTHETIC", reader=reader, now=NOW)
+        sample = result["fleet"]["selected_instance_readbacks"][item["name"]]
+        evidence = sample["reconciliation"]
+        self.assertEqual(evidence["instance_sample_running_count"], 1)
+        self.assertEqual(evidence["state"], "HOLD")
+        self.assertEqual(evidence["production_admission"], "HOLD")
+        self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(result))
+        self.assertEqual(len(calls), 3, "No additional GET or side effects")
+
 
     def test_429_on_one_selected_group_blocks_other_selected_reads(self):
         names = ["szl-train-a11oy-mini-r1", "szl-train-flagship54-v2"]
