@@ -1112,7 +1112,8 @@ def run_training(a, api) -> int:
     except RuntimeError as exc:
         receipt("fail-closed", str(exc), {"training_started": False, "quantization": "requested-unavailable"})
         return 9
-    receipt("model-load", "loading base", quant_fields)
+    if a.load_in_4bit:
+        receipt("model-load", "loading base in 4-bit", quant_fields)
     model = AutoModelForCausalLM.from_pretrained(
         a.base, device_map="auto", **load_kw, **base_kwargs)
     if a.load_in_4bit:
