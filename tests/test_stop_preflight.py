@@ -127,20 +127,16 @@ class StopPreflightTests(unittest.TestCase):
             self.run_witness(lambda i, e: i.update(owner_generation=True))["reason"],
             "OWNER_IDENTITY_UNVERIFIED",
         )
-        self.assertEqual(
-            self.run_witness(
-                lambda i, e: e["trainer_state"].update(global_step=True)
-            )["reason"],
-            "TRAINER_STATE_NOT_TERMINAL_AND_PINNED",
+        r = self.run_witness(
+            lambda i, e: e["trainer_state"].update(global_step=True)
         )
+        self.assertEqual(r["reason"], "TRAINER_STATE_NOT_TERMINAL_AND_PINNED")
 
     def test_bad_artifact_file_or_tokenizer(self):
-        self.assertEqual(
-            self.run_witness(
-                lambda i, e: e["artifact"].update(complete_config_and_tokenizer=False)
-            )["reason"],
-            "FINAL_ARTIFACT_UNVERIFIED",
+        r = self.run_witness(
+            lambda i, e: e["artifact"].update(complete_config_and_tokenizer=False)
         )
+        self.assertEqual(r["reason"], "FINAL_ARTIFACT_UNVERIFIED")
 
     def test_nonindependent_or_divergent_backup(self):
         for k, v in (("independent_readback", False), ("adapter_sha256", D_B)):
@@ -151,15 +147,11 @@ class StopPreflightTests(unittest.TestCase):
                 )
 
     def test_expired_and_future_clock(self):
-        self.assertEqual(
-            self.run_witness(
-                lambda i, e: e.update(observed_at_utc="2026-11-19T14:30:00Z")
-            )["reason"],
-            "EVIDENCE_STALE_OR_CLOCK_UNCERTAIN",
+        r = self.run_witness(
+            lambda i, e: e.update(observed_at_utc="2026-11-19T14:30:00Z")
         )
-        self.assertEqual(
-            self.run_witness(now="local-now")["reason"], "CLOCK_UNOBSERVED"
-        )
+        self.assertEqual(r["reason"], "EVIDENCE_STALE_OR_CLOCK_UNCERTAIN")
+        self.assertEqual(self.run_witness(now="local-now")["reason"], "CLOCK_UNOBSERVED")
 
     def test_provider_counts_and_pending(self):
         r = self.run_witness(
@@ -170,14 +162,12 @@ class StopPreflightTests(unittest.TestCase):
         self.assertEqual(r["reason"], "PROVIDER_PENDING_CHANGE_UNCERTAIN")
 
     def test_provider_staleness(self):
-        self.assertEqual(
-            self.run_witness(
-                lambda i, e: e["provider"].update(
-                    observed_at_utc="2026-11-19T14:40:00Z"
-                )
-            )["reason"],
-            "PROVIDER_READBACK_STALE",
+        r = self.run_witness(
+            lambda i, e: e["provider"].update(
+                observed_at_utc="2026-11-19T14:40:00Z"
+            )
         )
+        self.assertEqual(r["reason"], "PROVIDER_READBACK_STALE")
 
     def test_no_secret_or_private_identity_echo(self):
         intent, evidence = valid()
