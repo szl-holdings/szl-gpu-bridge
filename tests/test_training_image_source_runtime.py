@@ -144,6 +144,16 @@ class SourceRuntimeTests(unittest.TestCase):
         ):
             self.assertIn(path, workflow)
 
+    def test_pushed_digest_smoke_checks_source_and_resume_modules(self):
+        workflow = (
+            ROOT / ".github" / "workflows" / "training-image-ghcr.yml"
+        ).read_text()
+        self.assertIn("source_runtime_contract.py verify", workflow)
+        self.assertIn("verified_resume_checkpoint", workflow)
+        self.assertIn("from tools.salad.training_snapshot import model_snapshot", workflow)
+        self.assertIn("org.opencontainers.image.revision", workflow)
+        self.assertIn('test "${REVISION}" = "${GITHUB_SHA}"', workflow)
+
     def test_heartbeat_only_present_on_pinned_image_marker(self):
         worker = (ROOT / "tools" / "salad" / "salad_worker.py").read_text()
         self.assertIn('os.environ.get("SZL_HEARTBEAT_FILE")', worker)
