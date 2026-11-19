@@ -64,6 +64,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
+          tools/proving-grounds/paired_evolution_gate.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
           training-image/source_runtime_contract.py
@@ -77,6 +78,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
+          tools/proving-grounds/paired_evolution_gate.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
           training-image/source_runtime_contract.py
@@ -90,6 +92,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
+          tools/proving-grounds/paired_evolution_gate.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
           training-image/source_runtime_contract.py
