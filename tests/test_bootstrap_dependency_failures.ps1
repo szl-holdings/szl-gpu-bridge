@@ -13,6 +13,9 @@ if (($start -lt 0) -or ($end -le $start)) {
   throw "bootstrap dependency block was not found"
 }
 $installBlock = [ScriptBlock]::Create($source.Substring($start, $end - $start))
+if ($source -match '&\s*\$Pip\s+install\s+--upgrade\s+pip') {
+  throw "bootstrap upgrades pip through pip.exe, which cannot replace itself on Windows"
+}
 
 function Invoke-BootstrapPipFixture {
   $arguments = @($args | ForEach-Object { [string]$_ })
@@ -29,6 +32,18 @@ function Invoke-BootstrapPipFixture {
   }
 }
 
+# python.exe stand-in: only "-m pip ..." is allowed, and it shares the pip
+# fixture's call ledger so call indices and failure injection stay unchanged.
+function Invoke-BootstrapPythonFixture {
+  $arguments = @($args | ForEach-Object { [string]$_ })
+  if (($arguments.Count -lt 2) -or ($arguments[0] -ne "-m") -or ($arguments[1] -ne "pip")) {
+    throw "bootstrap invoked python for something other than -m pip: $($arguments -join ' ')"
+  }
+  $script:pythonPipCalls += 1
+  $pipArguments = @($arguments | Select-Object -Skip 2)
+  Invoke-BootstrapPipFixture @pipArguments
+}
+
 function Test-InstallCase(
   [int]$FailureAt,
   [bool]$HasSnapshot = $false,
@@ -40,6 +55,8 @@ function Test-InstallCase(
   $caseLabel = "dependency call $FailureAt (existing snapshot=$HasSnapshot; partial freeze=$PartialFreeze)"
   $Root = Join-Path ([IO.Path]::GetTempPath()) ("szl-bootstrap-test-" + [guid]::NewGuid())
   $Pip = "Invoke-BootstrapPipFixture"
+  $Py = "Invoke-BootstrapPythonFixture"
+  $script:pythonPipCalls = 0
   New-Item -ItemType Directory -Path $Root | Out-Null
   $snapshotPath = Join-Path $Root "stack-freeze.txt"
   $originalBytes = [Text.Encoding]::UTF8.GetBytes(
@@ -96,6 +113,9 @@ function Test-InstallCase(
       if (($output | Out-String) -notmatch ("training stack ready; exact package snapshot sha256 " + $expectedHash)) {
         throw "successful installation did not report its exact snapshot hash"
       }
+    }
+    if (($script:nativeCalls[0] -join " ") -ne "install --upgrade pip" -or $script:pythonPipCalls -ne 1) {
+      throw "$caseLabel did not upgrade pip through python -m pip as its first call"
     }
     $expectedFiles = if ($HasSnapshot -or -not $expectedFailure) { 1 } else { 0 }
     if (@(Get-ChildItem -LiteralPath $Root -File).Count -ne $expectedFiles) {

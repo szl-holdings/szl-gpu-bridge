@@ -141,7 +141,9 @@ $Py  = "$CondaBase\envs\szl-bridge\python.exe"
 # torch cu124-class; triton-windows required; two known-bad bitsandbytes
 # Windows versions excluded. Exact resolved versions are frozen below and their
 # sha256 is embedded in every training receipt.
-& $Pip install --upgrade pip
+# pip.exe cannot replace itself on Windows ("To modify pip, please run ... -m pip"),
+# which fails every fresh environment. Upgrade through the interpreter instead.
+& $Py -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "pip toolchain upgrade failed" }
 & $Pip install torch --index-url https://download.pytorch.org/whl/cu124
 if ($LASTEXITCODE -ne 0) { throw "CUDA torch installation failed" }
