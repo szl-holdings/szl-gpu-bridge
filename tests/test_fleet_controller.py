@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from test_artifact_qualification import FakeApi, fixture
 from tools.salad import controller_gates as gates
@@ -240,7 +241,7 @@ class BenchRunnerTests(Base):
         recs = self.run_bench(
             {PREFIX + "20261119T090000.json": receipt_bytes()}, salad, apply=True
         )
-        self.assertEqual(recs[0]["decision"], "PARK_PERMITTED")
+        self.assertEqual(recs[0]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION")
         self.assertEqual([m[0] for m in salad.mutations()], ["POST", "PATCH"])
         self.assertEqual(
             recs[0]["action"]["post_readback"]["state"],
@@ -278,6 +279,122 @@ class BenchRunnerTests(Base):
         self.assertEqual(salad.mutations(), [])
 
 
+    def test_dry_run_does_not_stop_or_patch(self):
+        salad = FakeSalad(status="running", running=1)
+        recs = self.run_bench(
+            {PREFIX + "20261119T090000.json": receipt_bytes()},
+            salad,
+            apply=False,
+        )
+        self.assertEqual(recs[0]["decision"], "PARK_PERMITTED")
+        self.assertEqual(salad.mutations(), [])
+
+    def test_rejected_stop_statuses_never_patch_or_replay(self):
+        for status in (400, 401, 403, 429, 503):
+            with self.subTest(status=status):
+                with tempfile.TemporaryDirectory() as temp:
+                    self.contract["state_dir"] = str(Path(temp) / "state")
+
+                    class RejectedStop(FakeSalad):
+                        def call(self, method, path, body=None, content_type="application/json"):
+                            if method == "POST" and path.endswith("/stop"):
+                                self.calls.append((method, path, body))
+                                return 0, status, b""
+                            return super().call(method, path, body, content_type)
+
+                    salad = RejectedStop(status="running", running=1)
+                    files = {PREFIX + "20261119T090000.json": receipt_bytes()}
+                    recs = self.run_bench(files, salad, apply=True)
+                    self.assertEqual(
+                        recs[0]["decision"], "HOLD_STOP_REQUEST_UNVERIFIED"
+                    )
+                    self.assertEqual(
+                        salad.mutations(),
+                        [("POST", "/szl-bench-example/stop", None)],
+                    )
+                    ledger = fc.Ledger(self.contract["state_dir"], "bench")
+                    self.assertIn("szl-bench-example", ledger.load()["stop_intents"])
+                    self.run_bench(files, salad, apply=True)
+                    self.assertEqual(len(salad.mutations()), 1)
+
+    def test_async_202_stop_cannot_cascade_into_patch(self):
+        class SlowStop(FakeSalad):
+            def call(self, method, path, body=None, content_type="application/json"):
+                if method == "POST" and path.endswith("/stop"):
+                    self.calls.append((method, path, body))
+                    self.status = "stopping"
+                    return 0, 202, b""
+                return super().call(method, path, body, content_type)
+
+        salad = SlowStop(status="running", running=1)
+        files = {PREFIX + "20261119T090000.json": receipt_bytes()}
+        recs = self.run_bench(files, salad, apply=True)
+        self.assertEqual(recs[0]["decision"], "HOLD_STOP_SETTLEMENT_UNVERIFIED")
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST"])
+        self.assertIn("stop_readback", recs[0]["action"])
+        self.run_bench(files, salad, apply=True)
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST"])
+
+    def test_owner_lease_changed_after_stop_forbids_patch(self):
+        salad = FakeSalad(status="running", running=1)
+        with patch.object(
+            fc,
+            "lease_check",
+            side_effect=[
+                (True, "OWNER_LEASE_VERIFIED"),
+                (False, "OWNER_LEASE_DIGEST_MISMATCH"),
+            ],
+        ):
+            recs = self.run_bench(
+                {PREFIX + "20261119T090000.json": receipt_bytes()},
+                salad,
+                apply=True,
+            )
+        self.assertEqual(recs[0]["decision"], "HOLD_OWNER_LEASE_CHANGED")
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST"])
+
+    def test_rejected_patch_retains_manual_hold_not_done(self):
+        class BadPatch(FakeSalad):
+            def call(self, method, path, body=None, content_type="application/json"):
+                if method == "PATCH":
+                    self.calls.append((method, path, body))
+                    return 0, 429, b""
+                return super().call(method, path, body, content_type)
+
+        salad = BadPatch(status="running", running=1)
+        files = {PREFIX + "20261119T090000.json": receipt_bytes()}
+        recs = self.run_bench(files, salad, apply=True)
+        self.assertEqual(recs[0]["decision"], "HOLD_PARK_REQUEST_UNVERIFIED")
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST", "PATCH"])
+        ledger = fc.Ledger(self.contract["state_dir"], "bench")
+        self.assertIn("szl-bench-example", ledger.load()["stop_intents"])
+        self.run_bench(files, salad, apply=True)
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST", "PATCH"])
+
+    def test_stop_intent_is_persisted_before_first_provider_effect(self):
+        parent = self
+
+        class CheckIntent(FakeSalad):
+            def call(self, method, path, body=None, content_type="application/json"):
+                if method == "POST" and path.endswith("/stop"):
+                    ledger = fc.Ledger(parent.contract["state_dir"], "bench")
+                    intent = ledger.load()["stop_intents"]["szl-bench-example"]
+                    parent.assertEqual(intent["phase"], "POST_STOP_OUTCOME_UNRESOLVED")
+                return super().call(method, path, body, content_type)
+
+        salad = CheckIntent(status="running", running=1)
+        recs = self.run_bench(
+            {PREFIX + "20261119T090000.json": receipt_bytes()},
+            salad,
+            apply=True,
+        )
+        self.assertEqual(
+            recs[0]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION"
+        )
+        ledger = fc.Ledger(self.contract["state_dir"], "bench")
+        self.assertNotIn("szl-bench-example", ledger.load()["stop_intents"])
+
+
 class BenchLeaseLaterTests(Base):
     run_bench = BenchRunnerTests.run_bench
 
@@ -294,7 +411,7 @@ class BenchLeaseLaterTests(Base):
         self.assertEqual(salad.mutations(), [])
         lease_path.write_bytes(good)
         parked = self.run_bench(files, salad, apply=True)
-        self.assertEqual(parked[-2]["decision"], "PARK_PERMITTED")
+        self.assertEqual(parked[-2]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION")
         self.assertEqual([m[0] for m in salad.mutations()], ["POST", "PATCH"])
 
 
