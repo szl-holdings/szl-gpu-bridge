@@ -1,5 +1,8 @@
-# bootstrap.ps1 — one-paste, idempotent setup of the SZL GPU bridge daemon.
-# Elevated PowerShell:  irm https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/laptop/bootstrap.ps1 | iex
+# bootstrap.ps1  -  owner-only refresh of the reviewed SZL GPU bridge.
+# From a clean, locally reviewed Git checkout pinned to its exact 40-hex commit:
+#   .\laptop\bootstrap.ps1 -SourceRevision <reviewed-protected-main-sha>
+# Never pipe moving main into Invoke-Expression; initial owner commissioning is
+# a separately approved procedure, not an implicit second dispatch installer.
 #
 # What it does (and nothing else):
 #   1. Creates a constrained py3.12 training environment and records the exact
@@ -10,11 +13,91 @@
 #   5. Registers a scheduled task that polls the public queue and runs jobs.
 # It installs no remote-control software and opens no inbound ports.
 
+[CmdletBinding()]
+param(
+  [Parameter(Mandatory = $true)]
+  [ValidatePattern('^[0-9a-fA-F]{40}$')]
+  [string]$SourceRevision
+)
+
 $ErrorActionPreference = "Stop"
 $Root = "C:\szl-bridge"
-$Repo = "https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main"
+$SourceRevision = $SourceRevision.ToLowerInvariant()
 
-Write-Host "== SZL GPU bridge bootstrap ==" -ForegroundColor Cyan
+# Validate exact reviewed source and existing owner before any mutation.
+# Task and daemon presence are prerequisites, NOT proof of fleet-wide
+# owner exclusivity, a signed source release, or training admission.
+if ([string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+  throw "Bootstrap requires a reviewed local checkout; pipes are not admitted"
+}
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$Head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $Head -cne $SourceRevision) {
+  throw "Bootstrap checkout does not match the exact reviewed source revision"
+}
+$Dirty = @(& git -C $RepoRoot status --porcelain --untracked-files=no 2>$null)
+if ($LASTEXITCODE -ne 0 -or $Dirty.Count -ne 0) {
+  throw "Bootstrap checkout is dirty or source state is unavailable"
+}
+$ExistingTask = Get-ScheduledTask -TaskName 'SZL-GPU-Bridge' -ErrorAction SilentlyContinue
+$ExistingDaemon = Test-Path -LiteralPath (Join-Path $Root 'daemon.ps1') -PathType Leaf
+if ($null -eq $ExistingTask -or -not $ExistingDaemon) {
+  throw "Existing authorized owner prerequisites missing; refusing a second dispatcher"
+}
+if ([string]$ExistingTask.State -eq 'Running') {
+  throw "Existing owner task is running; refusing to modify active dispatch"
+}
+$TaskOwner = [string]$ExistingTask.Principal.UserId
+# Task Scheduler can return either account names or raw well-known SIDs.
+# Never trust a display-name-only allowlist as proof of a user account.
+if ([string]::IsNullOrWhiteSpace($TaskOwner) -or
+    $ExistingTask.Principal.LogonType -ne 'S4U' -or
+    $TaskOwner -match '^(?i:NT AUTHORITY\\|NT SERVICE\\)') {
+  throw "Existing owner principal must remain user scoped"
+}
+try {
+  $AccountSid = if ($TaskOwner -match '^S-1-') {
+    [Security.Principal.SecurityIdentifier]::new($TaskOwner)
+  } else {
+    ([Security.Principal.NTAccount]::new($TaskOwner)).Translate(
+      [Security.Principal.SecurityIdentifier]
+    )
+  }
+} catch {
+  throw "Existing owner principal SID resolution unavailable"
+}
+if ($AccountSid.Value -in @('S-1-5-18','S-1-5-19','S-1-5-20') -or
+    $AccountSid.Value -match '^S-1-5-(80|82|90)-') {
+  throw "Existing owner principal must remain user scoped"
+}
+
+# Check every source artifact before modifying the existing owner.
+$Files = @(
+  @("laptop/daemon.ps1", "$Root\daemon.ps1"),
+  @("laptop/dispatcher.py", "$Root\dispatcher.py"),
+  @("laptop/frontier_contract.py", "$Root\frontier_contract.py"),
+  @("laptop/frontier_runtime.py", "$Root\frontier_runtime.py"),
+  @("laptop/frontier_job.py", "$Root\frontier_job.py"),
+  @("laptop/nemo_v3_contract.py", "$Root\nemo_v3_contract.py"),
+  @("laptop/prefetch_nemo_v3.py", "$Root\prefetch_nemo_v3.py"),
+  @("laptop/finalize_nemo_v3_receipt.py", "$Root\finalize_nemo_v3_receipt.py"),
+  @("laptop/run_nemo_v3_isolated.ps1", "$Root\run_nemo_v3_isolated.ps1"),
+  @("laptop/runjob.py", "$Root\runjob.py"),
+  @("laptop/runjob_frontier.py", "$Root\runjob_frontier.py"),
+  @("laptop/runjob_nemo_v3.py", "$Root\runjob_nemo_v3.py"),
+  @("laptop/storage_preflight.py", "$Root\storage_preflight.py"),
+  @("schema/jobspec.v1.json", "$Root\schema\jobspec.v1.json"),
+  @("schema/jobspec.v2.json", "$Root\schema\jobspec.v2.json"),
+  @("schema/nemo-v3-jobspec.v1.json", "$Root\schema\nemo-v3-jobspec.v1.json")
+)
+foreach ($Pair in $Files) {
+  $source = Join-Path $RepoRoot ($Pair[0].Replace('/', '\'))
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "Reviewed checkout missing required bridge source"
+  }
+}
+
+Write-Host "== SZL GPU bridge owner refresh (source pinned) ==" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $Root, "$Root\jobs", "$Root\logs", "$Root\keys", "$Root\schema" | Out-Null
 
 # ---- 1. pinned engine pubkey (trust root: verify BEFORE obeying anything) ----
@@ -30,7 +113,7 @@ $SpkiBytes = [Convert]::FromBase64String($PinObj.publicKeySpkiBase64)
 $Sha = [System.Security.Cryptography.SHA256]::Create()
 $DerivedKeyId = (($Sha.ComputeHash($SpkiBytes) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 16)
 if ($DerivedKeyId -ne $PinObj.keyId) {
-  Write-Host "FATAL: engine pubkey self-check failed (derived $DerivedKeyId ≠ labeled $($PinObj.keyId)) — refusing to install a mislabeled trust root." -ForegroundColor Red
+  Write-Host "FATAL: engine pubkey self-check failed (derived $DerivedKeyId != labeled $($PinObj.keyId))  -  refusing to install a mislabeled trust root." -ForegroundColor Red
   exit 1
 }
 Set-Content -Path "$Root\keys\engine_pubkey.json" -Value $EnginePin -Encoding utf8
@@ -185,8 +268,8 @@ Write-Host "training stack ready; exact package snapshot sha256 $StackSha"
 # hf auth: reuse the laptop's existing login (the proven upload path).
 & $Py -c "from huggingface_hub import HfApi; print('hf auth OK as', HfApi().whoami()['name'])"
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "hf CLI is NOT logged in — run: $CondaBase\envs\szl-bridge\Scripts\hf.exe auth login" -ForegroundColor Yellow
-  Write-Host "(bridge will poll but BLOCK uploads until login exists — fail closed)" -ForegroundColor Yellow
+  Write-Host "hf CLI is NOT logged in  -  run: $CondaBase\envs\szl-bridge\Scripts\hf.exe auth login" -ForegroundColor Yellow
+  Write-Host "(bridge will poll but BLOCK uploads until login exists  -  fail closed)" -ForegroundColor Yellow
 }
 
 # ---- 3. laptop signing key (ed25519, never leaves this machine) -------------
@@ -218,26 +301,14 @@ Write-Host "    (the cloud pins it before trusting any receipt from this laptop)
 Write-Host ""
 
 # ---- 4. fetch dispatcher, all runners, helpers, and schemas -----------------
-$Files = @(
-  @("laptop/daemon.ps1", "$Root\daemon.ps1"),
-  @("laptop/dispatcher.py", "$Root\dispatcher.py"),
-  @("laptop/frontier_contract.py", "$Root\frontier_contract.py"),
-  @("laptop/frontier_runtime.py", "$Root\frontier_runtime.py"),
-  @("laptop/frontier_job.py", "$Root\frontier_job.py"),
-  @("laptop/nemo_v3_contract.py", "$Root\nemo_v3_contract.py"),
-  @("laptop/prefetch_nemo_v3.py", "$Root\prefetch_nemo_v3.py"),
-  @("laptop/finalize_nemo_v3_receipt.py", "$Root\finalize_nemo_v3_receipt.py"),
-  @("laptop/run_nemo_v3_isolated.ps1", "$Root\run_nemo_v3_isolated.ps1"),
-  @("laptop/runjob.py", "$Root\runjob.py"),
-  @("laptop/runjob_frontier.py", "$Root\runjob_frontier.py"),
-  @("laptop/runjob_nemo_v3.py", "$Root\runjob_nemo_v3.py"),
-  @("laptop/storage_preflight.py", "$Root\storage_preflight.py"),
-  @("schema/jobspec.v1.json", "$Root\schema\jobspec.v1.json"),
-  @("schema/jobspec.v2.json", "$Root\schema\jobspec.v2.json"),
-  @("schema/nemo-v3-jobspec.v1.json", "$Root\schema\nemo-v3-jobspec.v1.json")
-)
 foreach ($Pair in $Files) {
-  Invoke-WebRequest "$Repo/$($Pair[0])" -OutFile $Pair[1]
+  $source = Join-Path $RepoRoot ($Pair[0].Replace('/', '\'))
+  Copy-Item -LiteralPath $source -Destination $Pair[1] -Force
+  $expected = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+  $installed = (Get-FileHash -LiteralPath $Pair[1] -Algorithm SHA256).Hash
+  if ($expected -cne $installed) {
+    throw "Installed file does not match the pinned local checkout"
+  }
 }
 & $Py -m py_compile `
   "$Root\dispatcher.py" `
@@ -251,12 +322,12 @@ foreach ($Pair in $Files) {
   "$Root\runjob_frontier.py" `
   "$Root\runjob_nemo_v3.py" `
   "$Root\storage_preflight.py"
-if ($LASTEXITCODE -ne 0) { throw "downloaded bridge Python failed compilation" }
+if ($LASTEXITCODE -ne 0) { throw "reviewed source bridge Python failed compilation" }
 
 # GGUF jobs are accepted only when a real llama-cli is discoverable for reload smoke.
 $Llama = Get-Command llama-cli.exe -ErrorAction SilentlyContinue
 if (-not $Llama) {
-  Write-Host "llama-cli not on PATH — adapter/merged jobs remain available; GGUF jobs will return signed BLOCKED until llama-cli is installed." -ForegroundColor Yellow
+  Write-Host "llama-cli not on PATH  -  adapter/merged jobs remain available; GGUF jobs will return signed BLOCKED until llama-cli is installed." -ForegroundColor Yellow
 }
 
 # ---- 5. register scheduled task ---------------------------------------------
@@ -267,8 +338,8 @@ $Triggers = @(
   (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 15))
 )
 $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Hours 26) -MultipleInstances IgnoreNew
-$Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType S4U -RunLevel Highest
+$Principal = New-ScheduledTaskPrincipal -UserId $TaskOwner -LogonType S4U -RunLevel Highest
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Triggers -Settings $Settings -Principal $Principal -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Write-Host "scheduled task '$TaskName' registered (startup + every 15 min; single-flight) and started."
-Write-Host "logs: $Root\logs\daemon.log — bootstrap complete." -ForegroundColor Cyan
+Write-Host "logs: $Root\logs\daemon.log  -  bootstrap complete." -ForegroundColor Cyan

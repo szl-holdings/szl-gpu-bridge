@@ -60,11 +60,13 @@ jobs:
           --require-hashes -r requirements/ci/contract.txt
       - name: Compile Python
         run: >-
-          python -m py_compile laptop/*.py tests/*.py workforce/*.py
+          python -m py_compile laptop/*.py tests/*.py workforce/*.py tools/salad/salad_worker.py
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
+          tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -74,8 +76,10 @@ jobs:
           ruff format --check laptop tests workforce
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
+          tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -85,8 +89,10 @@ jobs:
           ruff check laptop tests workforce
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
+          tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -154,7 +160,8 @@ jobs:
           foreach ($relative in @(
             'laptop\watchdog.ps1',
             'laptop\install_watchdog.ps1',
-            'laptop\daemon.ps1'
+            'laptop\daemon.ps1',
+            'laptop\bootstrap.ps1'
           )) {
             $path = Join-Path $env:GITHUB_WORKSPACE $relative
             $tokens = $null
