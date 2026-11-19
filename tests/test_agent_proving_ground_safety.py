@@ -11,7 +11,8 @@ import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
-SRC = Path(__file__).with_name("agent_proving_ground.py")
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "tools/proving-grounds/agent_proving_ground.py"
 spec = importlib.util.spec_from_file_location("agent_pg", SRC)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
