@@ -45,12 +45,8 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
             "'watchdog-config.json','storage_preflight.py')",
             s,
         )
-        self.assertIn(
-            "if (@($proof.installed_files).Count -ne 4)", s
-        )
-        self.assertIn(
-            "@('daemon.ps1','watchdog.ps1','storage_preflight.py')", s
-        )
+        self.assertIn("if (@($proof.installed_files).Count -ne 4)", s)
+        self.assertIn("@('daemon.ps1','watchdog.ps1','storage_preflight.py')", s)
         self.assertIn("Installed owner proof source drift", s)
 
     def test_protected_sha_and_existing_owner_checks_remain(self) -> None:
