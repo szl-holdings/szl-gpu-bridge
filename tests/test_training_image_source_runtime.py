@@ -150,7 +150,8 @@ class SourceRuntimeTests(unittest.TestCase):
         ).read_text()
         self.assertIn("source_runtime_contract.py verify", workflow)
         self.assertIn("verified_resume_checkpoint", workflow)
-        self.assertIn("from tools.salad.training_snapshot import model_snapshot", workflow)
+        snapshot_import = "from tools.salad.training_snapshot import model_snapshot"
+        self.assertIn(snapshot_import, workflow)
         self.assertIn("org.opencontainers.image.revision", workflow)
         self.assertIn('test "${REVISION}" = "${GITHUB_SHA}"', workflow)
 
