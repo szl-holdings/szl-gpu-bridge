@@ -342,8 +342,10 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                 drift.append("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH")
             if report["fleet"]["groups_observed"] == 0:
                 drift.append("SALAD_EMPTY_COLLECTION_NOT_PROVEN_COMPLETE")
-            if report["fleet"]["lifecycle_recheck_total"] > 0:
-                drift.append("SALAD_PROVIDER_LIFECYCLE_RECHECK")
+            # Lifecycle/replica intent can legitimately diverge during stop
+            # or deployment. A single snapshot is diagnostic, not an alert.
+            # Keep count-only evidence; require temporal owner readback for
+            # any future persistent-lifecycle drift declaration.
             # Up to five immutable-name allowlisted API GETs; 401/403/429
             # stops subsequent reads without retry or credential fallback.
             samples = report["fleet"].get("source_priority_group_sample", [])
