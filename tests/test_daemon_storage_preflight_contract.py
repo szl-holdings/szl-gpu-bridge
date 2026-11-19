@@ -121,15 +121,27 @@ class DaemonStoragePreflightOrderingTests(unittest.TestCase):
 
 
 class BootstrapShipsPreflightTests(unittest.TestCase):
-    def test_bootstrap_fetches_and_compiles_the_preflight(self) -> None:
+    def test_bootstrap_copies_pinned_preflight_and_compiles_it(self) -> None:
         source = BOOTSTRAP.read_text(encoding="utf-8")
         self.assertIn(
             '@("laptop/storage_preflight.py", "$Root\\storage_preflight.py")', source
         )
+        source_precheck = source.index("Reviewed checkout missing required bridge source")
+        first_write = source.index("New-Item -ItemType Directory -Force -Path $Root")
+        source_copy = source.index(
+            "Copy-Item -LiteralPath $source -Destination $Pair[1] -Force"
+        )
+        copy_verify = source.index(
+            "Installed file does not match the pinned local checkout"
+        )
         compile_start = source.index("& $Py -m py_compile")
         compile_end = source.index(
-            'throw "downloaded bridge Python failed compilation"'
+            'throw "reviewed source bridge Python failed compilation"'
         )
+        self.assertLess(source_precheck, first_write)
+        self.assertLess(first_write, source_copy)
+        self.assertLess(source_copy, copy_verify)
+        self.assertLess(copy_verify, compile_start)
         self.assertIn(
             '"$Root\\storage_preflight.py"', source[compile_start:compile_end]
         )
