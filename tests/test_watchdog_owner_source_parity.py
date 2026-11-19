@@ -26,8 +26,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         self.assertLess(install, reconcile)
         block = s[guard:install]
         self.assertIn("@('daemon.ps1','storage_preflight.py')", block)
-        self.assertIn("Get-FileHash -LiteralPath $installed", block)
-        self.assertIn("Get-FileHash -LiteralPath $expected", block)
+        self.assertIn("source_parity.ps1", block)
+        self.assertIn("-ExpectedSource $expected -InstalledSource $installed", block)
+        self.assertIn("SOURCE_PARITY_VERIFIED", block)
         self.assertIn("Installed owner source parity mismatch", block)
         self.assertIn("Missing reviewed owner prerequisite", block)
         for forbidden in (
@@ -48,6 +49,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         self.assertIn("if (@($proof.installed_files).Count -ne 4)", s)
         self.assertIn("@('daemon.ps1','watchdog.ps1','storage_preflight.py')", s)
         self.assertIn("Installed owner proof source drift", s)
+        self.assertIn("Installed owner proof changed since readback", s)
+        self.assertIn('      - "laptop/storage_preflight.py"', s)
+        self.assertIn('      - "laptop/source_parity.ps1"', s)
 
     def test_protected_sha_and_existing_owner_checks_remain(self) -> None:
         s = self.source
