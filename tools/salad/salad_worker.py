@@ -128,7 +128,16 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     """Bind the exact supported TRL API without treating **kwargs as acceptance.
 
     The baked Salad image pins TRL 0.13.0 (max_seq_length); newer fleet lanes
-    use max_length. An unknown or ambiguous API is a hard stop, never a fallback.
+    use max_length. An unknown or ambiguous API is a hard stop, never a
+    fallback. Measured 2026-11-19: TRL 0.15-0.19 ships BOTH fields at once
+    (max_seq_length deprecated, forwarding to max_length in __post_init__), so
+    every ring lane pinned at trl==0.17.0 fail-closed at this precheck with
+    zero provider effects. The overlap is NOT treated as a binding here: a
+    two-field constructor has no single explicit sequence-bound field, and a
+    deprecated alias could silently reinterpret it. The fleet remedy is the
+    version pin (ring lanes pin-bumped to trl==1.17.1, readback-verified),
+    and verify_sequence_binding additionally checks the constructed config
+    so no silent default can masquerade as a bound length.
     """
     try:
         parameters = inspect.signature(constructor).parameters
@@ -141,9 +150,31 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
         and parameters[name].kind not in (inspect.Parameter.VAR_KEYWORD,
                                          inspect.Parameter.VAR_POSITIONAL)
     ]
-    if len(explicit) != 1:
-        raise RuntimeError("SFTConfig must expose exactly one explicit sequence-bound field")
-    return {explicit[0]: length}
+    if len(explicit) == 1:
+        return {explicit[0]: length}
+    raise RuntimeError(
+        "SFTConfig must expose exactly one explicit sequence-bound field "
+        f"(found: {sorted(explicit) or 'none'}); measured alias-overlap TRLs "
+        "0.15-0.19 ship both max_seq_length and max_length and are NOT a "
+        "binding - pin a single-field TRL (fleet remedy 2026-11-19: ring "
+        "lanes pin-bumped to trl==1.17.1) instead of guessing a binding")
+
+
+def verify_sequence_binding(cfg, sequence_kwargs: dict, length: int) -> None:
+    """Fail unless the constructed config actually holds the bound length.
+
+    sft_sequence_length_kwargs inspects the constructor; this checks the built
+    object, so an alias overlap or a silent default can never claim a bound
+    training sequence length. Raises RuntimeError (fail-closed), never guesses.
+    """
+    if len(sequence_kwargs) != 1:
+        raise RuntimeError("sequence binding must be exactly one field")
+    field, value = next(iter(sequence_kwargs.items()))
+    actual = getattr(cfg, field, None)
+    if actual != value:
+        raise RuntimeError(
+            f"SFTConfig.{field} was bound to {value!r} but constructed as "
+            f"{actual!r}; refusing to train on an unbound sequence length")
 
 
 STOP = {"flag": False}
@@ -1099,6 +1130,13 @@ def run_training(a, api) -> int:
         gradient_checkpointing=a.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False} if a.gradient_checkpointing else None,
         packing=False)
+    try:
+        verify_sequence_binding(cfg, sequence_kw, 2048)
+    except RuntimeError as error:
+        receipt("fail-closed", f"SFTConfig sequence-length binding unverified: {error}",
+                {"training_started": False, "completion_qualified": False})
+        print(f"FAIL-CLOSED: {error}; no training started", file=sys.stderr, flush=True)
+        return 8
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
         target_modules=["q_proj","k_proj","v_proj","o_proj"],
         task_type="CAUSAL_LM")
