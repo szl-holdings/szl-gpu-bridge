@@ -200,6 +200,66 @@ def verify_training_zip(path: Path | None):
     }
 
 
+def catalog_backlog(census, selected):
+    """Account for public HF models not mapped to an admitted Hatun role.
+
+    A complete public pagination observation is still not a private-model
+    inventory, model-weights audit, training result, or approval to dispatch.
+    """
+    if census is None:
+        return {"state": "NOT_SUPPLIED", "unclassified_review_only": None}
+    require(
+        type(census) is dict
+        and census.get("schema") == "szl.hf.public-model-census/v0",
+        "CENSUS_SCHEMA",
+    )
+    require(
+        census.get("completeness") == "COMPLETE_PAGE_CENSUS"
+        and census.get("errors") == [],
+        "CENSUS_INCOMPLETE",
+    )
+    rows = census.get("items")
+    require(type(rows) is list and 1 <= len(rows) <= 1000, "CENSUS_SIZE")
+    require(
+        type(census.get("public_model_count_observed")) is int
+        and census["public_model_count_observed"] == len(rows),
+        "CENSUS_COUNT",
+    )
+    ids = {}
+    for item in rows:
+        require(type(item) is dict, "CENSUS_ROW")
+        mid = item.get("id")
+        sha = item.get("sha")
+        require(type(mid) is str and MODEL_ID.fullmatch(mid), "CENSUS_ID")
+        require(type(sha) is str and SHA40.fullmatch(sha), "CENSUS_SHA")
+        require(mid not in ids, "CENSUS_DUPLICATE")
+        require(
+            item.get("training_admitted") is False, "CENSUS_TRAINING_FLAG_FORBIDDEN"
+        )
+        require(type(item.get("in_eleven_roster")) is bool, "CENSUS_MEMBERSHIP_TYPE")
+        ids[mid] = item
+    selected_ids = {m["id"] for m in selected}
+    require(selected_ids.issubset(ids), "ROSTER_NOT_IN_CENSUS")
+    require(
+        all(ids[mid]["in_eleven_roster"] is (mid in selected_ids) for mid in ids),
+        "CENSUS_MEMBERSHIP_CONTRADICTION",
+    )
+    changed = sorted(
+        m["id"] for m in selected if ids[m["id"]]["sha"] != m["observed_sha"]
+    )
+    return {
+        "state": "PUBLIC_METADATA_CATALOG_REVIEW_ONLY",
+        "public_models_observed": len(rows),
+        "selected_for_source_only_loop": len(selected_ids),
+        "unclassified_review_only": len(rows) - len(selected_ids),
+        "selected_revision_mismatches": changed,
+        "census_canonical_sha256": digest(canonical(census)),
+        "private_models_observed": False,
+        "model_weights_checked": False,
+        "model_training_admitted": False,
+    }
+
+
 def _fresh(observed_at, hours=6):
     try:
         t = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
@@ -307,13 +367,22 @@ def _exclusive_file(path, data):
 
 
 def run(
-    plan, observation, dependencies, dataset, outdir: Path, *, cycles=1, max_steps=12
+    plan,
+    observation,
+    dependencies,
+    dataset,
+    outdir: Path,
+    *,
+    cycles=1,
+    max_steps=12,
+    census=None,
 ):
     require(type(cycles) is int and 1 <= cycles <= MAX_CYCLES, "CYCLE_CAP")
     require(type(max_steps) is int and 1 <= max_steps <= MAX_STEPS, "STEP_CAP")
     candidates = verify_plan(plan)
     require(len(candidates) <= max_steps, "BUDGET_EXHAUSTED_NO_PARTIAL_CLAIM")
     results, gates = classify(candidates, observation, dependencies, dataset)
+    backlog = catalog_backlog(census, candidates)
     require(not outdir.exists(), "EVIDENCE_OUTPUT_EXISTS")
     outdir.mkdir(parents=True, exist_ok=False)
     previous = None
@@ -337,6 +406,7 @@ def run(
             "dependency_observation_canonical_sha256": digest(canonical(dependencies)),
             "previous_receipt_sha256": previous,
             "dataset": dataset,
+            "hf_public_census": backlog,
             "dependency_gates": gates,
             "candidates": results,
             "all_models_training_qualified": False,
@@ -377,6 +447,7 @@ def run(
     return {
         "state": "HOLD_ALL_MODEL_ADMISSIONS",
         "models_observed": len(results),
+        "additional_public_models_review_only": backlog["unclassified_review_only"],
         "cycles_completed": cycles,
         "cycle_receipt_sha256": hashes,
         "graph_sha256": digest(svg.encode("utf-8")),
@@ -392,6 +463,11 @@ def main(argv=None):
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--hf-observation", type=Path, required=True)
     parser.add_argument("--dependency-observation", type=Path, required=True)
+    parser.add_argument(
+        "--hf-census",
+        type=Path,
+        help="Optional complete public model catalog (review-only)",
+    )
     parser.add_argument("--train-only-zip", type=Path)
     parser.add_argument("--outdir", type=Path, required=True)
     parser.add_argument("--cycles", type=int, default=1)
@@ -407,6 +483,7 @@ def main(argv=None):
             args.outdir,
             cycles=args.cycles,
             max_steps=args.max_steps,
+            census=read_json(args.hf_census, cap=1_000_000) if args.hf_census else None,
         )
         print(json.dumps(outcome, sort_keys=True))
         return 2  # Admission HOLD is visible even if scan itself succeeded.
