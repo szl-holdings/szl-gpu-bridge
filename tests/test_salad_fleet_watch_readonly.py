@@ -120,6 +120,22 @@ class FleetContractTests(unittest.TestCase):
         self.assertFalse(result["training_liveness_verified"])
         self.assertFalse(result["source_deployment_parity_verified"])
 
+    def test_running_group_without_running_instance_files_fleet_drift(self):
+        g = group(1)
+        g["current_state"]["instance_status_counts"]["running_count"] = 0
+
+        def reader(url, *, token=None):
+            if url == watch.PROVIDER_URL:
+                return {"items": [g]}
+            return []
+
+        result, drift = watch.collect("SYNTHETIC", reader=reader, now=NOW)
+        self.assertEqual(result["fleet"]["anomalies_total"], 1)
+        self.assertIn("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH", drift)
+        self.assertEqual(result["release_admission"], "HOLD")
+        self.assertFalse(result["fleet"]["trainer_steps_observed"])
+        self.assertFalse(result["fleet"]["training_liveness_verified"])
+
     def test_untrusted_collection_metadata_never_crashes_or_leaks_values(self):
         g = group(0)
         g["current_state"]["status"] = ["provider-unexpected-shape"]
@@ -215,7 +231,7 @@ class FleetContractTests(unittest.TestCase):
         self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(result))
         self.assertEqual(len(provider_calls), 3)
         self.assertEqual(provider_calls[-1], (watch.CHAIN_URL, False))
-        self.assertEqual(drift, [])
+        self.assertIn("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH", drift)
 
     def test_429_on_one_selected_group_blocks_other_selected_reads(self):
         names = ["szl-train-a11oy-mini-r1", "szl-train-flagship54-v2"]
