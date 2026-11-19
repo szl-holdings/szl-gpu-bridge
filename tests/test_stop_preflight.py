@@ -127,9 +127,7 @@ class StopPreflightTests(unittest.TestCase):
             self.run_witness(lambda i, e: i.update(owner_generation=True))["reason"],
             "OWNER_IDENTITY_UNVERIFIED",
         )
-        r = self.run_witness(
-            lambda i, e: e["trainer_state"].update(global_step=True)
-        )
+        r = self.run_witness(lambda i, e: e["trainer_state"].update(global_step=True))
         self.assertEqual(r["reason"], "TRAINER_STATE_NOT_TERMINAL_AND_PINNED")
 
     def test_bad_artifact_file_or_tokenizer(self):
