@@ -74,7 +74,9 @@ class FakeHub:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(
-                    self.corrupt if self.corrupt and name.endswith("optimizer.pt") else raw
+                    self.corrupt
+                    if self.corrupt and name.endswith("optimizer.pt")
+                    else raw
                 )
         if self.extra_local:
             (root / prefix / self.extra_local).write_bytes(b"unaccounted")
