@@ -175,9 +175,7 @@ def assess_stop_preflight(*, intent: object, evidence: object, now_utc: str) -> 
         "failed",
     }:
         return _hold("PROVIDER_STATUS_UNVERIFIED")
-    if status == "stopped" and any(
-        provider["instance_counts"][key] for key in COUNTS
-    ):
+    if status == "stopped" and any(provider["instance_counts"][key] for key in COUNTS):
         return _hold("PROVIDER_STOPPED_COUNTS_CONFLICT")
 
     # Group counters and an independently obtained instance listing are
