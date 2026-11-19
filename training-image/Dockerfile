@@ -24,19 +24,29 @@ RUN case "${BASE_IMAGE}" in *@sha256:???????????????????????????????????????????
       *) echo "BASE_IMAGE must be pinned by @sha256 digest, got: ${BASE_IMAGE}" >&2; exit 64;; esac
 
 WORKDIR /work
-COPY requirements.lock /work/requirements.lock
+ENV PYTHONPATH=/work
+COPY training-image/requirements.lock /work/requirements.lock
 # Every artifact must match a hash in the lock (--require-hashes); the lock is the full closure (--no-deps).
 # The pytorch cu126 index is listed only so the "+cu126" torch builds resolve if the base ever drifts; hashes
 # still gate every file. Already-identical packages from the base are left alone.
 RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
       --extra-index-url https://download.pytorch.org/whl/cu126 -r /work/requirements.lock
 
-COPY readiness_probe.py step_heartbeat.py salad_worker.py build_gate.py /work/
+# One canonical training worker. Do not build from the retired image-local copy:
+# it predates immutable resume_integrity and may silently restart from genesis.
+COPY tools/salad/salad_worker.py /work/salad_worker.py
+COPY tools/salad/resume_integrity.py tools/salad/training_snapshot.py /work/tools/salad/
+COPY training-image/readiness_probe.py training-image/step_heartbeat.py training-image/build_gate.py /work/
+COPY training-image/source_runtime_contract.py /work/source_runtime_contract.py
+# Bind installed worker/helpers to the exact checkout used by the image build.
+RUN python3 -m py_compile /work/salad_worker.py /work/tools/salad/resume_integrity.py /work/tools/salad/training_snapshot.py \
+ && python3 /work/source_runtime_contract.py create --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}" \
+ && python3 /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}"
 # Run-receipt uploader (proofrun step 4): one commit per run / checkpoint save, never per heartbeat.
 # No token is baked in: it reads HF_TOKEN from the environment at runtime.
-COPY receipt_upload.py /work/receipts/receipt_upload.py
-COPY vendor /work/receipts/vendor
-COPY receipt_tests /work/receipts/tests
+COPY training-image/receipt_upload.py /work/receipts/receipt_upload.py
+COPY training-image/vendor /work/receipts/vendor
+COPY training-image/receipt_tests /work/receipts/tests
 
 # Build-time gate: the image cannot be produced if any of this fails.
 RUN python3 /work/readiness_probe.py --help > /dev/null \
@@ -46,7 +56,8 @@ RUN python3 /work/readiness_probe.py --help > /dev/null \
  && find /work -name __pycache__ -prune -exec rm -rf {} + \
  && rm -rf /tmp/* /root/.cache
 
-ENV HF_HOME=/work/hf-cache \
+ENV SZL_SOURCE_REVISION=${GIT_COMMIT} \
+    HF_HOME=/work/hf-cache \
     PIP_NO_INDEX=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     SZL_HEARTBEAT_FILE=/tmp/szl_heartbeat.json \
@@ -67,4 +78,4 @@ LABEL org.opencontainers.image.source="https://github.com/szl-holdings/szl-gpu-b
 # Boot gate (includes the GPU bf16 smoke; the build host has no GPU) then the worker.
 # Use `readiness_probe.py ready` / `live` as the Salad readiness / liveness probes.
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["/bin/sh", "-c", "python3 -W ignore /work/readiness_probe.py imports --from-env && exec python3 /work/salad_worker.py \"$@\"", "--"]
+ENTRYPOINT ["/bin/sh", "-c", "python3 /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision \"$SZL_SOURCE_REVISION\" && python3 -W ignore /work/readiness_probe.py imports --from-env && exec python3 /work/salad_worker.py \"$@\"", "--"]
