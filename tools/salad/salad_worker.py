@@ -112,6 +112,16 @@ from pathlib import Path
 import re
 import uuid
 
+# Support the existing first-party script launch on A6000 hosts:
+# `python tools/salad/salad_worker.py` does not put the checkout root on
+# sys.path. The baked Salad image already supplies PYTHONPATH=/work.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if _SCRIPT_DIR.name == "salad" and _SCRIPT_DIR.parent.name == "tools":
+    _SOURCE_ROOT = _SCRIPT_DIR.parent.parent
+    if (_SOURCE_ROOT / "tools" / "salad" / "resume_integrity.py").is_file():
+        if str(_SOURCE_ROOT) not in sys.path:
+            sys.path.insert(0, str(_SOURCE_ROOT))
+
 os.environ.setdefault("HF_HOME", os.environ.get("HF_HOME", os.path.expanduser("~/hf-cache")))
 
 import torch
@@ -354,7 +364,10 @@ def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model")
 
 def latest_checkpoint(api: HfApi, repo: str) -> str | None:
     """Inspect one immutable metadata revision, never moving-main filename lists."""
-    from tools.salad.resume_integrity import ResumeHold, inspect_pinned_checkpoint
+    try:
+        from tools.salad.resume_integrity import ResumeHold, inspect_pinned_checkpoint
+    except ImportError:
+        raise ResumeError("PINNED_RESUME_VERIFIER_UNAVAILABLE") from None
 
     try:
         plan = inspect_pinned_checkpoint(api, repo)
@@ -371,7 +384,10 @@ def fetch_resume_checkpoint(
     An unavailable checkpoint or metadata readback never degrades into GENESIS.
     Retain historical local files untouched and use a revision-scoped cache.
     """
-    from tools.salad.resume_integrity import ResumeHold, verified_resume_checkpoint
+    try:
+        from tools.salad.resume_integrity import ResumeHold, verified_resume_checkpoint
+    except ImportError:
+        raise ResumeError("PINNED_RESUME_VERIFIER_UNAVAILABLE") from None
 
     try:
         return verified_resume_checkpoint(
