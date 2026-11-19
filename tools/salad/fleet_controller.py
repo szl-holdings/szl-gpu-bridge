@@ -532,13 +532,9 @@ def bench_cycle(contract, salad, hub, ledger, *, apply):
                 body=body,
             )
             action["stop_readback"] = settled
-            fresh_lease_ok, fresh_lease_reason = lease_check(
-                contract, group, now_utc()
-            )
+            fresh_lease_ok, fresh_lease_reason = lease_check(contract, group, now_utc())
             action["second_lease"] = fresh_lease_reason
-            if not stop_settled_for_zero_patch(
-                settled, spec.get("replicas", 1)
-            ):
+            if not stop_settled_for_zero_patch(settled, spec.get("replicas", 1)):
                 decision = "HOLD_STOP_SETTLEMENT_UNVERIFIED"
             elif not fresh_lease_ok:
                 decision = "HOLD_OWNER_LEASE_CHANGED"
