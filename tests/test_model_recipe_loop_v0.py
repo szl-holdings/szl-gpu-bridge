@@ -171,6 +171,14 @@ class TestLoop(unittest.TestCase):
                 result["cycle_receipt_sha256"][0],
             )
             self.assertEqual(json.loads(second)["training_jobs_created"], 0)
+            self.assertEqual(
+                json.loads(second)["loop_source_sha256"],
+                g.digest(Path(g.__file__).read_bytes()),
+            )
+            self.assertEqual(
+                json.loads(second)["plan_canonical_sha256"],
+                g.digest(g.canonical(plan())),
+            )
             with self.assertRaisesRegex(g.Hold, "EVIDENCE_OUTPUT_EXISTS"):
                 g.run(plan(), a, b, {"state": "NOT_STAGED"}, out)
 
