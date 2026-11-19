@@ -116,14 +116,18 @@ class SourceRuntimeTests(unittest.TestCase):
 
     def test_docker_uses_canonical_worker_and_helpers(self):
         docker = (ROOT / "training-image" / "Dockerfile").read_text()
-        self.assertIn("COPY tools/salad/salad_worker.py /work/salad_worker.py", docker)
+        self.assertIn(
+            "COPY tools/salad/salad_worker.py /work/salad_worker.py", docker
+        )
         self.assertIn("tools/salad/resume_integrity.py", docker)
         self.assertIn("tools/salad/training_snapshot.py", docker)
         self.assertIn("COPY training-image/source_runtime_contract.py", docker)
         self.assertIn("source_runtime_contract.py verify", docker)
         self.assertIn("ENV PYTHONPATH=/work", docker)
         self.assertNotIn("COPY training-image/salad_worker.py", docker)
-        self.assertNotIn("COPY readiness_probe.py step_heartbeat.py salad_worker.py", docker)
+        self.assertNotIn(
+            "COPY readiness_probe.py step_heartbeat.py salad_worker.py", docker
+        )
 
     def test_retired_duplicate_worker_is_not_in_working_tree(self):
         self.assertFalse((ROOT / "training-image" / "salad_worker.py").exists())
