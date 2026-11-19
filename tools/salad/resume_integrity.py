@@ -78,11 +78,10 @@ def inspect_pinned_checkpoint(api, repo_id, *, expected_steps=None):
         if total > MAX_TOTAL_BYTES:
             raise ResumeHold("CHECKPOINT_TOTAL_BYTE_BUDGET")
         lfs = getattr(obj, "lfs", None)
-        sha = (
-            lfs.get("sha256")
-            if isinstance(lfs, dict)
-            else getattr(lfs, "sha256", None)
-        )
+        if isinstance(lfs, dict):
+            sha = lfs.get("sha256")
+        else:
+            sha = getattr(lfs, "sha256", None)
         blob = getattr(obj, "blob_id", None)
         if sha:
             if type(sha) is not str or re.fullmatch(r"[a-f0-9]{64}", sha) is None:
