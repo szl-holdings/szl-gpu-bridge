@@ -297,9 +297,7 @@ class BenchRunnerTests(Base):
                     self.contract["state_dir"] = str(Path(temp) / "state")
 
                     class RejectedStop(FakeSalad):
-                        def call(
-                            self, method, path, body=None, content_type="application/json"
-                        ):
+                        def call(self, method, path, body=None, content_type=None):
                             if method == "POST" and path.endswith("/stop"):
                                 self.calls.append((method, path, body))
                                 return 0, status, b""
