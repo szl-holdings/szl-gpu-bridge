@@ -8,7 +8,6 @@ no cloud group changes, and no local checkpoint is deleted.
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 import re
 
@@ -112,14 +111,17 @@ def _verify_object(path: Path, entry):
         digest = hashlib.sha1(usedforsecurity=False)
         digest.update(f"blob {size}\0".encode("ascii"))
         expected = getattr(entry, "blob_id", None)
-    with path.open("rb") as stream:
-        while True:
-            block = stream.read(1024 * 1024)
-            if not block:
-                break
-            digest.update(block)
-    if digest.hexdigest() != expected or path.stat().st_size != size:
-        raise ResumeHold("CHECKPOINT_OBJECT_HASH_MISMATCH")
+    try:
+        with path.open("rb") as stream:
+            while True:
+                block = stream.read(1024 * 1024)
+                if not block:
+                    break
+                digest.update(block)
+        if digest.hexdigest() != expected or path.stat().st_size != size:
+            raise ResumeHold("CHECKPOINT_OBJECT_HASH_MISMATCH")
+    except OSError:
+        raise ResumeHold("CHECKPOINT_LOCAL_IO_UNAVAILABLE") from None
 
 
 def verified_resume_checkpoint(api, repo_id, output_dir, *, expected_steps):
@@ -135,13 +137,16 @@ def verified_resume_checkpoint(api, repo_id, output_dir, *, expected_steps):
     out = Path(output_dir)
     if out.is_symlink():
         raise ResumeHold("CHECKPOINT_OUTPUT_SYMLINK_FORBIDDEN")
-    out.mkdir(parents=True, exist_ok=True)
-    cache = out / ".szl-verified-resume"
-    destination = cache / plan["revision"]
-    for item in (cache, destination):
-        if item.is_symlink():
-            raise ResumeHold("CHECKPOINT_STAGING_SYMLINK_FORBIDDEN")
-        item.mkdir(parents=True, exist_ok=True)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        cache = out / ".szl-verified-resume"
+        destination = cache / plan["revision"]
+        for item in (cache, destination):
+            if item.is_symlink():
+                raise ResumeHold("CHECKPOINT_STAGING_SYMLINK_FORBIDDEN")
+            item.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise ResumeHold("CHECKPOINT_STAGING_IO_UNAVAILABLE") from None
     try:
         api.snapshot_download(
             repo_id=repo_id,
@@ -166,11 +171,14 @@ def verified_resume_checkpoint(api, repo_id, output_dir, *, expected_steps):
         local = root / relative
         _verify_object(local, plan["files"][name])
         observed.add(name)
-    for local in root.iterdir():
-        if local.is_symlink() or not local.is_file():
-            raise ResumeHold("CHECKPOINT_UNEXPECTED_LOCAL_ENTRY")
-        if plan["checkpoint"] + "/" + local.name not in allowed:
-            raise ResumeHold("CHECKPOINT_UNPINNED_LOCAL_FILE")
+    try:
+        for local in root.iterdir():
+            if local.is_symlink() or not local.is_file():
+                raise ResumeHold("CHECKPOINT_UNEXPECTED_LOCAL_ENTRY")
+            if plan["checkpoint"] + "/" + local.name not in allowed:
+                raise ResumeHold("CHECKPOINT_UNPINNED_LOCAL_FILE")
+    except OSError:
+        raise ResumeHold("CHECKPOINT_STAGING_IO_UNAVAILABLE") from None
     if observed != allowed:
         raise ResumeHold("CHECKPOINT_COVERAGE_INCOMPLETE")
     state_name = plan["checkpoint"] + "/trainer_state.json"
@@ -183,6 +191,8 @@ def verified_resume_checkpoint(api, repo_id, output_dir, *, expected_steps):
         )
     except EvidenceHold:
         raise ResumeHold("CHECKPOINT_TRAINER_STATE_UNVERIFIED") from None
+    except OSError:
+        raise ResumeHold("CHECKPOINT_LOCAL_IO_UNAVAILABLE") from None
     if state["max_steps"] != expected_steps:
         raise ResumeHold("CHECKPOINT_TARGET_CHANGED")
     # A separate owner/lease and same-run command/dataset binding is still
