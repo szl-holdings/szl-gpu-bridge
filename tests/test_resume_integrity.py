@@ -173,7 +173,9 @@ class ResumeIntegrityTests(unittest.TestCase):
             self.run_gate()
 
     def test_trainer_boolean_step_rejected_even_when_bytes_hash_match(self):
-        self.hub.files["checkpoint-50/trainer_state.json"] = b'{"global_step":true,"max_steps":200}'
+        self.hub.files["checkpoint-50/trainer_state.json"] = (
+            b'{"global_step":true,"max_steps":200}'
+        )
         with self.assertRaisesRegex(ResumeHold, "TRAINER_STATE_UNVERIFIED"):
             self.run_gate()
 
