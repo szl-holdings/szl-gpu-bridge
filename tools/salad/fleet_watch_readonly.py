@@ -38,8 +38,7 @@ SOURCE_PRIORITY_GROUPS = frozenset(
     }
 )
 INSTANCE_URLS = {
-    name: PROVIDER_URL + "/" + name + "/instances"
-    for name in SOURCE_PRIORITY_GROUPS
+    name: PROVIDER_URL + "/" + name + "/instances" for name in SOURCE_PRIORITY_GROUPS
 }
 INSTANCE_STATES = frozenset(
     {
