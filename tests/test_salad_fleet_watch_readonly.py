@@ -120,7 +120,9 @@ class FleetContractTests(unittest.TestCase):
         self.assertEqual(report["release_admission"], "HOLD")
         self.assertFalse(fleet["training_liveness_verified"])
         self.assertFalse(report["training_completion_verified"])
-        self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(fleet["lifecycle_recheck_counts"]))
+        self.assertNotIn(
+            "DO_NOT_LEAK_SENTINEL", json.dumps(fleet["lifecycle_recheck_counts"])
+        )
 
     def test_metadata_digest_is_canonical_across_provider_order(self):
         left = watch.summarize_fleet({"items": [group(2), group(1), group(0)]})
