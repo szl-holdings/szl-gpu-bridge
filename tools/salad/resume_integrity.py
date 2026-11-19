@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import re
+import time
 
 from tools.salad.training_snapshot import (
     EvidenceHold,
@@ -154,18 +155,29 @@ def verified_resume_checkpoint(api, repo_id, output_dir, *, expected_steps):
             item.mkdir(parents=True, exist_ok=True)
     except OSError:
         raise ResumeHold("CHECKPOINT_STAGING_IO_UNAVAILABLE") from None
-    try:
-        api.snapshot_download(
-            repo_id=repo_id,
-            repo_type="model",
-            revision=plan["revision"],
-            allow_patterns=[plan["checkpoint"] + "/*"],
-            local_dir=str(destination),
-        )
-    except Exception as error:
-        if _status(error) in (401, 403, 429):
-            raise ResumeHold("CHECKPOINT_ACCESS_STOP") from None
-        raise ResumeHold("CHECKPOINT_DOWNLOAD_UNVERIFIED") from None
+    # Retry only bounded, idempotent reads of the SAME immutable revision.
+    # Never retry a 401/403/429, a 404, or any uncertain provider mutation.
+    for attempt in range(3):
+        try:
+            api.snapshot_download(
+                repo_id=repo_id,
+                repo_type="model",
+                revision=plan["revision"],
+                allow_patterns=[plan["checkpoint"] + "/*"],
+                local_dir=str(destination),
+            )
+        except Exception as error:
+            code = _status(error)
+            if code in (401, 403, 429):
+                raise ResumeHold("CHECKPOINT_ACCESS_STOP") from None
+            transient = code in (500, 502, 503, 504) or (
+                code is None and isinstance(error, (TimeoutError, ConnectionError))
+            )
+            if not transient or attempt == 2:
+                raise ResumeHold("CHECKPOINT_DOWNLOAD_UNVERIFIED") from None
+            time.sleep(2 * (attempt + 1))
+        else:
+            break
     root = destination / plan["checkpoint"]
     if root.is_symlink() or not root.is_dir():
         raise ResumeHold("CHECKPOINT_DIRECTORY_UNVERIFIED")
