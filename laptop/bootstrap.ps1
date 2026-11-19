@@ -48,9 +48,26 @@ if ([string]$ExistingTask.State -eq 'Running') {
   throw "Existing owner task is running; refusing to modify active dispatch"
 }
 $TaskOwner = [string]$ExistingTask.Principal.UserId
-if ([string]::IsNullOrWhiteSpace($TaskOwner) -or $TaskOwner -in @(
-  'SYSTEM', 'NT AUTHORITY\SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE'
-)) {
+# Task Scheduler can return either account names or raw well-known SIDs.
+# Never trust a display-name-only allowlist as proof of a user account.
+if ([string]::IsNullOrWhiteSpace($TaskOwner) -or
+    $ExistingTask.Principal.LogonType -ne 'S4U' -or
+    $TaskOwner -match '^(?i:NT AUTHORITY\\|NT SERVICE\\)') {
+  throw "Existing owner principal must remain user scoped"
+}
+try {
+  $AccountSid = if ($TaskOwner -match '^S-1-') {
+    [Security.Principal.SecurityIdentifier]::new($TaskOwner)
+  } else {
+    ([Security.Principal.NTAccount]::new($TaskOwner)).Translate(
+      [Security.Principal.SecurityIdentifier]
+    )
+  }
+} catch {
+  throw "Existing owner principal SID resolution unavailable"
+}
+if ($AccountSid.Value -in @('S-1-5-18','S-1-5-19','S-1-5-20') -or
+    $AccountSid.Value -match '^S-1-5-(80|82|90)-') {
   throw "Existing owner principal must remain user scoped"
 }
 
