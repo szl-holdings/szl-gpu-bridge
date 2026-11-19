@@ -9,6 +9,9 @@ on:
       - kamay/pinned-training-image-20261119
     paths:
       - "training-image/**"
+      - "tools/salad/salad_worker.py"
+      - "tools/salad/resume_integrity.py"
+      - "tools/salad/training_snapshot.py"
       - ".github/workflows/training-image-ghcr.yml"
   workflow_dispatch: {}
 permissions:
@@ -37,6 +40,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Canonical worker and immutable-resume source inputs
+        run: |
+          test -f tools/salad/salad_worker.py
+          test -f tools/salad/resume_integrity.py
+          test -f tools/salad/training_snapshot.py
+          test -f training-image/source_runtime_contract.py
+          grep -q 'resume_integrity' tools/salad/salad_worker.py
+          grep -q 'source-bindings.json' training-image/Dockerfile
       - name: Lockfile sanity (hash-locked, pins present)
         run: |
           set -euo pipefail
@@ -62,7 +73,8 @@ jobs:
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: build-push
         with:
-          context: training-image
+          context: .
+          file: training-image/Dockerfile
           push: true
           provenance: false
           sbom: false
@@ -142,6 +154,11 @@ jobs:
           set -euo pipefail
           REF="${{ steps.signature.outputs.ref }}"
           docker pull "${REF}" > /dev/null
+          # Verify the *pushed digest*, not the local build directory or a mutable tag.
+          docker run --rm --entrypoint python3 "${REF}" /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision "${GITHUB_SHA}"
+          docker run --rm --entrypoint python3 "${REF}" -c "from tools.salad.resume_integrity import verified_resume_checkpoint; from tools.salad.training_snapshot import model_snapshot; print('PINNED_RESUME_IMPORT_OK')"
+          REVISION="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "${REVISION}" = "${GITHUB_SHA}"
           docker run --rm --entrypoint python3 "${REF}" -W ignore /work/readiness_probe.py imports --from-env --no-gpu
           docker run --rm --entrypoint python3 "${REF}" -c "import os,sys; bad=[k for k in os.environ if 'TOKEN' in k or 'SECRET' in k]; print('token env vars in image:', bad); sys.exit(1 if bad else 0)"
           docker run --rm --entrypoint python3 "${REF}" -W ignore -c "import torch,torchvision,torchaudio,transformers,peft,trl; print({m.__name__:m.__version__ for m in (torch,torchvision,torchaudio,transformers,peft,trl)}, 'cuda', torch.version.cuda)"

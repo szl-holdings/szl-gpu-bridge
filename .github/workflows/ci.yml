@@ -66,6 +66,7 @@ jobs:
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -78,6 +79,7 @@ jobs:
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -90,6 +92,7 @@ jobs:
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
           tools/salad/capacity_math.py tools/salad/resume_integrity.py
+          training-image/source_runtime_contract.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
