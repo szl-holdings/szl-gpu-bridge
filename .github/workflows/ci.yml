@@ -154,7 +154,8 @@ jobs:
           foreach ($relative in @(
             'laptop\watchdog.ps1',
             'laptop\install_watchdog.ps1',
-            'laptop\daemon.ps1'
+            'laptop\daemon.ps1',
+            'laptop\bootstrap.ps1'
           )) {
             $path = Join-Path $env:GITHUB_WORKSPACE $relative
             $tokens = $null
