@@ -156,8 +156,11 @@ class WitnessTests(unittest.TestCase):
         )
 
     def test_running_count_must_equal_independent_instance_readback(self):
-        for items in ([], [{"state": "creating"}],
-                      [{"state": "running"}, {"state": "running"}]):
+        for items in (
+            [],
+            [{"state": "creating"}],
+            [{"state": "running"}, {"state": "running"}],
+        ):
             with self.subTest(items=items):
                 result = sample(instances={"instances": items})
                 self.assertEqual(result["state"], "INSTANCE_GROUP_COUNT_MISMATCH")
