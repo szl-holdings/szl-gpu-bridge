@@ -15,6 +15,7 @@ Reward contract (intentionally stricter than rewards.py v1):
 Positive rewards are conditional on caller-provided labels; their correctness,
 license, source revision, privacy and held-out separation are NOT verified here.
 """
+
 from __future__ import annotations
 
 import re
@@ -135,9 +136,7 @@ def shadow_summary_v2(completions, answer=None, answerable=None, *, group_size=1
     """
     if type(group_size) is not int or not 1 <= group_size <= MAX_BATCH:
         raise ValueError("SHADOW_GROUP_SIZE_INVALID")
-    scores = abstention_reward_v2(
-        completions, answer=answer, answerable=answerable
-    )
+    scores = abstention_reward_v2(completions, answer=answer, answerable=answerable)
     if len(scores) % group_size:
         raise ValueError("SHADOW_GROUP_DENOMINATOR_MISALIGNED")
     labels = [normalize_answerable(value) for value in answerable]
@@ -147,12 +146,9 @@ def shadow_summary_v2(completions, answer=None, answerable=None, *, group_size=1
     correct = scores.count(1.0)
     honest_abstain = scores.count(0.5)
     wrong_abstain = sum(
-        label and terminal == ABSTAIN_MARK
-        for label, terminal in zip(labels, terminals)
+        label and terminal == ABSTAIN_MARK for label, terminal in zip(labels, terminals)
     )
-    groups = [
-        scores[i : i + group_size] for i in range(0, len(scores), group_size)
-    ]
+    groups = [scores[i : i + group_size] for i in range(0, len(scores), group_size)]
     half_units = 2 * correct + honest_abstain
     return {
         "schema": "szl.absrl-reward-v2-shadow/v1",
