@@ -20,7 +20,7 @@ REVISION = "a" * 40
 
 
 def _git_blob(raw):
-    return hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\\0" + raw).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
 
 
 def checkpoint_files(*, step=50, target=200):
