@@ -421,7 +421,6 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
         self.assertIn("remote_commands_accepted = $false", self.installer)
         self.assertIn("inbound_ports_opened = $false", self.installer)
 
-
     @unittest.skipUnless(
         WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
     )
