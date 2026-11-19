@@ -1099,8 +1099,23 @@ def run_training(a, api) -> int:
         except Exception as error:
             receipt("fail-closed", f"Shared GPU admission failed: {error}")
             return 8
+    # The signed training image supplies a local, progress-bound liveness file.
+    # Other worker environments remain unchanged when the image marker is absent.
+    image_heartbeat = None
+    if os.environ.get("SZL_HEARTBEAT_FILE"):
+        try:
+            import step_heartbeat as image_heartbeat
+        except ImportError:
+            receipt("fail-closed", "required pinned-image liveness module unavailable",
+                    {"training_started": False, "completion_qualified": False})
+            return 8
     cuda_arch_precheck()  # F4: must still precede model loading/training.
     base_kwargs = {"revision": a.base_revision} if a.base_revision else {}
+    run_id = os.environ.get("SZL_RUN_ID") or a.adapter_out
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image liveness write unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
     tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
     ds = load_train_split(a, api)  # F2/F3
 
@@ -1133,6 +1148,10 @@ def run_training(a, api) -> int:
     receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
             {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
              "training_format": format_contract})
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image dataset milestone liveness unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
     try:
         load_kw, optim_name, quant_fields = quantized_load_kwargs(a.load_in_4bit)
     except RuntimeError as exc:
@@ -1148,6 +1167,10 @@ def run_training(a, api) -> int:
             model, use_gradient_checkpointing=a.gradient_checkpointing)
     if a.gradient_checkpointing:
         model.config.use_cache = False
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image model milestone liveness unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
 
     cfg = SFTConfig(
         output_dir=a.output_dir,
@@ -1247,6 +1270,8 @@ def run_training(a, api) -> int:
             if STOP["flag"]:
                 control.should_training_stop = True
     trainer.add_callback(ReceiptCallback())
+    if image_heartbeat is not None:
+        trainer.add_callback(image_heartbeat.make_callback(a.max_steps, run_id))
 
     t0 = time.time()
     trainer.train(resume_from_checkpoint=resume) if resume else trainer.train()
