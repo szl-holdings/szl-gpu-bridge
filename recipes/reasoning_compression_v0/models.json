@@ -1,0 +1,82 @@
+{
+  "schema": "szl.multi-model-recipe/v0",
+  "captured_utc": "2026-11-19T20:37:57.6845237Z",
+  "source_pins": {
+    "szl-holdings/szl-gpu-bridge": "23b45e1aa628b273108faeca59c02f6ef031b88c",
+    "szl-holdings/szl-cram": "3f8894caad893961167af39c7f3d9f40383fe7cf",
+    "szl-holdings/szl-cram:research-pr-11": "368b4179548a4962732a1f4c5569197641a1dd6b",
+    "szl-holdings/szl-second-brain": "73e8e4388268d092c50eac849d2a6f22a18418f2",
+    "szl-holdings/hatun-mcp": "1cec84742e07c151a34c329ae2fb50dd5f87c7ab"
+  },
+  "training_dispatch_enabled": false,
+  "provider_write_enabled": false,
+  "private_graph_hydration": false,
+  "models": [
+    {
+      "id": "SZLHOLDINGS/SZL-Khipu-1.5B",
+      "observed_sha": "80a846106f6454c18c234a0fffebda243e5e1e64",
+      "role": "grounded",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/A11OY-MINI",
+      "observed_sha": "c670fef5e81bf391f3fcdc811cb8fd4eeba1ec79",
+      "role": "offline",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/chaski",
+      "observed_sha": "db2711414f4d539be5add2a0dd8d40d97d6d6077",
+      "role": "proposal",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/WILLAY",
+      "observed_sha": "2f321ad41de970864c50e04c9953988c7a051203",
+      "role": "identity",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/brain-navigator-r2",
+      "observed_sha": "f4e66527d21dd4d80dcd440706e29ea35f519d6e",
+      "role": "navigation",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/MiniEmbed-Nano",
+      "observed_sha": "2e589d41faae7c56513ce59bf13e211d450486b8",
+      "role": "embedding",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/salad-khipu-scholar-v1",
+      "observed_sha": "c6c44a00359a564ae3248cbf0559cadeee50d8b3",
+      "role": "scholar",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/salad-khipu-structure-v1",
+      "observed_sha": "f1d7f9e4a2bbe9cde5ed83e5b6547247fcbbec83",
+      "role": "structure",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/salad-khipu-scholar-4b-v1",
+      "observed_sha": "67bef8c98d916d93159487df04a63833a3afcbfe",
+      "role": "scholar-4b",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/SZL-Forge-1.5B-ReceiptAgent",
+      "observed_sha": "ca386a8f52f4fb9ef687030f7d6d62d595f51f66",
+      "role": "receipt",
+      "admission": "REVIEW_REQUIRED"
+    },
+    {
+      "id": "SZLHOLDINGS/szl-receiptagent-qwen35-0.8b-v3",
+      "observed_sha": "7b2b8f3ba06d271fca70f2625c8be04c49e463c6",
+      "role": "receipt",
+      "admission": "REVIEW_REQUIRED"
+    }
+  ]
+}
