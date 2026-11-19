@@ -48,6 +48,7 @@ class TerminalContract(unittest.TestCase):
         self.stack.enter_context(patch.object(signal, "signal"))
         self.events = []
         self.uploads = []
+        self.uploaded_file_snapshots = []
         self.saved = []
         self.trained = []
         self.api_calls = []
@@ -69,6 +70,7 @@ class TerminalContract(unittest.TestCase):
         self.actual = 200
         self.interrupted = False
         self.final_present = True
+        self.flip_visibility_on_list = False
         self.upload_error = None
         self.fail_upload_repo = None
         self.private = True
@@ -87,11 +89,18 @@ class TerminalContract(unittest.TestCase):
                 return types.SimpleNamespace(private=fixture.private)
 
             def list_repo_files(self, *args, **kwargs):
+                if fixture.flip_visibility_on_list:
+                    fixture.private = False
                 return (
                     ["final/adapter_model.safetensors"] if fixture.final_present else []
                 )
 
             def upload_folder(self, **kwargs):
+                directory = Path(kwargs.get("folder_path", ""))
+                fixture.uploaded_file_snapshots.append(
+                    {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
+                    if directory.is_dir() else None
+                )
                 fixture.uploads.append(kwargs)
                 if fixture.upload_error and (
                     fixture.fail_upload_repo is None
@@ -496,16 +505,77 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(upload["path_in_repo"], "final")
         self.assertEqual(upload["repo_id"], "fixture/private-adapter")
         self.assertIn("*.pt", upload["ignore_patterns"])
-        final_local = Path(upload["folder_path"])
+        staging = Path(upload["folder_path"])
+        self.assertFalse(staging.exists(), "exclusive staging must be cleaned")
         self.assertEqual(
-            sorted(path.name for path in final_local.iterdir()),
+            sorted(self.uploaded_file_snapshots[0]),
             [
                 "adapter_config.json",
                 "adapter_model.safetensors",
                 "training_format.json",
             ],
         )
+        self.assertEqual(
+            self.uploaded_file_snapshots[0]["adapter_model.safetensors"],
+            b"synthetic-adapter_model.safetensors",
+        )
+        self.assertEqual(restored["staging"], "EXCLUSIVE_CLEAN_CHECKPOINT_ONLY")
+        self.assertEqual(
+            restored["artifact_readback"],
+            "HUB_COMMIT_ACKNOWLEDGED_NOT_FULL_BYTE_READBACK",
+        )
         self.assertFalse(any(e["event"] == "complete" for e in self.events))
+
+    def test_stale_local_final_is_not_uploaded_or_deleted(self):
+        self.final_present = False
+        checkpoint = self.make_checkpoint("adapter_model.safetensors", "adapter_config.json")
+        old_final = Path(self.temp.name) / "ckpt" / "final"
+        old_final.mkdir(parents=True, exist_ok=True)
+        stale = old_final / "stale-other-run.json"
+        stale.write_bytes(b"DO_NOT_UPLOAD_OR_DELETE")
+        with (
+            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.run_worker(), 0)
+        self.assertEqual(len(self.uploads), 1)
+        self.assertNotIn("stale-other-run.json", self.uploaded_file_snapshots[0])
+        self.assertEqual(stale.read_bytes(), b"DO_NOT_UPLOAD_OR_DELETE")
+        self.assertFalse(Path(self.uploads[0]["folder_path"]).exists())
+        self.assertEqual(self.trained, [])
+
+    def test_terminal_checkpoint_symlink_is_refused_before_upload(self):
+        self.final_present = False
+        checkpoint = self.make_checkpoint("adapter_model.safetensors")
+        original = self.worker.os.path.islink
+
+        def fake_symlink(path):
+            return str(path).endswith("adapter_model.safetensors") or original(path)
+
+        with (
+            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+            patch.object(self.worker.os.path, "islink", side_effect=fake_symlink),
+        ):
+            self.assertEqual(self.run_worker(), 7)
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.events[-1]["recovery_refusal"], "ResumeError")
+        self.assertFalse(any(x["event"] == "complete" for x in self.events))
+
+    def test_repo_visibility_flip_refuses_terminal_upload(self):
+        self.final_present = False
+        self.flip_visibility_on_list = True
+        checkpoint = self.make_checkpoint("adapter_model.safetensors")
+        with (
+            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(self.worker, "resume_global_step", return_value=200),
+        ):
+            self.assertEqual(self.run_worker(), 3)
+        self.assertEqual(self.uploads, [])
+        self.assertEqual(self.trained, [])
+        self.assertEqual(self.events[-1]["recovery_refusal"], "VisibilityError")
+        self.assertFalse(any(x["event"] == "complete" for x in self.events))
 
     def test_final_restore_upload_failure_is_sanitized_artifact_failure(self):
         self.final_present = False
