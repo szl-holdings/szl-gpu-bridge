@@ -426,7 +426,9 @@ def stop_settled_for_zero_patch(provider, expected_replicas):
         and provider.get("desired_replicas") == expected_replicas
         and provider.get("instances_returned") == 0
         and type(counts) is dict
-        and all(type(counts.get(key)) is int and counts[key] == 0 for key in gates.COUNTS)
+        and all(
+            type(counts.get(key)) is int and counts[key] == 0 for key in gates.COUNTS
+        )
     )
 
 
