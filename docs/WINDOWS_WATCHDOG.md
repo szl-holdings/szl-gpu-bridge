@@ -73,6 +73,22 @@ self-hosted bridge node after the package merges. It first requires either the
 existing `SZL-GPU-Bridge` task or `C:\szl-bridge\daemon.ps1`, preventing the
 package from silently installing on an unrelated Windows runner.
 
+**Source parity is mandatory before task mutation.** The workflow independently
+compares the installed `daemon.ps1` and `storage_preflight.py` to the exact
+protected checkout using SHA-256. If the existing installation is absent or
+stale, the workflow stops *before* the watchdog installer executes. This matters
+because `install_watchdog.ps1` deliberately preserves an existing daemon;
+an unchanged old daemon could otherwise produce a three-task success without
+the reviewed five-sample training-storage gate. Recovery requires the **one
+independently established owner** to complete a separately reviewed
+source-matched bootstrap, not a new dispatcher on the observation machine.
+
+After installation, the proof now includes the preflight file in addition to
+the daemon, watchdog and fixed configuration, and the final verification
+rechecks the pinned source digests. A passing workflow still does **not**
+authenticate fleet-wide sole ownership, training liveness, job budget, signing
+roots or checkpoint durability; those independent gates remain necessary.
+
 Manual local installation remains idempotent:
 
 ```powershell
