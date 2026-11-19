@@ -1,0 +1,121 @@
+name: Workforce officers
+
+# Replaces the seven paused SZLHOLDINGS workforce Spaces with one-shot,
+# Sigstore-attested cycles on GitHub-hosted runners (no Hugging Face Space,
+# no HF compute, no persistent disk). See workforce/README.md.
+#
+# STOP RULE / ENABLE GATE: scheduled runs do nothing until the repository
+# variable WORKFORCE_ENABLED is set to "true" (Stephen's call, after merge).
+# Publishing to the HF dataset additionally needs WORKFORCE_PUBLISH == "true",
+# the WORKFORCE_HF_TOKEN secret, a run on main, and a verified attestation.
+# Without them each run only keeps its record + attestation as an artifact.
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *" # szl-infra-warden, every 15 min (as coded: 900 s)
+    - cron: "12,42 * * * *" # szl-chief-engineer, every 30 min (as coded: 1800 s)
+    - cron: "17 * * * *" # eternal-auditor + szl-cyber-shield, hourly
+    - cron: "41 6 * * *" # gardener + research-council + dream-architect, daily
+  workflow_dispatch:
+    inputs:
+      role:
+        description: Officer to run once (record + attestation artifact)
+        required: true
+        type: choice
+        options:
+          - eternal-auditor
+          - estate-gardener
+          - szl-chief-engineer
+          - szl-infra-warden
+          - szl-cyber-shield
+          - szl-research-council
+          - szl-dream-architect
+
+permissions: {}
+
+jobs:
+  every-15m:
+    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '7,22,37,52 * * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-infra-warden
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  every-30m:
+    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '12,42 * * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-chief-engineer
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  hourly:
+    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '17 * * * *' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [eternal-auditor, szl-cyber-shield]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ matrix.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  daily:
+    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [estate-gardener, szl-research-council]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ matrix.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  daily-dream:
+    if: ${{ vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-dream-architect
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+      WORKFORCE_LLM_URL: ${{ secrets.WORKFORCE_LLM_URL }}
+      WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_ID }}
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET }}
+
+  manual:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ inputs.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+      WORKFORCE_LLM_URL: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_LLM_URL || '' }}
+      WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_CF_ACCESS_CLIENT_ID || '' }}
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET || '' }}

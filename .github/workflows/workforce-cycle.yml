@@ -1,0 +1,97 @@
+name: Workforce officer cycle
+
+# Reusable: one officer, one cycle, one record. Called only by workforce.yml.
+# Signing is Sigstore keyless (actions/attest): the certificate names this
+# repository, this workflow file and the ref, so identity persists without any
+# stored key. A record is uploaded only after `gh attestation verify` passes
+# AND workforce/publish.py re-checks that the attestation binds its digest.
+
+on:
+  workflow_call:
+    inputs:
+      role:
+        required: true
+        type: string
+    secrets:
+      WORKFORCE_HF_TOKEN:
+        required: false
+      WORKFORCE_LLM_URL:
+        required: false
+      WORKFORCE_CF_ACCESS_CLIENT_ID:
+        required: false
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET:
+        required: false
+
+permissions: {}
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    concurrency:
+      group: workforce-${{ inputs.role }}
+      cancel-in-progress: false
+    env:
+      ROLE: ${{ inputs.role }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Run one cycle (read-only duty, writes one JSON record)
+        id: run
+        env:
+          WORKFORCE_GH_READ_TOKEN: ${{ github.token }}
+          COMPUTE_GATEWAY: ${{ vars.COMPUTE_GATEWAY }}
+          WORKFORCE_LLM_URL: ${{ secrets.WORKFORCE_LLM_URL }}
+          WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_ID }}
+          WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET }}
+          WORKFORCE_LLM_MODEL: ${{ vars.WORKFORCE_LLM_MODEL }}
+        run: python -B -m workforce.cycle --role "$ROLE" --out "$RUNNER_TEMP/officer"
+
+      - name: Sign the record (Sigstore keyless attestation)
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.run.outputs.record }}
+
+      - name: Verify the attestation against this workflow's identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECORD: ${{ steps.run.outputs.record }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$BUNDLE" "${RECORD%.json}.sigstore.json"
+          gh attestation verify "$RECORD" \
+            --bundle "$BUNDLE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/workforce-cycle.yml" \
+            --source-ref "$GITHUB_REF"
+
+      - name: Keep record + attestation as a run artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workforce-${{ inputs.role }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/officer/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish to the HF receipts dataset (gated, fail-closed)
+        if: ${{ vars.WORKFORCE_PUBLISH == 'true' && github.ref == 'refs/heads/main' }}
+        env:
+          WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+          WORKFORCE_DATASET: ${{ vars.WORKFORCE_DATASET }}
+          RECORD: ${{ steps.run.outputs.record }}
+        run: >-
+          python -B -m workforce.publish
+          --record "$RECORD"
+          --bundle "${RECORD%.json}.sigstore.json"
