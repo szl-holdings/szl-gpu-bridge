@@ -64,7 +64,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/stop_preflight.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -75,7 +75,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/stop_preflight.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
@@ -86,7 +86,7 @@ jobs:
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/evaluation_binding.py tools/salad/heldout_eval_v2.py
-          tools/salad/capacity_math.py
+          tools/salad/capacity_math.py tools/salad/stop_preflight.py
           tools/gpu/lease_protocol.py
           tools/dashboard/training_server.py
           tools/a6000-migration/shared_gpu_supervisor.py
