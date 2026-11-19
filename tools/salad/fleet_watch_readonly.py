@@ -319,6 +319,12 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
     else:
         try:
             report["fleet"] = summarize_fleet(reader(PROVIDER_URL, token=key))
+            # A provider group marked running without any running instance is
+            # operational drift, NOT a silent 'green' fleet-watch success.
+            # Preserve the full bounded sample while emitting one stable,
+            # non-secret reason code; never infer trainer liveness from status.
+            if report["fleet"]["anomalies_total"] > 0:
+                drift.append("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH")
             if report["fleet"]["groups_observed"] == 0:
                 drift.append("SALAD_EMPTY_COLLECTION_NOT_PROVEN_COMPLETE")
             # Up to five immutable-name allowlisted API GETs; 401/403/429
