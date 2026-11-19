@@ -106,9 +106,10 @@ class ResumeIntegrityTests(unittest.TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0]["revision"], REVISION)
         self.assertEqual(snapshots[0]["allow_patterns"], ["checkpoint-50/*"])
-        self.assertEqual((Path(path) / "optimizer.pt").read_bytes(), self.hub.files[
-            "checkpoint-50/optimizer.pt"
-        ])
+        self.assertEqual(
+            (Path(path) / "optimizer.pt").read_bytes(),
+            self.hub.files["checkpoint-50/optimizer.pt"],
+        )
 
     def test_no_checkpoint_is_genesis_only_with_verified_metadata(self):
         self.hub.files = {"final/adapter_model.safetensors": b"final"}
@@ -140,9 +141,9 @@ class ResumeIntegrityTests(unittest.TestCase):
                     self.run_gate()
 
     def test_incomplete_latest_checkpoint_is_not_skipped(self):
-        self.hub.files.update({
-            "checkpoint-60/trainer_state.json": b'{"global_step":60,"max_steps":200}'
-        })
+        self.hub.files.update(
+            {"checkpoint-60/trainer_state.json": b'{"global_step":60,"max_steps":200}'}
+        )
         with self.assertRaisesRegex(ResumeHold, "REQUIRED_STATE_MISSING"):
             self.run_gate()
         self.assertEqual(len(self.hub.calls), 1)
@@ -172,9 +173,7 @@ class ResumeIntegrityTests(unittest.TestCase):
             self.run_gate()
 
     def test_trainer_boolean_step_rejected_even_when_bytes_hash_match(self):
-        self.hub.files["checkpoint-50/trainer_state.json"] = (
-            b'{"global_step":true,"max_steps":200}'
-        )
+        self.hub.files["checkpoint-50/trainer_state.json"] = b'{"global_step":true,"max_steps":200}'
         with self.assertRaisesRegex(ResumeHold, "TRAINER_STATE_UNVERIFIED"):
             self.run_gate()
 
@@ -212,9 +211,12 @@ class ResumeIntegrityTests(unittest.TestCase):
     def test_no_trainer_or_backup_quality_claims(self):
         path = self.run_gate()
         self.assertTrue(Path(path).is_dir())
-        self.assertTrue(all(name not in path.lower() for name in (
-            "qualified", "evaluated", "production", "backup-verified"
-        )))
+        self.assertTrue(
+            all(
+                name not in path.lower()
+                for name in ("qualified", "evaluated", "production", "backup-verified")
+            )
+        )
 
 
 if __name__ == "__main__":
