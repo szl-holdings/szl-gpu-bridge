@@ -435,16 +435,16 @@ def bench_cycle(contract, salad, hub, ledger, *, apply):
     state = ledger.load()
     handled = state.setdefault("handled_receipts", [])
     group = spec["group"]
-    # An ambiguous first/second provider effect requires manual owner review.
-    # Do not replay POST stop on the next cycle or for a different receipt.
-    if group in state.get("stop_intents", {}):
-        return
     cutoff = gates.parse_utc(spec["cutoff_utc"])
     if cutoff is None or not gates.valid_group(group):
         emit(
             ledger,
             {"kind": "bench", "verdict": "HOLD", "reason": "BENCH_CONTRACT_INVALID"},
         )
+        return
+    # An ambiguous first/second provider effect requires manual owner review.
+    # Do not replay POST stop on the next cycle or for a different receipt.
+    if group in state.get("stop_intents", {}):
         return
     revision, entries = hub.dataset_snapshot(spec["dataset"])
     name = gates.select_heldout_receipt(
