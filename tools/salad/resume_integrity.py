@@ -100,7 +100,11 @@ def _verify_object(path: Path, entry):
     if path.is_symlink() or not path.is_file():
         raise ResumeHold("CHECKPOINT_FILE_MISSING_OR_SYMLINK")
     size = getattr(entry, "size", None)
-    if type(size) is not int or path.stat().st_size != size:
+    try:
+        observed_size = path.stat().st_size
+    except OSError:
+        raise ResumeHold("CHECKPOINT_LOCAL_IO_UNAVAILABLE") from None
+    if type(size) is not int or observed_size != size:
         raise ResumeHold("CHECKPOINT_LOCAL_SIZE_MISMATCH")
     lfs = getattr(entry, "lfs", None)
     oid = lfs.get("sha256") if isinstance(lfs, dict) else getattr(lfs, "sha256", None)
