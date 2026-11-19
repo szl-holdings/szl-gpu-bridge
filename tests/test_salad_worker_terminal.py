@@ -298,9 +298,7 @@ class TerminalContract(unittest.TestCase):
 
     def test_direct_script_resolves_resume_verifier(self):
         root = WORKER.parents[2]
-        isolated = [
-            path for path in sys.path if Path(path or ".").resolve() != root
-        ]
+        isolated = [path for path in sys.path if Path(path or ".").resolve() != root]
         with patch.object(sys, "path", isolated):
             self.assertNotIn(str(root), sys.path)
             spec = importlib.util.spec_from_file_location(
