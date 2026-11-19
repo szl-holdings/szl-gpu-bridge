@@ -4,7 +4,7 @@
 
 ## Incident behind this requirement
 
-On November 19, 2026, an operator-local held-out launch logged curl exit code `0` next to a JSON `pending_update_in_progress` / HTTP `400` provider response. Zero shell exit only means the transport completed, **not** that SaladCloud accepted a replica update. Related local workers also treated a `final/` or `lane.log` filename as a sufficient stop signal. This module prevents the first false admission; it does **not** repair or run those external controllers.
+A curl process may exit `0` while a provider returns HTTP `400` with `pending_update_in_progress`. Zero transport exit only means the request completed, **not** that SaladCloud accepted a replica update. A separate unsafe failure class is treating a `final/` or `lane.log` filename as sufficient completion evidence. This module prevents the HTTP-status false admission; it does **not** operate or replace shutdown controllers. All examples are generic and contain no private run identities or local incident evidence.
 
 ## Required caller inputs
 
