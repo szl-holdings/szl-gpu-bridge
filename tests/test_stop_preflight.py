@@ -251,8 +251,7 @@ class StopPreflightTests(unittest.TestCase):
     def test_instance_list_limit_and_type(self):
         def too_many(i, e):
             e["provider"]["instance_readback"]["instances"] = [
-                dict(instance_id=f"test-{n}", state="running")
-                for n in range(65)
+                dict(instance_id=f"test-{n}", state="running") for n in range(65)
             ]
 
         r = self.run_witness(too_many)
