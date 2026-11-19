@@ -37,7 +37,7 @@ CASES = (
     ("0", True, "FINAL: 0", 1.0),
     ("-1", True, "FINAL: -1", 1.0),
     ("3.5", True, "FINAL: 3.5", 1.0),
-    ("café", True, "FINAL: cafe\u0301", 1.0),
+    ("caf?", True, "FINAL: cafe\u0301", 1.0),
     ("4", True, "14", 0.0),
     ("4", True, "not 4", 0.0),
     ("4", True, "the answer is 4", 0.0),
@@ -90,9 +90,7 @@ class CandidatePromptTests(unittest.TestCase):
 
     def test_extra_template_field_rejected(self):
         with self.assertRaisesRegex(ValueError, "PROMPT_TEMPLATE_FIELDS_INVALID"):
-            prompt._check_template(
-                prompt.PROMPT_TEMPLATE_V2 + "\nLEAK: {answer}"
-            )
+            prompt._check_template(prompt.PROMPT_TEMPLATE_V2 + "\nLEAK: {answer}")
 
     def test_missing_problem_field_rejected(self):
         with self.assertRaises(ValueError):
@@ -107,9 +105,7 @@ class CandidatePromptTests(unittest.TestCase):
     def test_missing_grammar_rejected(self):
         with self.assertRaises(ValueError):
             prompt._check_template(
-                prompt.PROMPT_TEMPLATE_V2.replace(
-                    "FINAL: UNANSWERABLE", "UNANSWERABLE"
-                )
+                prompt.PROMPT_TEMPLATE_V2.replace("FINAL: UNANSWERABLE", "UNANSWERABLE")
             )
 
     def test_missing_or_oversized_question_rejected(self):
@@ -134,9 +130,7 @@ class CandidatePromptTests(unittest.TestCase):
             )
 
     def test_no_reward_or_prompt_wiring_in_staged_worker(self):
-        worker = (ROOT / "tools/absrl/grpo_absention.py").read_text(
-            encoding="utf-8"
-        )
+        worker = (ROOT / "tools/absrl/grpo_absention.py").read_text(encoding="utf-8")
         self.assertNotIn("rewards_v2", worker)
         self.assertNotIn("prompt_contract_v2", worker)
 
