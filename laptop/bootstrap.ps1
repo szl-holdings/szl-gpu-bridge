@@ -1,4 +1,4 @@
-# bootstrap.ps1 — owner-only refresh of the reviewed SZL GPU bridge.
+# bootstrap.ps1  -  owner-only refresh of the reviewed SZL GPU bridge.
 # From a clean, locally reviewed Git checkout pinned to its exact 40-hex commit:
 #   .\laptop\bootstrap.ps1 -SourceRevision <reviewed-protected-main-sha>
 # Never pipe moving main into Invoke-Expression; initial owner commissioning is
@@ -96,7 +96,7 @@ $SpkiBytes = [Convert]::FromBase64String($PinObj.publicKeySpkiBase64)
 $Sha = [System.Security.Cryptography.SHA256]::Create()
 $DerivedKeyId = (($Sha.ComputeHash($SpkiBytes) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 16)
 if ($DerivedKeyId -ne $PinObj.keyId) {
-  Write-Host "FATAL: engine pubkey self-check failed (derived $DerivedKeyId ≠ labeled $($PinObj.keyId)) — refusing to install a mislabeled trust root." -ForegroundColor Red
+  Write-Host "FATAL: engine pubkey self-check failed (derived $DerivedKeyId != labeled $($PinObj.keyId))  -  refusing to install a mislabeled trust root." -ForegroundColor Red
   exit 1
 }
 Set-Content -Path "$Root\keys\engine_pubkey.json" -Value $EnginePin -Encoding utf8
@@ -251,8 +251,8 @@ Write-Host "training stack ready; exact package snapshot sha256 $StackSha"
 # hf auth: reuse the laptop's existing login (the proven upload path).
 & $Py -c "from huggingface_hub import HfApi; print('hf auth OK as', HfApi().whoami()['name'])"
 if ($LASTEXITCODE -ne 0) {
-  Write-Host "hf CLI is NOT logged in — run: $CondaBase\envs\szl-bridge\Scripts\hf.exe auth login" -ForegroundColor Yellow
-  Write-Host "(bridge will poll but BLOCK uploads until login exists — fail closed)" -ForegroundColor Yellow
+  Write-Host "hf CLI is NOT logged in  -  run: $CondaBase\envs\szl-bridge\Scripts\hf.exe auth login" -ForegroundColor Yellow
+  Write-Host "(bridge will poll but BLOCK uploads until login exists  -  fail closed)" -ForegroundColor Yellow
 }
 
 # ---- 3. laptop signing key (ed25519, never leaves this machine) -------------
@@ -305,12 +305,12 @@ foreach ($Pair in $Files) {
   "$Root\runjob_frontier.py" `
   "$Root\runjob_nemo_v3.py" `
   "$Root\storage_preflight.py"
-if ($LASTEXITCODE -ne 0) { throw "downloaded bridge Python failed compilation" }
+if ($LASTEXITCODE -ne 0) { throw "reviewed source bridge Python failed compilation" }
 
 # GGUF jobs are accepted only when a real llama-cli is discoverable for reload smoke.
 $Llama = Get-Command llama-cli.exe -ErrorAction SilentlyContinue
 if (-not $Llama) {
-  Write-Host "llama-cli not on PATH — adapter/merged jobs remain available; GGUF jobs will return signed BLOCKED until llama-cli is installed." -ForegroundColor Yellow
+  Write-Host "llama-cli not on PATH  -  adapter/merged jobs remain available; GGUF jobs will return signed BLOCKED until llama-cli is installed." -ForegroundColor Yellow
 }
 
 # ---- 5. register scheduled task ---------------------------------------------
@@ -325,4 +325,4 @@ $Principal = New-ScheduledTaskPrincipal -UserId $TaskOwner -LogonType S4U -RunLe
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Triggers -Settings $Settings -Principal $Principal -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Write-Host "scheduled task '$TaskName' registered (startup + every 15 min; single-flight) and started."
-Write-Host "logs: $Root\logs\daemon.log — bootstrap complete." -ForegroundColor Cyan
+Write-Host "logs: $Root\logs\daemon.log  -  bootstrap complete." -ForegroundColor Cyan
