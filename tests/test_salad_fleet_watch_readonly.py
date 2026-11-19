@@ -82,6 +82,46 @@ class FleetContractTests(unittest.TestCase):
         self.assertFalse(result["billable_runtime_state_verified"])
         self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(result))
 
+    def test_documented_single_project_endpoint_has_no_fictitious_page_limit(self):
+        self.assertEqual(
+            watch.PROVIDER_URL,
+            "https://api.salad.com/api/public/organizations/"
+            "alloyscape/projects/default/containers",
+        )
+        self.assertNotIn("per_page", watch.PROVIDER_URL)
+        report = watch.summarize_fleet({"items": [group(i) for i in range(139)]})
+        self.assertEqual(report["groups_observed"], 139)
+        self.assertFalse(report["provider_list_endpoint_documented_pagination"])
+
+    def test_lifecycle_intent_rechecks_are_separate_from_training_failures(self):
+        deploying = group(75)
+        deploying["replicas"] = 0
+        stopped = group(138)
+        stopped["replicas"] = 1
+        running = group(0)
+        collection = {"items": [deploying, stopped, running]}
+        report, drift = watch.collect(
+            "SYNTHETIC",
+            reader=lambda url, *, token=None: collection if token else [],
+            now=NOW,
+        )
+        fleet = report["fleet"]
+        self.assertEqual(fleet["lifecycle_recheck_total"], 2)
+        self.assertEqual(
+            fleet["lifecycle_recheck_counts"],
+            {
+                "DEPLOYING_ZERO_DESIRED_RECHECK": 1,
+                "STOPPED_POSITIVE_DESIRED_RECHECK": 1,
+            },
+        )
+        self.assertFalse(fleet["lifecycle_recheck_is_proven_failure"])
+        self.assertIn("SALAD_PROVIDER_LIFECYCLE_RECHECK", drift)
+        self.assertNotIn("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH", drift)
+        self.assertEqual(report["release_admission"], "HOLD")
+        self.assertFalse(fleet["training_liveness_verified"])
+        self.assertFalse(report["training_completion_verified"])
+        self.assertNotIn("DO_NOT_LEAK_SENTINEL", json.dumps(fleet["lifecycle_recheck_counts"]))
+
     def test_metadata_digest_is_canonical_across_provider_order(self):
         left = watch.summarize_fleet({"items": [group(2), group(1), group(0)]})
         right = watch.summarize_fleet({"items": [group(0), group(2), group(1)]})
