@@ -129,9 +129,11 @@ jobs:
             }
           }
           EOF
+          # cosign v3 has no --registry-referrers-mode on attest; legacy (tag-based) storage is selected with
+          # --new-bundle-format=false, the same as the signature above.
           cosign attest --yes --predicate predicate.json --type slsaprovenance \
-            --registry-referrers-mode=legacy "${IMAGE}@${DIGEST}"
-          cosign verify-attestation --type slsaprovenance \
+            --new-bundle-format=false --use-signing-config=false "${IMAGE}@${DIGEST}"
+          cosign verify-attestation --type slsaprovenance --new-bundle-format=false \
             --certificate-identity="${{ github.server_url }}/${{ github.repository }}/.github/workflows/training-image-ghcr.yml@${{ github.ref }}" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             "${IMAGE}@${DIGEST}" > /dev/null
