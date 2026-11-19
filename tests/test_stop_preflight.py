@@ -162,9 +162,7 @@ class StopPreflightTests(unittest.TestCase):
 
     def test_provider_staleness(self):
         r = self.run_witness(
-            lambda i, e: e["provider"].update(
-                observed_at_utc="2026-11-19T14:40:00Z"
-            )
+            lambda i, e: e["provider"].update(observed_at_utc="2026-11-19T14:40:00Z")
         )
         self.assertEqual(r["reason"], "PROVIDER_READBACK_STALE")
 
