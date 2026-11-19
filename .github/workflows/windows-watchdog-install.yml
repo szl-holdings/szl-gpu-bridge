@@ -48,6 +48,29 @@ jobs:
             throw 'Checkout does not own the exact event revision.'
           }
 
+      - name: Refuse stale owner daemon or absent storage preflight before mutations
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The watchdog installer intentionally retains an existing daemon.
+          # A stale installed daemon or missing preflight makes a green
+          # three-task proof misleading. Refuse before installing any task.
+          foreach ($relative in @('daemon.ps1','storage_preflight.py')) {
+            $installed = Join-Path 'C:\szl-bridge' $relative
+            $expected = Join-Path $env:GITHUB_WORKSPACE ('laptop\' + $relative)
+            if (-not (Test-Path -LiteralPath $installed -PathType Leaf)) {
+              throw "Missing reviewed owner prerequisite: $relative"
+            }
+            if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
+              throw "Missing protected source prerequisite: $relative"
+            }
+            $want = (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash
+            $have = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
+            if ($want -cne $have) {
+              throw "Installed owner source parity mismatch: $relative"
+            }
+          }
+
       - name: Install the exact local watchdog package
         shell: powershell
         run: |
@@ -110,7 +133,7 @@ jobs:
           )
 
           $files = @(
-            foreach ($relative in @('daemon.ps1','watchdog.ps1','watchdog-config.json')) {
+            foreach ($relative in @('daemon.ps1','watchdog.ps1','watchdog-config.json','storage_preflight.py')) {
               $path = Join-Path 'C:\szl-bridge' $relative
               if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                 throw "Required installed file is missing: $relative"
@@ -171,6 +194,16 @@ jobs:
           if ([int]$proof.task_count -ne 3) { throw 'the exact three-task closure is incomplete' }
           if (@($proof.tasks | Where-Object state -eq 'Disabled').Count -gt 0) { throw 'a watchdog task is disabled' }
           if ([int]$proof.reconcile_exit_code -ne 0) { throw 'the watchdog reconciliation engine failed' }
+          if (@($proof.installed_files).Count -ne 4) { throw 'required owner files are incomplete' }
+          foreach ($relative in @('daemon.ps1','watchdog.ps1','storage_preflight.py')) {
+            $rows = @($proof.installed_files | Where-Object { $_.path -eq $relative })
+            if ($rows.Count -ne 1) { throw "required owner source file missing: $relative" }
+            $expected = Join-Path $env:GITHUB_WORKSPACE ('laptop\' + $relative)
+            $sha = (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($rows[0].sha256 -cne $sha) {
+              throw "Installed owner proof source drift: $relative"
+            }
+          }
           if ($proof.principal_recorded -ne $false) { throw 'principal data leaked into proof' }
           if ($proof.credential_values_recorded -ne $false) { throw 'credential data leaked into proof' }
           if ($proof.private_addresses_recorded -ne $false) { throw 'private address leaked into proof' }
