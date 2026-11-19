@@ -46,6 +46,13 @@ class BootstrapOwnerAdmissionContract(unittest.TestCase):
         self.assertLess(principal, mkdir)
         self.assertIn("-UserId $TaskOwner -LogonType S4U", source)
         self.assertNotIn('-UserId "$env:USERDOMAIN', source)
+        self.assertIn("$ExistingTask.Principal.LogonType -ne 'S4U'", source)
+        self.assertIn("Security.Principal.SecurityIdentifier", source)
+        self.assertIn("Security.Principal.NTAccount", source)
+        self.assertIn("'S-1-5-18','S-1-5-19','S-1-5-20'", source)
+        self.assertIn("^S-1-5-(80|82|90)-", source)
+        self.assertIn("NT AUTHORITY", source)
+        self.assertIn("NT SERVICE", source)
 
     def test_checkout_sources_prechecked_and_copied_without_network(self) -> None:
         source = self.source
