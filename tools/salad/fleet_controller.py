@@ -97,18 +97,29 @@ def readback(
 ):
     """Fresh group GET + separate instance-list GET, classified by the reviewed witness."""
     group_doc, s1 = salad.get_json("/" + group)
+    # A denial on the group read must stop this access lane immediately.
+    # Do not issue an instance GET using the same denied credential.
+    if s1 in ACCESS_STOP_CODES:
+        return witness(
+            transport_exit=0,
+            http_status=s1,
+            body=b"",
+            group=None,
+            instances=None,
+            name=group,
+            requested_replicas=requested_replicas,
+        )
     inst_doc, s2 = salad.get_json("/" + group + "/instances")
-    for status in (s1, s2):
-        if status in ACCESS_STOP_CODES:
-            return witness(
-                transport_exit=0,
-                http_status=status,
-                body=b"",
-                group=None,
-                instances=None,
-                name=group,
-                requested_replicas=requested_replicas,
-            )
+    if s2 in ACCESS_STOP_CODES:
+        return witness(
+            transport_exit=0,
+            http_status=s2,
+            body=b"",
+            group=None,
+            instances=None,
+            name=group,
+            requested_replicas=requested_replicas,
+        )
     return witness(
         transport_exit=transport_exit,
         http_status=http_status,
@@ -411,6 +422,34 @@ def checkpoint_cycle(contract, hub, ledger):
         ledger.save(state)
 
 
+def stop_settled_for_zero_patch(provider, expected_replicas):
+    """Only an independently reconciled stopped group with no instances qualifies.
+
+    This is a bounded provider observation, not evidence of exclusive ownership
+    or training completion. The desired replica count is expected to remain
+    positive until the subsequent PATCH to zero.
+    """
+    if (
+        type(provider) is not dict
+        or provider.get("group_state_reconciled") is not True
+        or type(expected_replicas) is not int
+        or expected_replicas <= 0
+        or type(provider.get("desired_replicas")) is not int
+        or type(provider.get("instances_returned")) is not int
+    ):
+        return False
+    counts = provider.get("actual_counts")
+    return (
+        provider.get("provider_status") == "stopped"
+        and provider.get("desired_replicas") == expected_replicas
+        and provider.get("instances_returned") == 0
+        and type(counts) is dict
+        and all(
+            type(counts.get(key)) is int and counts[key] == 0 for key in gates.COUNTS
+        )
+    )
+
+
 def bench_cycle(contract, salad, hub, ledger, *, apply):
     spec = contract["bench"]
     state = ledger.load()
@@ -422,6 +461,10 @@ def bench_cycle(contract, salad, hub, ledger, *, apply):
             ledger,
             {"kind": "bench", "verdict": "HOLD", "reason": "BENCH_CONTRACT_INVALID"},
         )
+        return
+    # An ambiguous first/second provider effect requires manual owner review.
+    # Do not replay POST stop on the next cycle or for a different receipt.
+    if group in state.get("stop_intents", {}):
         return
     revision, entries = hub.dataset_snapshot(spec["dataset"])
     name = gates.select_heldout_receipt(
@@ -479,20 +522,87 @@ def bench_cycle(contract, salad, hub, ledger, *, apply):
         "note": "MEASURE, not a model verdict; owner review required; no promotion authority",
     }
     if decision == "PARK_PERMITTED" and apply:
-        salad.call("POST", "/" + group + "/stop")
-        exit_code, status, body = salad.call(
-            "PATCH", "/" + group, {"replicas": 0}, "application/merge-patch+json"
-        )
-        record["action"] = {
-            "request": "POST stop + PATCH replicas=0",
-            "post_readback": readback(
-                salad, group, 0, transport_exit=exit_code, http_status=status, body=body
-            ),
+        # Persist the group-scoped intent *before* issuing any non-idempotent
+        # provider request. A crash, 429 or unknown response must never cause
+        # the next cycle to replay POST stop automatically.
+        intents = state.setdefault("stop_intents", {})
+        intents[group] = {
+            "receipt": name,
+            "revision": revision,
+            "phase": "POST_STOP_OUTCOME_UNRESOLVED",
         }
+        ledger.save(state)
+        exit_code, status, body = salad.call("POST", "/" + group + "/stop")
+        action = {
+            "request": "POST stop only; PATCH not authorized without settled readback",
+            "stop_http_status": status if type(status) is int else None,
+            "stop_transport_exit": exit_code if type(exit_code) is int else None,
+        }
+        if exit_code != 0 or status not in (200, 202, 204):
+            decision = "HOLD_STOP_REQUEST_UNVERIFIED"
+        else:
+            settled = readback(
+                salad,
+                group,
+                spec.get("replicas", 1),
+                transport_exit=exit_code,
+                http_status=status,
+                body=body,
+            )
+            action["stop_readback"] = settled
+            fresh_lease_ok, fresh_lease_reason = lease_check(contract, group, now_utc())
+            action["second_lease"] = fresh_lease_reason
+            if not stop_settled_for_zero_patch(settled, spec.get("replicas", 1)):
+                decision = "HOLD_STOP_SETTLEMENT_UNVERIFIED"
+            elif not fresh_lease_ok:
+                decision = "HOLD_OWNER_LEASE_CHANGED"
+            else:
+                # A second effect is independently gated on stopped/zero
+                # provider state and unchanged lease, not HTTP 202 alone.
+                intents[group]["phase"] = "PATCH_ZERO_OUTCOME_UNRESOLVED"
+                ledger.save(state)
+                patch_exit, patch_status, patch_body = salad.call(
+                    "PATCH",
+                    "/" + group,
+                    {"replicas": 0},
+                    "application/merge-patch+json",
+                )
+                action["request"] = "POST stop followed by gated PATCH replicas=0"
+                action["patch_http_status"] = (
+                    patch_status if type(patch_status) is int else None
+                )
+                if patch_exit != 0 or patch_status not in (200, 202, 204):
+                    decision = "HOLD_PARK_REQUEST_UNVERIFIED"
+                else:
+                    after_patch = readback(
+                        salad,
+                        group,
+                        0,
+                        transport_exit=patch_exit,
+                        http_status=patch_status,
+                        body=patch_body,
+                    )
+                    action["post_readback"] = after_patch
+                    if (
+                        after_patch.get("state")
+                        == "ZERO_REPLICAS_PROVIDER_REPORTED_NOT_COMPLETION"
+                    ):
+                        decision = "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION"
+                        # Only independent provider zero readback clears the
+                        # ambiguity barrier; this does not certify model DONE.
+                        intents.pop(group, None)
+                    else:
+                        decision = "HOLD_PARK_READBACK_UNVERIFIED"
+        record["decision"] = decision
+        record["action"] = action
     elif decision == "PARK_PERMITTED":
         record["action"] = {"request": "NONE", "reason": "DRY_RUN_WITHOUT_APPLY"}
     pending = state.setdefault("pending_receipts", {})
-    retry = decision in RETRY_DECISIONS or (decision == "PARK_PERMITTED" and not apply)
+    retry = (
+        decision in RETRY_DECISIONS
+        or (decision == "PARK_PERMITTED" and not apply)
+        or group in state.get("stop_intents", {})
+    )
     if pending.get(name) != decision or "post_readback" in record.get("action", {}):
         line = emit(ledger, record)
         emit(
