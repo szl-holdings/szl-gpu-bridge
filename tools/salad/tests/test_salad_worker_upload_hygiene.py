@@ -16,19 +16,34 @@ def test_pickle_patterns_exclude_trainer_state_but_keep_adapter():
     excluded = {f for f in CHECKPOINT_FILES if any(fnmatch.fnmatch(f, p) for p in sw.PICKLE_PATTERNS)}
     assert excluded == {"optimizer.pt", "rng_state.pth", "scheduler.pt", "training_args.bin"}
 
-class FakeApi:
-    def __init__(self, files): self.files = files; self.calls = []
-    def list_repo_files(self, repo_id, repo_type): return self.files
-    def snapshot_download(self, **kw):
-        self.calls.append(kw); os.makedirs(os.path.join(kw["local_dir"], kw["allow_patterns"][0].split("/")[0]), exist_ok=True)
+def test_resume_delegates_to_exact_revision_byte_verification(tmp_path):
+    from unittest.mock import patch
 
-def test_resume_downloads_newest_checkpoint_to_local_dir(tmp_path):
-    api = FakeApi(["checkpoint-50/a", "checkpoint-150/a", "checkpoint-100/a", "final/x"])
-    got = sw.fetch_resume_checkpoint(api, "r", str(tmp_path))
-    assert got == str(tmp_path / "checkpoint-150") and api.calls[0]["allow_patterns"] == ["checkpoint-150/*"]
+    sentinel = str(tmp_path / "checkpoint-150")
+    with patch(
+        "tools.salad.resume_integrity.verified_resume_checkpoint",
+        return_value=sentinel,
+    ) as verified:
+        got = sw.fetch_resume_checkpoint(
+            object(), "fixture/private", str(tmp_path), expected_target_steps=200
+        )
+    assert got == sentinel
+    assert verified.call_args.kwargs == {"expected_steps": 200}
 
-def test_no_checkpoint_means_genesis(tmp_path):
-    assert sw.fetch_resume_checkpoint(FakeApi(["final/x"]), "r", str(tmp_path)) is None
+
+def test_no_checkpoint_means_genesis_only_after_verified_empty_snapshot(tmp_path):
+    from unittest.mock import patch
+
+    with patch(
+        "tools.salad.resume_integrity.verified_resume_checkpoint",
+        return_value=None,
+    ) as verified:
+        got = sw.fetch_resume_checkpoint(
+            object(), "fixture/private", str(tmp_path), expected_target_steps=200
+        )
+    assert got is None
+    assert verified.call_count == 1
+
 
 def test_working_repo_created_private():
     src = (pathlib.Path(__file__).resolve().parent.parent / "salad_worker.py").read_text()
