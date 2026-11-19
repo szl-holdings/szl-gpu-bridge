@@ -99,7 +99,8 @@ class TerminalContract(unittest.TestCase):
                 directory = Path(kwargs.get("folder_path", ""))
                 fixture.uploaded_file_snapshots.append(
                     {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
-                    if directory.is_dir() else None
+                    if directory.is_dir()
+                    else None
                 )
                 fixture.uploads.append(kwargs)
                 if fixture.upload_error and (
@@ -528,13 +529,17 @@ class TerminalContract(unittest.TestCase):
 
     def test_stale_local_final_is_not_uploaded_or_deleted(self):
         self.final_present = False
-        checkpoint = self.make_checkpoint("adapter_model.safetensors", "adapter_config.json")
+        checkpoint = self.make_checkpoint(
+            "adapter_model.safetensors", "adapter_config.json"
+        )
         old_final = Path(self.temp.name) / "ckpt" / "final"
         old_final.mkdir(parents=True, exist_ok=True)
         stale = old_final / "stale-other-run.json"
         stale.write_bytes(b"DO_NOT_UPLOAD_OR_DELETE")
         with (
-            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
             patch.object(self.worker, "resume_global_step", return_value=200),
         ):
             self.assertEqual(self.run_worker(), 0)
@@ -553,7 +558,9 @@ class TerminalContract(unittest.TestCase):
             return str(path).endswith("adapter_model.safetensors") or original(path)
 
         with (
-            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
             patch.object(self.worker, "resume_global_step", return_value=200),
             patch.object(self.worker.os.path, "islink", side_effect=fake_symlink),
         ):
@@ -568,7 +575,9 @@ class TerminalContract(unittest.TestCase):
         self.flip_visibility_on_list = True
         checkpoint = self.make_checkpoint("adapter_model.safetensors")
         with (
-            patch.object(self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)),
+            patch.object(
+                self.worker, "fetch_resume_checkpoint", return_value=str(checkpoint)
+            ),
             patch.object(self.worker, "resume_global_step", return_value=200),
         ):
             self.assertEqual(self.run_worker(), 3)
