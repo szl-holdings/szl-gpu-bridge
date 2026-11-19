@@ -235,9 +235,7 @@ class StopPreflightTests(unittest.TestCase):
         self.assertEqual(r["reason"], "INSTANCE_STATE_UNRECOGNIZED")
 
     def test_stopped_group_with_positive_counts_is_hold(self):
-        r = self.run_witness(
-            lambda i, e: e["provider"].update(status="stopped")
-        )
+        r = self.run_witness(lambda i, e: e["provider"].update(status="stopped"))
         self.assertEqual(r["reason"], "PROVIDER_STOPPED_COUNTS_CONFLICT")
 
     def test_already_drained_group_requires_no_new_stop(self):
@@ -260,9 +258,7 @@ class StopPreflightTests(unittest.TestCase):
         r = self.run_witness(too_many)
         self.assertEqual(r["reason"], "INSTANCE_READBACK_INVALID")
         r = self.run_witness(
-            lambda i, e: e["provider"]["instance_readback"].update(
-                instances="unknown"
-            )
+            lambda i, e: e["provider"]["instance_readback"].update(instances="unknown")
         )
         self.assertEqual(r["reason"], "INSTANCE_READBACK_INVALID")
 
