@@ -397,8 +397,8 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                     readbacks[name] = summarize_instances(
                         reader(INSTANCE_URLS[name], token=key)
                     )
-                    readbacks[name]["reconciliation"] = (
-                        reconcile_selected_instances(group, readbacks[name])
+                    readbacks[name]["reconciliation"] = reconcile_selected_instances(
+                        group, readbacks[name]
                     )
                 except urllib.error.HTTPError as exc:
                     code = exc.code if type(exc.code) is int else None
