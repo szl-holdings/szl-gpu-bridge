@@ -25,6 +25,14 @@ verifier is the source owner for independent gold-answer checks.
 The original ZIP is a conversation attachment, not a GitHub/HF artifact.
 No file or hash proves that an independent model evaluation ran.
 
+A bounded 5-page public Hub observation identified 412 public model IDs on
+2026-11-19 (private models remain UNAVAILABLE); only the 11 source-owned role
+candidates are mapped to this loop. The other 401 stay **unclassified,
+review-required**, never training jobs. Its private observation SHA-256 is
+`3f3a85a8366930ab920cd0210f359790358ab131dbf98d4671ab22cfcebdec49`.
+The API inventory is a non-atomic public metadata observation, not proof of
+412 weight-complete trained models or the full private estate.
+
 11 candidate model identities are drawn from the source-owned Hatun model
 registry plus Khipu Scholar/ReceiptAgent cards. Their pinned Hub commits
 are **metadata observations**, not proof that model weights, base adapters,
@@ -37,6 +45,7 @@ python -m tools.proving.model_recipe_loop_v0 \
   --plan recipes/reasoning_compression_v0/models.json \
   --hf-observation /private/hf-public-metadata.json \
   --dependency-observation /private/dependency-public-readback.json \
+  --hf-census /private/hf-public-model-census-v3.json \
   --train-only-zip /private/SZL_TufaZip_CRAM_TrainingOnly_v0.zip \
   --outdir /private/receipts/model-recipe-new-unique-name \
   --cycles 2 --max-steps 12
