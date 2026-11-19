@@ -167,7 +167,12 @@ def assess_stop_preflight(*, intent: object, evidence: object, now_utc: str) -> 
         return _hold("PROVIDER_PENDING_CHANGE_UNCERTAIN")
     status = provider.get("status")
     if type(status) is not str or status not in {
-        "pending", "deploying", "running", "stopping", "stopped", "failed"
+        "pending",
+        "deploying",
+        "running",
+        "stopping",
+        "stopped",
+        "failed",
     }:
         return _hold("PROVIDER_STATUS_UNVERIFIED")
     if status == "stopped" and any(
