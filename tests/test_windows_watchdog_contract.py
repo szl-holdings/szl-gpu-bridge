@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WATCHDOG = ROOT / "laptop" / "watchdog.ps1"
 INSTALLER = ROOT / "laptop" / "install_watchdog.ps1"
 DAEMON = ROOT / "laptop" / "daemon.ps1"
+PARITY = ROOT / "laptop" / "source_parity.ps1"
 WINDOWS_POWERSHELL = (
     Path(os.environ.get("SystemRoot", r"C:\Windows"))
     / "System32"
@@ -419,6 +420,55 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
         self.assertIn("credential_values_read = $false", self.installer)
         self.assertIn("remote_commands_accepted = $false", self.installer)
         self.assertIn("inbound_ports_opened = $false", self.installer)
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_canonical_source_parity_is_crlf_safe_but_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as dirname:
+            expected = Path(dirname) / "expected.ps1"
+            installed = Path(dirname) / "installed.ps1"
+
+            def check() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        str(WINDOWS_POWERSHELL),
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-File",
+                        str(PARITY),
+                        "-ExpectedSource",
+                        str(expected),
+                        "-InstalledSource",
+                        str(installed),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+
+            expected.write_bytes(b"Write-Output 101\nWrite-Output 102\n")
+            installed.write_bytes(b"Write-Output 101\r\nWrite-Output 102\r\n")
+            matched = check()
+            self.assertEqual(matched.returncode, 0, matched.stdout + matched.stderr)
+            self.assertIn("SOURCE_PARITY_VERIFIED", matched.stdout)
+
+            installed.write_bytes(b"Write-Output 101\r\nWrite-Output 103\r\n")
+            changed = check()
+            self.assertNotEqual(changed.returncode, 0)
+            self.assertIn("SOURCE_PARITY_MISMATCH", changed.stderr)
+
+            installed.write_bytes(b"\xff")
+            invalid = check()
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertIn("SOURCE_PARITY_INVALID_UTF8", invalid.stderr)
+
+            installed.write_bytes(b"Write-Output 101\rWrite-Output 102")
+            stray = check()
+            self.assertNotEqual(stray.returncode, 0)
+            self.assertIn("SOURCE_PARITY_STRAY_CR", stray.stderr)
 
 
 if __name__ == "__main__":

@@ -424,6 +424,63 @@ the report file):
   --report "${TMPDIR:-/tmp}/attempt-17-status.json"
 ```
 
+## Verifying proofrun endorsements
+
+`proofrun` turns training-run claims (steps, final adapter, eval scores, image) into signed, hash-chained receipts that anyone can check offline. Each run's receipts are signed **inside the training container** by a per-run ephemeral ed25519 key. That key is never exported. After the run, SZL **endorses** the finished bundle off the GPU host with the org key below. No long-lived signing key ever runs on a rented GPU.
+
+**SZL proofrun endorsement key**
+
+| Field | Value |
+|---|---|
+| Algorithm | Ed25519 |
+| Fingerprint (pin this) | `ed25519:sha256:6160e3a049d11b449336d70bc2f64cc59332787f7b71eeceec1a89b516dab8ab` |
+| Short form (display only, not for pinning) | `ed25519:6160e3a049d11b44` |
+| Raw public key (base64) | `OO1w8Ak1Mq4/4kSdndNUYu60OQfmGLoURK/R5G1S2Ag=` |
+| Valid from | 2026-11-19 |
+
+```
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAOO1w8Ak1Mq4/4kSdndNUYu60OQfmGLoURK/R5G1S2Ag=
+-----END PUBLIC KEY-----
+```
+
+The fingerprint is `sha256` of the raw 32-byte public key. To check it yourself:
+
+```bash
+python3 -c "import base64,hashlib;print('ed25519:sha256:'+hashlib.sha256(base64.b64decode('OO1w8Ak1Mq4/4kSdndNUYu60OQfmGLoURK/R5G1S2Ag=')).hexdigest())"
+```
+
+**Verify a run bundle** (offline; exit 0 only if every check passes):
+
+```bash
+python3 -m proofrun verify <run_dir> \
+  --trusted-key ed25519:sha256:6160e3a049d11b449336d70bc2f64cc59332787f7b71eeceec1a89b516dab8ab
+# runs that predate proofrun (no heartbeat chain or image digest) also need --accept-retroactive
+```
+
+The verifier recomputes the bundle digest from every receipt file and checks that `endorsement.json` meets three conditions:
+- it is signed by this key;
+- it names that exact digest;
+- it names the run's single ephemeral signer.
+
+It fails closed on any mismatch, including a missing endorsement, a different key, or any receipt edited after endorsement.
+
+**What an endorsement proves:**
+- SZL took custody of exactly this bundle.
+- The bundle's integrity checks passed when it was endorsed.
+- The claims the endorsement lists in its `scope` were checked at that time.
+
+**What it does not prove:**
+- It does not prove that the GPU host was honest, or that training was correct.
+- It does not cover any claim outside its `scope`.
+
+Per-claim evidence is in the receipts, and the verifier re-derives it. A claim the endorsement marks `FAIL` or `NOT QUALIFIED` stays that way. An endorsement never upgrades it.
+
+**Rotation and revocation.**
+- Rotation: a new key is announced here next to the old one, with an overlap window. The old fingerprint stays valid only for bundles it endorsed before the rotation date.
+- Revocation: if the key is compromised, this section names the fingerprint as **REVOKED** with the time of compromise. Stop trusting it for anything endorsed after that time.
+- Contact: report suspected compromise through GitHub private vulnerability reporting on this repo, or email security@a11oy.net (see `SECURITY.md`).
+
 ## Links
 
 - Source of truth: [`szl-holdings/szl-gpu-bridge`](https://github.com/szl-holdings/szl-gpu-bridge)

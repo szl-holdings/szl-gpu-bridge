@@ -1,0 +1,6 @@
+# Example only. Merge into the VM's existing cloudflared config; do not copy
+# any token into this repository.
+ingress:
+  - hostname: LLM_HOSTNAME.example # replace with the Access-protected hostname
+    service: http://127.0.0.1:8000
+  - service: http_status:404

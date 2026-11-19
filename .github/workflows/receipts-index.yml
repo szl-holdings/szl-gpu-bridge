@@ -1,0 +1,130 @@
+name: Receipts index
+
+# Why this exists: the receipts-index builder (tools/receipts_index, PR #165)
+# was merged with no workflow, so data/receipts-index.jsonl in
+# SZLHOLDINGS/frontier-54-runs went stale (161 rows) while the dataset grew past
+# 10k files. estate-wiring-witness only checks the dataset's lastModified, which
+# is always fresh because other writers commit every few seconds, so it could
+# never see a stale index.
+#
+#   check   (schedule, dispatch) READ ONLY. Rebuilds the index from one pinned
+#           dataset revision and opens/updates one issue when it is stale.
+#           Needs no secret: the dataset is public.
+#   publish (dispatch with publish=true only) commits ONLY
+#           data/receipts-index.jsonl. Gated by the `receipts-index-publish`
+#           environment (required reviewer) and the HF_TOKEN secret, the same
+#           secret hf-training-receipts-card.yml uses. A fine-grained token
+#           scoped to write on this one dataset is preferred.
+# Nothing here merges, deploys or writes anywhere else.
+
+on:
+  schedule:
+    - cron: "29 6 * * *" # daily 06:29 UTC, after the wiring witness and main health watch
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the rebuilt index (needs environment approval)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: ${{ !inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    concurrency:
+      group: receipts-index-check
+      cancel-in-progress: false
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Builder tests
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_receipts_index_builder tests.test_refresh_receipts_index -v
+      - name: Rebuild and compare (read only)
+        id: refresh
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface-hub==1.19.0
+          python tools/receipts_index/refresh_receipts_index.py \
+            --workdir "$RUNNER_TEMP/receipts-index" --mode check \
+            --report "$RUNNER_TEMP/report.md"
+      - name: File or update the stale-index issue
+        if: ${{ steps.refresh.outputs.stale == 'true' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REPORT_PATH: ${{ runner.temp }}/report.md
+        with:
+          script: |
+            const fs = require("fs");
+            const title = "Receipts index is stale";
+            const body = fs.readFileSync(process.env.REPORT_PATH, "utf8");
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "receipts-index",
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["receipts-index", "automated"],
+              });
+            }
+
+  publish:
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: receipts-index-publish
+    # One lock per Hub asset: never two writers of this index at once.
+    concurrency:
+      group: hf-write/dataset/SZLHOLDINGS/frontier-54-runs/receipts-index
+      cancel-in-progress: false
+    steps:
+      - name: Checkout exact protected source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Builder tests
+        run: |
+          set -euo pipefail
+          python -m unittest tests.test_receipts_index_builder tests.test_refresh_receipts_index -v
+      - name: Require approved Hugging Face credential
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: test -n "$HF_TOKEN"
+      - name: Rebuild and publish data/receipts-index.jsonl only
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check huggingface-hub==1.19.0
+          python tools/receipts_index/refresh_receipts_index.py \
+            --workdir "$RUNNER_TEMP/receipts-index" --mode publish \
+            --source-sha "$GITHUB_SHA"

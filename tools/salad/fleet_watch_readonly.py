@@ -19,7 +19,7 @@ import urllib.request
 
 PROVIDER_URL = (
     "https://api.salad.com/api/public/organizations/"
-    "alloyscape/projects/default/containers?per_page=100"
+    "alloyscape/projects/default/containers"
 )
 CHAIN_URL = (
     "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/commits/main"
@@ -38,8 +38,7 @@ SOURCE_PRIORITY_GROUPS = frozenset(
     }
 )
 INSTANCE_URLS = {
-    name: PROVIDER_URL.split("?", 1)[0] + "/" + name + "/instances"
-    for name in SOURCE_PRIORITY_GROUPS
+    name: PROVIDER_URL + "/" + name + "/instances" for name in SOURCE_PRIORITY_GROUPS
 }
 INSTANCE_STATES = frozenset(
     {
@@ -173,8 +172,20 @@ def summarize_fleet(payload: object) -> dict:
             else "positive_replica_intent"
         )
         by_intent.setdefault(group["state"], Counter())[intent] += 1
-    # The provider's collection endpoint does not prove completeness for every
-    # project/account. Do not misstate first-response coverage as an estate census.
+    # The documented list endpoint has no pagination query parameter. A
+    # returned collection covers only this one known project; it cannot attest
+    # other projects, account permissions, or provider snapshot atomicity.
+    # Intent/lifecycle disagreement may be a transient provider transition.
+    # Keep these counts separate from a verified training or cost failure.
+    lifecycle_recheck = Counter()
+    for group in groups:
+        desired = group["configured_replicas"]
+        if group["state"] in {"deploying", "pending"} and desired == 0:
+            lifecycle_recheck["DEPLOYING_ZERO_DESIRED_RECHECK"] += 1
+        if group["state"] == "stopped" and desired is not None and desired > 0:
+            lifecycle_recheck["STOPPED_POSITIVE_DESIRED_RECHECK"] += 1
+    # A provider's collection endpoint does not prove completeness for every
+    # project/account. Do not misstate one response as an estate census.
     canonical = json.dumps(
         groups, sort_keys=True, ensure_ascii=True, separators=(",", ":")
     )
@@ -193,6 +204,10 @@ def summarize_fleet(payload: object) -> dict:
         "provider_observation": "OBSERVED_GROUP_METADATA",
         "provider_collection_scope": "ONE_BOUNDED_RESPONSE_NOT_PROVEN_EXHAUSTIVE",
         "groups_observed": len(groups),
+        "provider_list_endpoint_documented_pagination": False,
+        "lifecycle_recheck_total": sum(lifecycle_recheck.values()),
+        "lifecycle_recheck_counts": dict(sorted(lifecycle_recheck.items())),
+        "lifecycle_recheck_is_proven_failure": False,
         "group_state_counts": dict(sorted(state_counts.items())),
         "state_by_replica_intent": {
             state: dict(sorted(intents.items()))
@@ -263,6 +278,59 @@ def summarize_instances(payload: object) -> dict:
     }
 
 
+def reconcile_selected_instances(group: dict, sample: dict) -> dict:
+    """Reconcile two non-atomic provider GETs; NEVER attest trainer liveness.
+
+    A reported mismatch means investigation is warranted, not that the same
+    instant was sampled or that paid GPUs, source parity, or training exist.
+    Only normalized, allowlisted group and instance fields are exposed.
+    """
+    if sample.get("state") != "PROVIDER_INSTANCE_METADATA_OBSERVED":
+        raise Unavailable("INSTANCE_READBACK_UNAVAILABLE")
+    desired = group.get("configured_replicas")
+    collection_running = group.get("provider_running_instances")
+    if desired is not None and nonnegative_int(desired) is None:
+        raise Unavailable("GROUP_REPLICA_FIELD_INVALID")
+    if collection_running is not None and nonnegative_int(collection_running) is None:
+        raise Unavailable("GROUP_RUNNING_FIELD_INVALID")
+    observed_instances = sample["instance_count"]
+    running = sample["instance_states"].get("running", 0)
+    ready = sample["ready_count_provider_reported"]
+    reasons = []
+    if desired is None:
+        reasons.append("DESIRED_REPLICAS_UNAVAILABLE")
+    elif desired == 0 and observed_instances > 0:
+        reasons.append("ZERO_REPLICA_GROUP_HAS_INSTANCE_SAMPLE")
+    elif desired > 0 and observed_instances == 0:
+        reasons.append("POSITIVE_REPLICA_INTENT_WITHOUT_INSTANCE_SAMPLE")
+    if collection_running is None:
+        reasons.append("COLLECTION_RUNNING_COUNT_UNAVAILABLE")
+    elif collection_running != running:
+        reasons.append("NONATOMIC_RUNNING_COUNT_DIFFERENCE")
+    if group["state"] == "running" and desired is not None and desired > 0:
+        if running == 0:
+            reasons.append("RUNNING_LABEL_WITHOUT_RUNNING_INSTANCE")
+    if ready > running:
+        reasons.append("READY_REPORT_DOES_NOT_ESTABLISH_RUNNING")
+    if not group["immutable_image_reference"]:
+        reasons.append("IMAGE_REFERENCE_NOT_IMMUTABLE")
+    return {
+        "state": "HOLD" if reasons else "STRUCTURAL_ONLY",
+        "scope": "TWO_NONATOMIC_PROVIDER_GETS_NOT_A_TRAINER_WITNESS",
+        "reason_codes": sorted(set(reasons)),
+        "desired_replicas": desired,
+        "collection_running_count": collection_running,
+        "instance_sample_count": observed_instances,
+        "instance_sample_running_count": running,
+        "instance_sample_ready_count": ready,
+        "trainer_liveness_verified": False,
+        "checkpoint_bytes_verified": False,
+        "source_image_digest_verified": False,
+        "billing_verified": False,
+        "production_admission": "HOLD",
+    }
+
+
 def summarize_chain(payload: object, *, now: datetime) -> dict:
     if not isinstance(payload, list):
         raise Unavailable("INVALID_CHAIN_COLLECTION")
@@ -327,6 +395,10 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                 drift.append("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH")
             if report["fleet"]["groups_observed"] == 0:
                 drift.append("SALAD_EMPTY_COLLECTION_NOT_PROVEN_COMPLETE")
+            # Lifecycle/replica intent can legitimately diverge during stop
+            # or deployment. A single snapshot is diagnostic, not an alert.
+            # Keep count-only evidence; require temporal owner readback for
+            # any future persistent-lifecycle drift declaration.
             # Up to five immutable-name allowlisted API GETs; 401/403/429
             # stops subsequent reads without retry or credential fallback.
             samples = report["fleet"].get("source_priority_group_sample", [])
@@ -343,6 +415,9 @@ def collect(key: str | None, *, reader=read_json, now: datetime | None = None):
                 try:
                     readbacks[name] = summarize_instances(
                         reader(INSTANCE_URLS[name], token=key)
+                    )
+                    readbacks[name]["reconciliation"] = reconcile_selected_instances(
+                        group, readbacks[name]
                     )
                 except urllib.error.HTTPError as exc:
                     code = exc.code if type(exc.code) is int else None

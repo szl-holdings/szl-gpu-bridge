@@ -58,7 +58,7 @@ lanes), it is receipted in a dataset receipt BEFORE training starts, and
 receipt uploads retry (3 attempts, 60s apart) so a transient Hub 429 cannot
 silently drop a proof receipt.
 
-v3.5 adds F9 - verified, honest resume-on-start. Resume existed since v1, but
+v3.5 adds F9 - guarded resume-on-start (F11 source repair further pins full file bytes). Resume existed since v1, but
 every failure mode degraded SILENTLY to GENESIS: a repo-listing error returned
 None, a partial local checkpoint dir (worker killed mid-save) shadowed the
 durable Hub copy, and a failed checkpoint download crashed or restarted from
@@ -112,6 +112,16 @@ from pathlib import Path
 import re
 import uuid
 
+# Support the existing first-party script launch on A6000 hosts:
+# `python tools/salad/salad_worker.py` does not put the checkout root on
+# sys.path. The baked Salad image already supplies PYTHONPATH=/work.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if _SCRIPT_DIR.name == "salad" and _SCRIPT_DIR.parent.name == "tools":
+    _SOURCE_ROOT = _SCRIPT_DIR.parent.parent
+    if (_SOURCE_ROOT / "tools" / "salad" / "resume_integrity.py").is_file():
+        if str(_SOURCE_ROOT) not in sys.path:
+            sys.path.insert(0, str(_SOURCE_ROOT))
+
 os.environ.setdefault("HF_HOME", os.environ.get("HF_HOME", os.path.expanduser("~/hf-cache")))
 
 import torch
@@ -128,7 +138,16 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     """Bind the exact supported TRL API without treating **kwargs as acceptance.
 
     The baked Salad image pins TRL 0.13.0 (max_seq_length); newer fleet lanes
-    use max_length. An unknown or ambiguous API is a hard stop, never a fallback.
+    use max_length. An unknown or ambiguous API is a hard stop, never a
+    fallback. Measured 2026-11-19: TRL 0.15-0.19 ships BOTH fields at once
+    (max_seq_length deprecated, forwarding to max_length in __post_init__), so
+    every ring lane pinned at trl==0.17.0 fail-closed at this precheck with
+    zero provider effects. The overlap is NOT treated as a binding here: a
+    two-field constructor has no single explicit sequence-bound field, and a
+    deprecated alias could silently reinterpret it. The fleet remedy is the
+    version pin (ring lanes pin-bumped to trl==1.17.1, readback-verified),
+    and verify_sequence_binding additionally checks the constructed config
+    so no silent default can masquerade as a bound length.
     """
     try:
         parameters = inspect.signature(constructor).parameters
@@ -141,9 +160,54 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
         and parameters[name].kind not in (inspect.Parameter.VAR_KEYWORD,
                                          inspect.Parameter.VAR_POSITIONAL)
     ]
-    if len(explicit) != 1:
-        raise RuntimeError("SFTConfig must expose exactly one explicit sequence-bound field")
-    return {explicit[0]: length}
+    if len(explicit) == 1:
+        return {explicit[0]: length}
+    raise RuntimeError(
+        "SFTConfig must expose exactly one explicit sequence-bound field "
+        f"(found: {sorted(explicit) or 'none'}); measured alias-overlap TRLs "
+        "0.15-0.19 ship both max_seq_length and max_length and are NOT a "
+        "binding - pin a single-field TRL (fleet remedy 2026-11-19: ring "
+        "lanes pin-bumped to trl==1.17.1) instead of guessing a binding")
+
+
+def verify_sequence_binding(cfg, sequence_kwargs: dict, length: int) -> None:
+    """Fail unless the constructed config actually holds the bound length.
+
+    sft_sequence_length_kwargs inspects the constructor; this checks the built
+    object, so an alias overlap or a silent default can never claim a bound
+    training sequence length. Raises RuntimeError (fail-closed), never guesses.
+    """
+    if len(sequence_kwargs) != 1:
+        raise RuntimeError("sequence binding must be exactly one field")
+    field, value = next(iter(sequence_kwargs.items()))
+    actual = getattr(cfg, field, None)
+    if actual != value:
+        raise RuntimeError(
+            f"SFTConfig.{field} was bound to {value!r} but constructed as "
+            f"{actual!r}; refusing to train on an unbound sequence length")
+
+
+def quantized_load_kwargs(enabled: bool) -> tuple[dict, str, dict]:
+    """Return (from_pretrained kwargs, optimizer, receipt fields) for --load-in-4bit.
+
+    Off: bf16 weights and adamw_torch, exactly as before. On: QLoRA NF4 with
+    double quantization, bf16 compute and the paged 8-bit optimizer, which is
+    what lets a 27B base train on one 24 GB card. bitsandbytes missing is a hard
+    stop, never a silent fallback to bf16 that would OOM later on a paid GPU.
+    """
+    if not enabled:
+        return {"torch_dtype": torch.bfloat16}, "adamw_torch", {"quantization": "none"}
+    try:
+        import bitsandbytes  # noqa: F401
+    except Exception as exc:
+        raise RuntimeError("--load-in-4bit requires bitsandbytes; it is not importable") from exc
+    from transformers import BitsAndBytesConfig
+    qcfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                              bnb_4bit_compute_dtype=torch.bfloat16,
+                              bnb_4bit_use_double_quant=True)
+    return ({"torch_dtype": torch.bfloat16, "quantization_config": qcfg},
+            "paged_adamw_8bit",
+            {"quantization": "nf4-4bit-double-quant", "optim": "paged_adamw_8bit"})
 
 
 STOP = {"flag": False}
@@ -353,65 +417,48 @@ def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model")
 
 
 def latest_checkpoint(api: HfApi, repo: str) -> str | None:
-    """The resume-on-start contract: find the newest checkpoint-* revision.
+    """Inspect one immutable metadata revision, never moving-main filename lists."""
+    try:
+        from tools.salad.resume_integrity import ResumeHold, inspect_pinned_checkpoint
+    except ImportError:
+        raise ResumeError("PINNED_RESUME_VERIFIER_UNAVAILABLE") from None
 
-    F9: a listing failure is never silently folded into GENESIS — it raises so
-    the boot receipt can say 'could not check' instead of pretending the lane
-    has no checkpoints. On a spot fleet a silent GENESIS is an unbounded
-    from-scratch respawn loop with zero durable progress.
+    try:
+        plan = inspect_pinned_checkpoint(api, repo)
+    except ResumeHold as error:
+        raise ResumeError(str(error)) from None
+    return plan["checkpoint"] if plan else None
+
+
+def fetch_resume_checkpoint(
+    api: HfApi, repo: str, output_dir: str, *, expected_target_steps: int
+) -> str | None:
+    """Use exact-revision opaque bytes, not stale local folders or unsigned paths.
+
+    An unavailable checkpoint or metadata readback never degrades into GENESIS.
+    Retain historical local files untouched and use a revision-scoped cache.
     """
     try:
-        files = api.list_repo_files(repo_id=repo, repo_type="model")
-    except Exception as e:
-        raise ResumeError(f"cannot list checkpoints of {repo}: {transport_label(e)}") from None
-    stops = sorted(int(f.split("/")[0].split("-")[-1]) for f in files
-                   if f.startswith("checkpoint-") and "/" in f
-                   and f.split("/")[0].split("-")[-1].isdigit())
-    return f"checkpoint-{stops[-1]}" if stops else None
+        from tools.salad.resume_integrity import ResumeHold, verified_resume_checkpoint
+    except ImportError:
+        raise ResumeError("PINNED_RESUME_VERIFIER_UNAVAILABLE") from None
 
-
-def fetch_resume_checkpoint(api: HfApi, repo: str, output_dir: str) -> str | None:
-    """F9: verified, honest resume-on-start.
-
-    The Hub listing is authoritative. A LOCAL checkpoint dir is trusted only
-    if its trainer_state.json is readable — a worker killed mid-save leaves a
-    partial dir that would otherwise silently shadow the durable Hub copy and
-    force a from-scratch restart (observed 2026-11-15 on the v4 lane: a
-    respawn trained step 1 at full compute despite checkpoint-50 on the Hub).
-    Partial local dirs are deleted and re-downloaded; a download that still
-    fails after retries raises instead of degrading into silent GENESIS.
-    """
-    ck = latest_checkpoint(api, repo)  # raises ResumeError on listing failure
-    if not ck:
-        return None
-    local = os.path.join(output_dir, ck)
-    if os.path.isdir(local) and resume_global_step(local) is None:
-        import shutil
-        shutil.rmtree(local, ignore_errors=True)
-        receipt("warn", f"local {ck} had no readable trainer_state.json "
-                "(killed mid-save?) — deleted; re-downloading the durable Hub copy")
-    if not os.path.isdir(local):
-        for attempt in range(3):
-            try:
-                api.snapshot_download(repo_id=repo, repo_type="model",
-                                      allow_patterns=[f"{ck}/*"], local_dir=output_dir)
-                break
-            except Exception as e:
-                if attempt == 2:
-                    raise ResumeError(f"download of {ck} failed after 3 attempts: {transport_label(e)}") from None
-                time.sleep(60)
-    gs = resume_global_step(local)
-    if gs is None:
-        raise ResumeError(f"{ck} present but trainer_state.json unreadable — refusing silent GENESIS")
-    return local
+    try:
+        return verified_resume_checkpoint(
+            api, repo, output_dir, expected_steps=expected_target_steps
+        )
+    except ResumeHold as error:
+        raise ResumeError(str(error)) from None
 
 
 def resume_global_step(resume_dir: str) -> int | None:
-    """F6: read the resumed checkpoint's global_step without loading weights."""
+    """Read strict integer Trainer step; never coerce float, bool or text."""
     try:
         with open(os.path.join(resume_dir, "trainer_state.json"), encoding="utf-8") as f:
-            return int(json.load(f).get("global_step", 0))
-    except Exception:
+            state = json.load(f)
+        value = state.get("global_step") if isinstance(state, dict) else None
+        return value if type(value) is int and value >= 0 else None
+    except (OSError, UnicodeError, ValueError, TypeError):
         return None
 
 
@@ -820,6 +867,8 @@ def main() -> int:
                     help="dedicated local checkpoint directory for this lane")
     ap.add_argument("--gradient-checkpointing", action="store_true",
                     help="recompute activations to reduce training memory")
+    ap.add_argument("--load-in-4bit", action="store_true",
+                    help="QLoRA: load the base in NF4 4-bit with a paged 8-bit optimizer")
     ap.add_argument("--gpu-memory-budget-mib", type=int, default=0,
                     help="opt-in PyTorch allocator cap; requires one visible GPU")
     ap.add_argument("--gpu-reserve-mib", type=int, default=8192,
@@ -941,7 +990,9 @@ def run_training(a, api) -> int:
         print(f"FAIL-CLOSED: {e}", file=sys.stderr)
         return 3
     try:
-        resume = fetch_resume_checkpoint(api, a.adapter_out, a.output_dir)
+        resume = fetch_resume_checkpoint(
+            api, a.adapter_out, a.output_dir, expected_target_steps=a.max_steps
+        )
     except ResumeError as e:
         # F9 fail-closed: never silently restart from step 0 when resume
         # infrastructure is broken — that is an unbounded spot-GPU burn loop.
@@ -1048,8 +1099,23 @@ def run_training(a, api) -> int:
         except Exception as error:
             receipt("fail-closed", f"Shared GPU admission failed: {error}")
             return 8
+    # The signed training image supplies a local, progress-bound liveness file.
+    # Other worker environments remain unchanged when the image marker is absent.
+    image_heartbeat = None
+    if os.environ.get("SZL_HEARTBEAT_FILE"):
+        try:
+            import step_heartbeat as image_heartbeat
+        except ImportError:
+            receipt("fail-closed", "required pinned-image liveness module unavailable",
+                    {"training_started": False, "completion_qualified": False})
+            return 8
     cuda_arch_precheck()  # F4: must still precede model loading/training.
     base_kwargs = {"revision": a.base_revision} if a.base_revision else {}
+    run_id = os.environ.get("SZL_RUN_ID") or a.adapter_out
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image liveness write unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
     tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
     ds = load_train_split(a, api)  # F2/F3
 
@@ -1082,10 +1148,29 @@ def run_training(a, api) -> int:
     receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
             {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
              "training_format": format_contract})
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image dataset milestone liveness unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
+    try:
+        load_kw, optim_name, quant_fields = quantized_load_kwargs(a.load_in_4bit)
+    except RuntimeError as exc:
+        receipt("fail-closed", str(exc), {"training_started": False, "quantization": "requested-unavailable"})
+        return 9
+    if a.load_in_4bit:
+        receipt("model-load", "loading base in 4-bit", quant_fields)
     model = AutoModelForCausalLM.from_pretrained(
-        a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
+        a.base, device_map="auto", **load_kw, **base_kwargs)
+    if a.load_in_4bit:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=a.gradient_checkpointing)
     if a.gradient_checkpointing:
         model.config.use_cache = False
+    if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
+        receipt("fail-closed", "pinned-image model milestone liveness unavailable",
+                {"training_started": False, "completion_qualified": False})
+        return 8
 
     cfg = SFTConfig(
         output_dir=a.output_dir,
@@ -1095,10 +1180,17 @@ def run_training(a, api) -> int:
         learning_rate=2e-4, lr_scheduler_type="cosine", warmup_steps=20,
         max_steps=a.max_steps,
         save_steps=a.save_steps, save_total_limit=2,
-        bf16=True, optim="adamw_torch", report_to=[], logging_steps=10,
+        bf16=True, optim=optim_name, report_to=[], logging_steps=10,
         gradient_checkpointing=a.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False} if a.gradient_checkpointing else None,
         packing=False)
+    try:
+        verify_sequence_binding(cfg, sequence_kw, 2048)
+    except RuntimeError as error:
+        receipt("fail-closed", f"SFTConfig sequence-length binding unverified: {error}",
+                {"training_started": False, "completion_qualified": False})
+        print(f"FAIL-CLOSED: {error}; no training started", file=sys.stderr, flush=True)
+        return 8
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
         target_modules=["q_proj","k_proj","v_proj","o_proj"],
         task_type="CAUSAL_LM")
@@ -1178,6 +1270,8 @@ def run_training(a, api) -> int:
             if STOP["flag"]:
                 control.should_training_stop = True
     trainer.add_callback(ReceiptCallback())
+    if image_heartbeat is not None:
+        trainer.add_callback(image_heartbeat.make_callback(a.max_steps, run_id))
 
     t0 = time.time()
     trainer.train(resume_from_checkpoint=resume) if resume else trainer.train()

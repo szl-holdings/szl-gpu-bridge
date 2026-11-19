@@ -1,0 +1,20 @@
+# Source of truth for requirements.lock. Regenerate with ./regen-lock.sh (see README.md).
+# Pins requested for the proofrun step-1 image:
+transformers==5.22.2
+peft==0.21.2
+trl==1.17.1
+# torch stack: EXACTLY what the pinned base image ships (CUDA 12.6 builds from download.pytorch.org/whl/cu126).
+torch==2.14.1+cu126
+torchvision==0.29.1+cu126
+torchaudio==2.11.0+cu126
+# Everything else is resolved by the lock; listed so the worker, the probe and the receipt uploader import.
+datasets
+accelerate
+safetensors
+huggingface_hub
+bitsandbytes
+sentencepiece
+protobuf
+pynvml
+zeus-ml
+cryptography

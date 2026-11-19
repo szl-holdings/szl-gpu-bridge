@@ -1,0 +1,128 @@
+name: Workforce officers
+
+# Replaces the seven paused SZLHOLDINGS workforce Spaces with one-shot,
+# Sigstore-attested cycles on GitHub-hosted runners (no Hugging Face Space,
+# no HF compute, no persistent disk). See workforce/README.md.
+#
+# STOP RULE / ENABLE GATE: scheduled runs do nothing until the repository
+# variable WORKFORCE_ENABLED is set to "true" (Stephen's call, after merge).
+# EVERY job below, the manual (workflow_dispatch) one included, needs
+# WORKFORCE_ENABLED == "true", the canonical non-fork repository, and (manual)
+# refs/heads/main. Publishing to the HF dataset additionally needs
+# WORKFORCE_PUBLISH == "true", the WORKFORCE_HF_TOKEN secret, a run on main,
+# and a cryptographically verified attestation pinned to this repository, the
+# workforce-cycle.yml signer workflow and refs/heads/main. Without them each
+# run only keeps its record (+ attestation, on main) as an artifact.
+#
+# The id-token/attestations grants on the jobs below are the CEILING for the
+# called workflow; workforce-cycle.yml gives them to its attest job alone.
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *" # szl-infra-warden, every 15 min (as coded: 900 s)
+    - cron: "12,42 * * * *" # szl-chief-engineer, every 30 min (as coded: 1800 s)
+    - cron: "17 * * * *" # eternal-auditor + szl-cyber-shield, hourly
+    - cron: "41 6 * * *" # gardener + research-council + dream-architect, daily
+  workflow_dispatch:
+    inputs:
+      role:
+        description: Officer to run once (record + attestation artifact)
+        required: true
+        type: choice
+        options:
+          - eternal-auditor
+          - estate-gardener
+          - szl-chief-engineer
+          - szl-infra-warden
+          - szl-cyber-shield
+          - szl-research-council
+          - szl-dream-architect
+
+permissions: {}
+
+jobs:
+  every-15m:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '7,22,37,52 * * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-infra-warden
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  every-30m:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '12,42 * * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-chief-engineer
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  hourly:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '17 * * * *' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [eternal-auditor, szl-cyber-shield]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ matrix.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  daily:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [estate-gardener, szl-research-council]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ matrix.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+
+  daily-dream:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event.schedule == '41 6 * * *' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: szl-dream-architect
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+      WORKFORCE_LLM_URL: ${{ secrets.WORKFORCE_LLM_URL }}
+      WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_ID }}
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET }}
+
+  manual:
+    if: ${{ github.repository == 'szl-holdings/szl-gpu-bridge' && !github.event.repository.fork && vars.WORKFORCE_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/workforce-cycle.yml
+    with:
+      role: ${{ inputs.role }}
+    secrets:
+      WORKFORCE_HF_TOKEN: ${{ secrets.WORKFORCE_HF_TOKEN }}
+      WORKFORCE_LLM_URL: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_LLM_URL || '' }}
+      WORKFORCE_CF_ACCESS_CLIENT_ID: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_CF_ACCESS_CLIENT_ID || '' }}
+      WORKFORCE_CF_ACCESS_CLIENT_SECRET: ${{ inputs.role == 'szl-dream-architect' && secrets.WORKFORCE_CF_ACCESS_CLIENT_SECRET || '' }}
