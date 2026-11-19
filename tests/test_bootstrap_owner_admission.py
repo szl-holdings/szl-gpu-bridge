@@ -25,7 +25,10 @@ class BootstrapOwnerAdmissionContract(unittest.TestCase):
         self.assertIn("& git -C $RepoRoot rev-parse HEAD", source)
         self.assertIn("$Head -cne $SourceRevision", source)
         self.assertIn("status --porcelain --untracked-files=no", source)
-        self.assertNotIn("raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main", source)
+        self.assertNotIn(
+            "raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main",
+            source,
+        )
         self.assertNotIn(" | iex", source)
 
     def test_owner_and_running_task_gate_precede_any_writes(self) -> None:
@@ -47,10 +50,15 @@ class BootstrapOwnerAdmissionContract(unittest.TestCase):
     def test_checkout_sources_prechecked_and_copied_without_network(self) -> None:
         source = self.source
         self.assertEqual(source.count("$Files = @("), 1)
-        self.assertIn('@("laptop/storage_preflight.py", "$Root\\storage_preflight.py")', source)
+        self.assertIn(
+            '@("laptop/storage_preflight.py", "$Root\\storage_preflight.py")',
+            source,
+        )
         precheck = source.index("Reviewed checkout missing required bridge source")
         first_mutation = source.index("New-Item -ItemType Directory -Force -Path $Root")
-        copy = source.index("Copy-Item -LiteralPath $source -Destination $Pair[1] -Force")
+        copy = source.index(
+            "Copy-Item -LiteralPath $source -Destination $Pair[1] -Force"
+        )
         verify = source.index("Installed file does not match the pinned local checkout")
         register = source.index("Register-ScheduledTask -TaskName $TaskName")
         self.assertLess(precheck, first_mutation)
