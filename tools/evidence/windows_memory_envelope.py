@@ -10,10 +10,10 @@ thresholds are conservative *policy assumptions*, not validated safety bounds.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
 import json
-from pathlib import Path
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 SCHEMA = "szl.windows-memory-observation/v1"
@@ -59,7 +59,7 @@ def _positive_integer(value: Any, *, allow_zero: bool = True) -> bool:
 def _utc(value: Any) -> datetime:
     _need(type(value) is str and 20 <= len(value) <= 48, "INVALID_OBSERVATION_TIME")
     try:
-        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))  # noqa: FURB162 - retain Python 3.10 Z support
     except (ValueError, OverflowError):
         raise ObservationError("INVALID_OBSERVATION_TIME") from None
     _need(
@@ -129,7 +129,9 @@ def analyze(document: Any) -> dict[str, Any]:
     swing = pagefile_max - pagefile_min
     # An initially disabled/zero pagefile must not cause division by zero or
     # silently become a stable claim. New allocation from zero is volatile.
-    pagefile_swing_ppm = _ppm_ceil(swing, pagefile_min) if pagefile_min else (1_000_000 if swing else 0)
+    pagefile_swing_ppm = (
+        _ppm_ceil(swing, pagefile_min) if pagefile_min else (1_000_000 if swing else 0)
+    )
     red: list[str] = []
     amber: list[str] = []
     if free_min < FREE_HOLD_BYTES:
@@ -221,7 +223,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result["state"] == "OBSERVATION_STABLE_ONLY" else REFUSED_EXIT
     except (ObservationError, OSError) as exc:
         code = str(exc) if isinstance(exc, ObservationError) else "INPUT_UNAVAILABLE"
-        print(json.dumps({"schema": OUTPUT_SCHEMA, "state": "UNOBSERVED", "reasons": [code], "training_ready": False, "grants_training_dispatch": False}, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "schema": OUTPUT_SCHEMA,
+                    "state": "UNOBSERVED",
+                    "reasons": [code],
+                    "training_ready": False,
+                    "grants_training_dispatch": False,
+                },
+                sort_keys=True,
+            )
+        )
         return REFUSED_EXIT
 
 
