@@ -214,18 +214,14 @@ class StopPreflightTests(unittest.TestCase):
 
     def test_downloading_is_not_in_four_group_counts(self):
         def downloading(i, e):
-            e["provider"]["instance_readback"]["instances"][0]["state"] = (
-                "downloading"
-            )
+            e["provider"]["instance_readback"]["instances"][0]["state"] = "downloading"
 
         r = self.run_witness(downloading)
         self.assertEqual(r["reason"], "INSTANCE_COUNTS_NOT_COMPARABLE_DOWNLOADING")
 
     def test_independent_instances_must_match_summary_counts(self):
         def mismatched(i, e):
-            e["provider"]["instance_readback"]["instances"][0]["state"] = (
-                "creating"
-            )
+            e["provider"]["instance_readback"]["instances"][0]["state"] = "creating"
 
         r = self.run_witness(mismatched)
         self.assertEqual(r["reason"], "INSTANCE_AND_GROUP_COUNTS_DIFFER")
