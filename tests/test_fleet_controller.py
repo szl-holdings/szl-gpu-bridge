@@ -372,6 +372,28 @@ class BenchRunnerTests(Base):
         self.run_bench(files, salad, apply=True)
         self.assertEqual([x[0] for x in salad.mutations()], ["POST", "PATCH"])
 
+    def test_post_patch_restarted_generation_keeps_manual_hold(self):
+        """A successful PATCH response is not evidence of a stable stopped generation."""
+
+        class RecreatedBeforeReadback(FakeSalad):
+            def call(self, method, path, body=None, content_type="application/json"):
+                result = super().call(method, path, body, content_type)
+                if method == "PATCH":
+                    # Emulate a separate controller replacing the stopped group
+                    # before this controller's independent post-PATCH readback.
+                    self.status, self.replicas, self.running = "running", 1, 2
+                return result
+
+        salad = RecreatedBeforeReadback(status="running", running=1)
+        files = {PREFIX + "20261119T090000.json": receipt_bytes()}
+        recs = self.run_bench(files, salad, apply=True)
+        self.assertEqual(recs[0]["decision"], "HOLD_PARK_READBACK_UNVERIFIED")
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST", "PATCH"])
+        ledger = fc.Ledger(self.contract["state_dir"], "bench")
+        self.assertIn("szl-bench-example", ledger.load()["stop_intents"])
+        self.run_bench(files, salad, apply=True)
+        self.assertEqual([x[0] for x in salad.mutations()], ["POST", "PATCH"])
+
     def test_stop_intent_is_persisted_before_first_provider_effect(self):
         parent = self
 
