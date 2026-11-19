@@ -7,6 +7,8 @@ on:
       - "laptop/watchdog.ps1"
       - "laptop/install_watchdog.ps1"
       - "laptop/daemon.ps1"
+      - "laptop/storage_preflight.py"
+      - "laptop/source_parity.ps1"
       - ".github/workflows/windows-watchdog-install.yml"
   workflow_dispatch: {}
 
@@ -64,9 +66,9 @@ jobs:
             if (-not (Test-Path -LiteralPath $expected -PathType Leaf)) {
               throw "Missing protected source prerequisite: $relative"
             }
-            $want = (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash
-            $have = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash
-            if ($want -cne $have) {
+            $parity = & "$env:GITHUB_WORKSPACE\laptop\source_parity.ps1" `
+              -ExpectedSource $expected -InstalledSource $installed
+            if ($parity -cne 'SOURCE_PARITY_VERIFIED') {
               throw "Installed owner source parity mismatch: $relative"
             }
           }
@@ -199,8 +201,14 @@ jobs:
             $rows = @($proof.installed_files | Where-Object { $_.path -eq $relative })
             if ($rows.Count -ne 1) { throw "required owner source file missing: $relative" }
             $expected = Join-Path $env:GITHUB_WORKSPACE ('laptop\' + $relative)
-            $sha = (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($rows[0].sha256 -cne $sha) {
+            $installed = Join-Path 'C:\szl-bridge' $relative
+            $current = (Get-FileHash -LiteralPath $installed -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($rows[0].sha256 -cne $current) {
+              throw "Installed owner proof changed since readback: $relative"
+            }
+            $parity = & "$env:GITHUB_WORKSPACE\laptop\source_parity.ps1" `
+              -ExpectedSource $expected -InstalledSource $installed
+            if ($parity -cne 'SOURCE_PARITY_VERIFIED') {
               throw "Installed owner proof source drift: $relative"
             }
           }
