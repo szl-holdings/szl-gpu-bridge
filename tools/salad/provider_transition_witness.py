@@ -111,11 +111,14 @@ def witness(*, transport_exit: int, http_status: int | None, body: bytes,
         return _out("INSTANCE_LIST_UNAVAILABLE", acknowledged=ack)
     if any(type(i) is not dict for i in items):
         return _out("INSTANCE_LIST_INVALID", acknowledged=ack)
+    raw_status = state.get("status")
+    if type(raw_status) is not str or raw_status not in {
+        "pending", "deploying", "running", "stopping", "stopped", "failed"
+    }:
+        return _out("READBACK_STATUS_INVALID", acknowledged=ack)
     observed = _out("PROVIDER_STATE_OBSERVED_NOT_TRAINING", acknowledged=ack)
     observed["group_state_reconciled"] = True
-    observed["provider_status"] = state.get("status") if state.get("status") in {
-        "pending", "deploying", "running", "stopping", "stopped", "failed"
-    } else "unknown"
+    observed["provider_status"] = raw_status
     observed["desired_replicas"] = requested_replicas
     observed["actual_counts"] = {k: counts[k] for k in COUNTS}
     observed["instances_returned"] = len(items)
