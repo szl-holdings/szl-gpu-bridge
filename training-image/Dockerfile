@@ -38,15 +38,16 @@ COPY tools/salad/salad_worker.py /work/salad_worker.py
 COPY tools/salad/resume_integrity.py tools/salad/training_snapshot.py /work/tools/salad/
 COPY training-image/readiness_probe.py training-image/step_heartbeat.py training-image/build_gate.py /work/
 COPY training-image/source_runtime_contract.py /work/source_runtime_contract.py
-# Bind installed worker/helpers to the exact checkout used by the image build.
-RUN python3 -m py_compile /work/salad_worker.py /work/tools/salad/resume_integrity.py /work/tools/salad/training_snapshot.py \
- && python3 /work/source_runtime_contract.py create --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}" \
- && python3 /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}"
 # Run-receipt uploader (proofrun step 4): one commit per run / checkpoint save, never per heartbeat.
 # No token is baked in: it reads HF_TOKEN from the environment at runtime.
 COPY training-image/receipt_upload.py /work/receipts/receipt_upload.py
 COPY training-image/vendor /work/receipts/vendor
 COPY training-image/receipt_tests /work/receipts/tests
+
+# Bind all installed worker/helper/uploader bytes after their final COPY.
+RUN python3 -m py_compile /work/salad_worker.py /work/tools/salad/resume_integrity.py /work/tools/salad/training_snapshot.py \
+ && python3 /work/source_runtime_contract.py create --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}" \
+ && python3 /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}"
 
 # Build-time gate: the image cannot be produced if any of this fails.
 RUN python3 /work/readiness_probe.py --help > /dev/null \
