@@ -97,18 +97,29 @@ def readback(
 ):
     """Fresh group GET + separate instance-list GET, classified by the reviewed witness."""
     group_doc, s1 = salad.get_json("/" + group)
+    # A denial on the group read must stop this access lane immediately.
+    # Do not issue an instance GET using the same denied credential.
+    if s1 in ACCESS_STOP_CODES:
+        return witness(
+            transport_exit=0,
+            http_status=s1,
+            body=b"",
+            group=None,
+            instances=None,
+            name=group,
+            requested_replicas=requested_replicas,
+        )
     inst_doc, s2 = salad.get_json("/" + group + "/instances")
-    for status in (s1, s2):
-        if status in ACCESS_STOP_CODES:
-            return witness(
-                transport_exit=0,
-                http_status=status,
-                body=b"",
-                group=None,
-                instances=None,
-                name=group,
-                requested_replicas=requested_replicas,
-            )
+    if s2 in ACCESS_STOP_CODES:
+        return witness(
+            transport_exit=0,
+            http_status=s2,
+            body=b"",
+            group=None,
+            instances=None,
+            name=group,
+            requested_replicas=requested_replicas,
+        )
     return witness(
         transport_exit=transport_exit,
         http_status=http_status,
