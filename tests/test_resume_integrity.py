@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import types
 import unittest
+from unittest.mock import patch
 
 from tools.salad.resume_integrity import (
     ResumeHold,
@@ -45,6 +46,7 @@ class FakeHub:
         self.error = None
         self.corrupt = None
         self.extra_local = None
+        self.download_failures = []
 
     def model_info(self, repo_id, *, files_metadata, timeout):
         self.calls.append(("model_info", files_metadata, timeout))
@@ -65,6 +67,10 @@ class FakeHub:
 
     def snapshot_download(self, **kwargs):
         self.calls.append(("snapshot", kwargs))
+        if self.download_failures:
+            failure = self.download_failures.pop(0)
+            if failure is not None:
+                raise failure
         if self.error:
             raise self.error
         prefix = kwargs["allow_patterns"][0].removesuffix("*")
@@ -209,6 +215,45 @@ class ResumeIntegrityTests(unittest.TestCase):
         self.hub.revision = "moving-ref-not-a-commit"
         with self.assertRaisesRegex(ResumeHold, "METADATA_INVALID"):
             self.run_gate()
+
+    def test_transient_503_retries_same_immutable_revision(self):
+        failure = RuntimeError("private-service-error-do-not-echo")
+        failure.response = types.SimpleNamespace(status_code=503)
+        self.hub.download_failures = [failure]
+        with patch("tools.salad.resume_integrity.time.sleep") as sleep:
+            path = self.run_gate()
+        self.assertTrue(Path(path).is_dir())
+        calls = [kw for name, kw in self.hub.calls if name == "snapshot"]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([kw["revision"] for kw in calls], [REVISION, REVISION])
+        sleep.assert_called_once_with(2)
+
+    def test_download_401_403_429_and_404_never_retry(self):
+        for status in (401, 403, 429, 404):
+            with self.subTest(status=status):
+                self.hub = FakeHub()
+                failure = RuntimeError("private-provider-body-must-not-echo")
+                failure.response = types.SimpleNamespace(status_code=status)
+                self.hub.download_failures = [failure]
+                expected = "ACCESS_STOP" if status != 404 else "DOWNLOAD_UNVERIFIED"
+                with patch("tools.salad.resume_integrity.time.sleep") as sleep:
+                    with self.assertRaisesRegex(ResumeHold, expected):
+                        self.run_gate()
+                self.assertEqual(
+                    len([name for name, _ in self.hub.calls if name == "snapshot"]), 1
+                )
+                sleep.assert_not_called()
+
+    def test_transient_retry_budget_is_three_idempotent_reads(self):
+        failure = ConnectionError("synthetic-network-timeout")
+        self.hub.download_failures = [failure, failure, failure]
+        with patch("tools.salad.resume_integrity.time.sleep") as sleep:
+            with self.assertRaisesRegex(ResumeHold, "DOWNLOAD_UNVERIFIED"):
+                self.run_gate()
+        calls = [kw for name, kw in self.hub.calls if name == "snapshot"]
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([kw["revision"] for kw in calls], [REVISION] * 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4])
 
     def test_no_trainer_or_backup_quality_claims(self):
         path = self.run_gate()
