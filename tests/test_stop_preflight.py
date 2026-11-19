@@ -184,9 +184,7 @@ class StopPreflightTests(unittest.TestCase):
         )
         self.assertEqual(r["reason"], "INSTANCE_READBACK_STALE")
         r = self.run_witness(
-            lambda i, e: e["provider"]["instance_readback"].update(
-                group="other-group"
-            )
+            lambda i, e: e["provider"]["instance_readback"].update(group="other-group")
         )
         self.assertEqual(r["reason"], "INSTANCE_READBACK_GROUP_MISMATCH")
 
