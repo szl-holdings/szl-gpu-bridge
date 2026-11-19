@@ -32,7 +32,7 @@ RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps 
       --extra-index-url https://download.pytorch.org/whl/cu126 -r /work/requirements.lock \
  && PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip check
 
-COPY readiness_probe.py salad_worker.py build_gate.py /work/
+COPY readiness_probe.py step_heartbeat.py salad_worker.py build_gate.py /work/
 # Run-receipt uploader (proofrun step 4): one commit per run / checkpoint save, never per heartbeat.
 # No token is baked in: it reads HF_TOKEN from the environment at runtime.
 COPY receipt_upload.py /work/receipts/receipt_upload.py
@@ -40,7 +40,8 @@ COPY vendor /work/receipts/vendor
 COPY receipt_tests /work/receipts/tests
 
 # Build-time gate: the image cannot be produced if any of this fails.
-RUN python3 -W ignore /work/build_gate.py \
+RUN python3 /work/readiness_probe.py --help > /dev/null \
+ && python3 -W ignore /work/build_gate.py \
  && python3 -W ignore /work/readiness_probe.py imports \
       --expect transformers=${EXPECT_TRANSFORMERS} --expect peft=${EXPECT_PEFT} --expect trl=${EXPECT_TRL} --no-gpu \
  && find /work -name __pycache__ -prune -exec rm -rf {} + \
@@ -53,8 +54,8 @@ ENV HF_HOME=/work/hf-cache \
     SZL_EXPECT_TRANSFORMERS=${EXPECT_TRANSFORMERS} \
     SZL_EXPECT_PEFT=${EXPECT_PEFT} \
     SZL_EXPECT_TRL=${EXPECT_TRL} \
-    SZL_RECEIPT_UPLOADER=/work/receipts/receipt_upload.py \
-    SZL_RECEIPT_REPO=SZLHOLDINGS/szl-run-receipts
+    SZL_RUN_RECEIPT_UPLOADER=/work/receipts/receipt_upload.py \
+    SZL_RUN_RECEIPT_REPO=SZLHOLDINGS/szl-run-receipts
 # PIP_NO_INDEX=1: any stray `pip install` at runtime fails instead of silently drifting.
 # HF_TOKEN is deliberately NOT set here; the runtime injects it.
 

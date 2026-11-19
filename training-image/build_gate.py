@@ -130,6 +130,52 @@ def _worker():
         SFTConfig(output_dir=d, report_to=[], use_cpu=True, **kw)
 
 
+@step("readiness_probe CLI + step heartbeat (Salad liveness)")
+def _heartbeat():
+    from types import SimpleNamespace as NS
+    probe = os.path.join(WORK, "readiness_probe.py")
+    h = subprocess.run([sys.executable, probe, "--help"], capture_output=True, text=True, timeout=120)
+    if h.returncode != 0 or "live" not in h.stdout:
+        raise AssertionError(f"readiness_probe.py --help exit {h.returncode}")
+    sys.path.insert(0, WORK)
+    import step_heartbeat
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "szl_heartbeat.json")
+        now = [1000.0]
+        cb = step_heartbeat.make_callback(max_steps=100, run_id="gate", path=path, clock=lambda: now[0])
+        if os.path.exists(path):
+            raise AssertionError("heartbeat exists before training")
+        cb.on_train_begin(None, NS(global_step=0), None)
+        first = json.load(open(path))
+        if sorted(first) != ["max_steps", "pid", "run_id", "step", "unix"] or first["step"] != 0:
+            raise AssertionError(f"heartbeat fields {sorted(first)}")
+        # steps inside the write interval do not rewrite; an advancing step after it does
+        now[0] += 10
+        cb.on_step_end(None, NS(global_step=1, max_steps=100), None)
+        if json.load(open(path))["step"] != 0:
+            raise AssertionError("heartbeat rewritten inside the interval")
+        now[0] += 61
+        cb.on_step_end(None, NS(global_step=2, max_steps=100), None)
+        if json.load(open(path))["step"] != 2:
+            raise AssertionError("heartbeat did not advance with the step")
+        # a stuck trainer (same step, time passing) must NOT refresh the file
+        before = json.load(open(path))
+        now[0] += 500
+        cb.on_step_end(None, NS(global_step=2, max_steps=100), None)
+        if json.load(open(path)) != before:
+            raise AssertionError("heartbeat refreshed without step progress")
+        if [f for f in os.listdir(d) if f.endswith(".tmp")]:
+            raise AssertionError("temp file left behind")
+        live = subprocess.run([sys.executable, probe, "live", "--file", path, "--max-age-seconds", "900"],
+                              capture_output=True, text=True, timeout=120)
+        if live.returncode != 0:
+            raise AssertionError(f"probe live exit {live.returncode}: {live.stdout}")
+        stale = subprocess.run([sys.executable, probe, "live", "--file", path + ".missing", "--max-age-seconds", "900"],
+                               capture_output=True, text=True, timeout=120)
+        if stale.returncode != 5:
+            raise AssertionError(f"probe live on missing file exit {stale.returncode}")
+
+
 @step("optional libs import (datasets, accelerate, safetensors, huggingface_hub, bitsandbytes, pynvml, zeus)")
 def _libs():
     for name in ("datasets", "accelerate", "safetensors", "huggingface_hub", "bitsandbytes", "pynvml", "sentencepiece", "google.protobuf", "cryptography"):

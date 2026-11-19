@@ -119,6 +119,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 from peft import LoraConfig
 from datasets import load_dataset
+import step_heartbeat  # local-only liveness file for the Salad liveness probe (never uploaded)
 from huggingface_hub import HfApi
 
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
@@ -1050,6 +1051,8 @@ def run_training(a, api) -> int:
             return 8
     cuda_arch_precheck()  # F4: must still precede model loading/training.
     base_kwargs = {"revision": a.base_revision} if a.base_revision else {}
+    run_id = os.environ.get("SZL_RUN_ID") or a.adapter_out
+    step_heartbeat.beat(0, a.max_steps, run_id)  # setup milestone: starting
     tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
     ds = load_train_split(a, api)  # F2/F3
 
@@ -1082,8 +1085,10 @@ def run_training(a, api) -> int:
     receipt("dataset", f"dataset ready — {n_raw} examples, training on {n_used}",
             {"examples": n_raw, "examples_used": n_used, "max_examples": a.max_examples,
              "training_format": format_contract})
+    step_heartbeat.beat(0, a.max_steps, run_id)  # setup milestone: dataset ready, loading model
     model = AutoModelForCausalLM.from_pretrained(
         a.base, torch_dtype=torch.bfloat16, device_map="auto", **base_kwargs)
+    step_heartbeat.beat(0, a.max_steps, run_id)  # setup milestone: model loaded
     if a.gradient_checkpointing:
         model.config.use_cache = False
 
@@ -1178,6 +1183,7 @@ def run_training(a, api) -> int:
             if STOP["flag"]:
                 control.should_training_stop = True
     trainer.add_callback(ReceiptCallback())
+    trainer.add_callback(step_heartbeat.make_callback(a.max_steps, run_id))
 
     t0 = time.time()
     trainer.train(resume_from_checkpoint=resume) if resume else trainer.train()

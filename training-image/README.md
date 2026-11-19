@@ -21,11 +21,20 @@ Compatibility evidence (published metadata, checked 2026-11-19):
 `/work/receipts/receipt_upload.py` (+ vendored `proofrun`) uploads a run folder to the private HF repo `SZLHOLDINGS/szl-run-receipts` as ONE commit under `runs/<run_id>/`. No token is in the image: set `HF_TOKEN` (write access to that repo only) at runtime.
 
 ```
-python3 /work/receipts/receipt_upload.py <run_dir> --repo "$SZL_RECEIPT_REPO" --run-id <run_id> --large-mb 10 [--trusted-key ed25519:<fp>] [--accept-retroactive]
+python3 /work/receipts/receipt_upload.py <run_dir> --repo "$SZL_RUN_RECEIPT_REPO" --run-id <run_id> --large-mb 10 [--trusted-key ed25519:<fp>] [--accept-retroactive]
 ```
-Call it once at the end of a run and once per checkpoint save, never per heartbeat, as a non-blocking step. Exit 3 means rate-limited (capped backoff, 5 s base, 300 s cap, 6 tries): skip and try at the next checkpoint. `salad_worker.py` is not changed by this PR; wiring the call into the worker's checkpoint callback is a separate change because several open PRs edit that file.
+Call it once at the end of a run and once per checkpoint save, never per heartbeat, as a non-blocking step. Exit 3 means rate-limited (capped backoff, 5 s base, 300 s cap, 6 tries): skip and try at the next checkpoint. `tools/salad/salad_worker.py` is not changed by this PR (several open PRs edit it); the image's copy only adds the heartbeat wiring, and calling the uploader from the checkpoint callback is a separate change.
+
+## Liveness heartbeat (Salad probe)
+`/work/readiness_probe.py` is shipped (Rikuy's `patches/readiness_probe.py`; Saywa's held payload dir has the probe patch JSON only, no script copy). `/work/step_heartbeat.py` keeps `/tmp/szl_heartbeat.json` fresh for `python3 /work/readiness_probe.py live --file /tmp/szl_heartbeat.json --max-age-seconds 900`:
+- A Trainer callback rewrites it from `on_step_end` only when `global_step` advanced and >= 60 s (`SZL_HEARTBEAT_WRITE_SECONDS`, clamped 30-180) passed; also at train begin/end. No background thread: a hung trainer goes stale and the probe fails at 900 s.
+- One-shot beats at setup milestones (start, dataset ready, model loaded) so the startup probe can pass during a large download.
+- Atomic (temp file in the same directory, then `os.replace`), local only, never uploaded to the Hub.
+- Fields: `step` (int), `max_steps` (int or null), `run_id` (str or null; `SZL_RUN_ID` else the adapter repo), `unix` (float, `time.time()`), `pid` (int).
+- Build gate checks `readiness_probe.py --help`, the callback semantics (fields, interval, no write without step progress, no temp left over) and `probe live` pass/fail.
+- `salad_worker.py` here is the main@817ea920 worker plus 6 lines wiring `step_heartbeat`; `tools/salad/salad_worker.py` is unchanged.
 
 ## Maintenance
 - Regenerate the lock: `./regen-lock.sh` (uv). Review the diff; the gate and CI re-verify.
-- `salad_worker.py` and `readiness_probe.py` here are copies (worker = `tools/salad/salad_worker.py` at main `817ea920`). Keep them in sync when those change.
+- `salad_worker.py` and `readiness_probe.py` here are copies (worker = `tools/salad/salad_worker.py` at main `817ea920` plus the heartbeat wiring). Keep them in sync when those change.
 - Runtime stays token-free; Salad launch specs should reference the image by `@sha256` digest.
