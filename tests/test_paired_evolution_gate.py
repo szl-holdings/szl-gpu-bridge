@@ -33,10 +33,7 @@ def fixture(count=400, family_size=1):
             "id": f"candidate-{i}",
             "revision": f"{i + 1:040x}",
             "frozen_before_holdout": True,
-            "rows": [
-                {"case_id": case["case_id"], "correct": True}
-                for case in cases
-            ],
+            "rows": [{"case_id": case["case_id"], "correct": True} for case in cases],
         }
         for i in range(family_size)
     ]
@@ -98,7 +95,9 @@ class PairedEvolutionTests(unittest.TestCase):
         payload = fixture(count=400, family_size=1)
         report = gate.evaluate(payload)["candidates"][0]
         predicted = 0.5 - math.sqrt(2 * math.log(1 / 0.05) / 400)
-        self.assertAlmostEqual(report["conditional_familywise_lower_bound"], predicted, 7)
+        self.assertAlmostEqual(
+            report["conditional_familywise_lower_bound"], predicted, 7
+        )
 
     def test_more_predeclared_candidates_widen_not_shrink_the_bound(self):
         one = gate.evaluate(fixture(family_size=1))["candidates"][0]
@@ -169,8 +168,9 @@ class PairedEvolutionTests(unittest.TestCase):
         for field in ("source_revision", "plan_revision", "baseline_revision"):
             payload = fixture()
             payload[field] = "main"
-            with self.subTest(field=field), self.assertRaisesRegex(
-                gate.Hold, "REVISION_NOT_IMMUTABLE"
+            with (
+                self.subTest(field=field),
+                self.assertRaisesRegex(gate.Hold, "REVISION_NOT_IMMUTABLE"),
             ):
                 gate.evaluate(payload)
         payload = fixture()
@@ -199,7 +199,10 @@ class PairedEvolutionTests(unittest.TestCase):
         for val in (True, 0, 100_000, 0.05):
             payload = fixture()
             payload["alpha_ppm"] = val
-            with self.subTest(val=val), self.assertRaisesRegex(gate.Hold, "ALPHA_INVALID"):
+            with (
+                self.subTest(val=val),
+                self.assertRaisesRegex(gate.Hold, "ALPHA_INVALID"),
+            ):
                 gate.evaluate(payload)
 
     def test_duplicate_json_keys_and_nonfinite_values_refused(self):
