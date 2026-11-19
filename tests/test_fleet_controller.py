@@ -427,5 +427,29 @@ class LockTests(Base):
         first._lock_handle.close()
 
 
+class AccessDenialTests(unittest.TestCase):
+    def test_first_group_get_denial_forbids_second_instance_get(self):
+        for status, expected in (
+            (401, "ACCESS_DENIED_401"),
+            (403, "ACCESS_DENIED_403"),
+            (429, "RATE_LIMITED_429"),
+        ):
+            with self.subTest(status=status):
+
+                class Denied:
+                    def __init__(self):
+                        self.calls = []
+
+                    def get_json(self, path):
+                        self.calls.append(path)
+                        return None, status
+
+                salad = Denied()
+                observation = fc.readback(salad, "szl-bench-example", 1)
+                self.assertEqual(observation["state"], expected)
+                self.assertTrue(observation["access_stop_required"])
+                self.assertEqual(salad.calls, ["/szl-bench-example"])
+
+
 if __name__ == "__main__":
     unittest.main()
