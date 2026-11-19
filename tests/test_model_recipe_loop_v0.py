@@ -182,6 +182,61 @@ class TestLoop(unittest.TestCase):
             with self.assertRaisesRegex(g.Hold, "EVIDENCE_OUTPUT_EXISTS"):
                 g.run(plan(), a, b, {"state": "NOT_STAGED"}, out)
 
+    def test_public_census_counts_unselected_models_without_training(self):
+        c = {
+            "schema": "szl.hf.public-model-census/v0",
+            "completeness": "COMPLETE_PAGE_CENSUS",
+            "errors": [],
+            "public_model_count_observed": 2,
+            "items": [
+                {
+                    "id": "SZLHOLDINGS/A11OY-MINI",
+                    "sha": "a" * 40,
+                    "in_eleven_roster": True,
+                    "training_admitted": False,
+                },
+                {
+                    "id": "SZLHOLDINGS/other-review-model",
+                    "sha": "b" * 40,
+                    "in_eleven_roster": False,
+                    "training_admitted": False,
+                },
+            ],
+        }
+        result = g.catalog_backlog(c, g.verify_plan(plan()))
+        self.assertEqual(result["selected_for_source_only_loop"], 1)
+        self.assertEqual(result["unclassified_review_only"], 1)
+        self.assertFalse(result["model_training_admitted"])
+
+    def test_public_census_rejects_unauthorized_training_flag(self):
+        c = {
+            "schema": "szl.hf.public-model-census/v0",
+            "completeness": "COMPLETE_PAGE_CENSUS",
+            "errors": [],
+            "public_model_count_observed": 1,
+            "items": [
+                {
+                    "id": "SZLHOLDINGS/A11OY-MINI",
+                    "sha": "a" * 40,
+                    "in_eleven_roster": True,
+                    "training_admitted": True,
+                },
+            ],
+        }
+        with self.assertRaisesRegex(g.Hold, "CENSUS_TRAINING_FLAG_FORBIDDEN"):
+            g.catalog_backlog(c, g.verify_plan(plan()))
+
+    def test_public_census_incomplete_hold(self):
+        c = {
+            "schema": "szl.hf.public-model-census/v0",
+            "completeness": "INCOMPLETE",
+            "errors": ["UNAVAILABLE"],
+            "public_model_count_observed": 0,
+            "items": [],
+        }
+        with self.assertRaisesRegex(g.Hold, "CENSUS_INCOMPLETE"):
+            g.catalog_backlog(c, g.verify_plan(plan()))
+
     def test_no_duplicate_keys(self):
         with tempfile.TemporaryDirectory() as t:
             p = Path(t) / "dup.json"
