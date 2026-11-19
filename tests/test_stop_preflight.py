@@ -81,7 +81,11 @@ class StopPreflightTests(unittest.TestCase):
         result = self.run_witness()
         self.assertEqual(result["state"], "READY_FOR_OWNER_REVIEW")
         self.assertTrue(result["ready_for_owner_review"])
-        for flag in ("shutdown_authorized", "training_complete_verified", "provider_mutation_performed"):
+        for flag in (
+            "shutdown_authorized",
+            "training_complete_verified",
+            "provider_mutation_performed",
+        ):
             self.assertFalse(result[flag])
 
     def test_hub_404_is_not_artifact_absence_proof(self):
@@ -92,14 +96,18 @@ class StopPreflightTests(unittest.TestCase):
     def test_auth_denials_and_rate_limit_stop(self):
         for code in (401, 403, 429):
             with self.subTest(code=code):
-                r = self.run_witness(lambda i, e: e.update(model_metadata_http_status=code))
+                r = self.run_witness(
+                    lambda i, e: e.update(model_metadata_http_status=code)
+                )
                 self.assertTrue(r["access_stop_required"])
                 self.assertEqual(r["state"], "HOLD")
 
     def test_unknown_http_and_boolean_200(self):
         for status in (None, True, "200"):
             with self.subTest(status=status):
-                r = self.run_witness(lambda i, e: e.update(model_metadata_http_status=status))
+                r = self.run_witness(
+                    lambda i, e: e.update(model_metadata_http_status=status)
+                )
                 self.assertEqual(r["reason"], "MODEL_METADATA_STATUS_UNOBSERVED")
 
     def test_deadline_does_not_override_bad_evidence(self):
@@ -120,13 +128,17 @@ class StopPreflightTests(unittest.TestCase):
             "OWNER_IDENTITY_UNVERIFIED",
         )
         self.assertEqual(
-            self.run_witness(lambda i, e: e["trainer_state"].update(global_step=True))["reason"],
+            self.run_witness(
+                lambda i, e: e["trainer_state"].update(global_step=True)
+            )["reason"],
             "TRAINER_STATE_NOT_TERMINAL_AND_PINNED",
         )
 
     def test_bad_artifact_file_or_tokenizer(self):
         self.assertEqual(
-            self.run_witness(lambda i, e: e["artifact"].update(complete_config_and_tokenizer=False))["reason"],
+            self.run_witness(
+                lambda i, e: e["artifact"].update(complete_config_and_tokenizer=False)
+            )["reason"],
             "FINAL_ARTIFACT_UNVERIFIED",
         )
 
@@ -140,7 +152,9 @@ class StopPreflightTests(unittest.TestCase):
 
     def test_expired_and_future_clock(self):
         self.assertEqual(
-            self.run_witness(lambda i, e: e.update(observed_at_utc="2026-11-19T14:30:00Z"))["reason"],
+            self.run_witness(
+                lambda i, e: e.update(observed_at_utc="2026-11-19T14:30:00Z")
+            )["reason"],
             "EVIDENCE_STALE_OR_CLOCK_UNCERTAIN",
         )
         self.assertEqual(
@@ -148,14 +162,20 @@ class StopPreflightTests(unittest.TestCase):
         )
 
     def test_provider_counts_and_pending(self):
-        r = self.run_witness(lambda i, e: e["provider"]["instance_counts"].update(running_count=True))
+        r = self.run_witness(
+            lambda i, e: e["provider"]["instance_counts"].update(running_count=True)
+        )
         self.assertEqual(r["reason"], "PROVIDER_INSTANCE_COUNTS_INVALID")
         r = self.run_witness(lambda i, e: e["provider"].update(update_pending=True))
         self.assertEqual(r["reason"], "PROVIDER_PENDING_CHANGE_UNCERTAIN")
 
     def test_provider_staleness(self):
         self.assertEqual(
-            self.run_witness(lambda i, e: e["provider"].update(observed_at_utc="2026-11-19T14:40:00Z"))["reason"],
+            self.run_witness(
+                lambda i, e: e["provider"].update(
+                    observed_at_utc="2026-11-19T14:40:00Z"
+                )
+            )["reason"],
             "PROVIDER_READBACK_STALE",
         )
 
