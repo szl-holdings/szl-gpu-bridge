@@ -37,7 +37,7 @@ CASES = (
     ("0", True, "FINAL: 0", 1.0),
     ("-1", True, "FINAL: -1", 1.0),
     ("3.5", True, "FINAL: 3.5", 1.0),
-    ("caf?", True, "FINAL: cafe\u0301", 1.0),
+    ("caf\u00e9", True, "FINAL: cafe\u0301", 1.0),
     ("4", True, "14", 0.0),
     ("4", True, "not 4", 0.0),
     ("4", True, "the answer is 4", 0.0),
