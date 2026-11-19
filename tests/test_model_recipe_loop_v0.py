@@ -119,6 +119,30 @@ class TestLoop(unittest.TestCase):
         self.assertIn("HATUN_AUTH_SIGNER_UNVERIFIED", r[0]["reasons"])
         self.assertFalse(r[0]["training_or_inference_dispatched"])
 
+    def test_gated_metadata_requires_explicit_false(self):
+        """Untrusted access metadata cannot be omitted, null, or bool-impostor 0."""
+        candidates = g.verify_plan(plan())
+        for value in (None, "", 0, "unknown", True, "True", [], {}):
+            with self.subTest(gated=value):
+                a, b = observations()
+                a["rows"][0]["gated"] = value
+                records, _ = g.classify(candidates, a, b, {"state": "NOT_STAGED"})
+                self.assertIn("MODEL_PROVIDER_ACCESS_NOT_PROVEN", records[0]["reasons"])
+                self.assertFalse(records[0]["training_or_inference_dispatched"])
+        a, b = observations()
+        del a["rows"][0]["gated"]
+        records, _ = g.classify(candidates, a, b, {"state": "NOT_STAGED"})
+        self.assertIn("MODEL_PROVIDER_ACCESS_NOT_PROVEN", records[0]["reasons"])
+        for value in (False, "False", "false"):
+            with self.subTest(explicit_false=value):
+                a, b = observations()
+                a["rows"][0]["gated"] = value
+                records, _ = g.classify(candidates, a, b, {"state": "NOT_STAGED"})
+                self.assertNotIn(
+                    "MODEL_PROVIDER_ACCESS_NOT_PROVEN", records[0]["reasons"]
+                )
+                self.assertEqual(records[0]["state"], "HOLD")
+
     def test_empty_metadata_not_green(self):
         a, b = observations()
         a["rows"] = []

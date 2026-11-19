@@ -323,14 +323,15 @@ def classify(candidates, observation, dependencies, dataset):
             reasons.append("MODEL_METADATA_UNAVAILABLE")
         elif row.get("sha") != model["observed_sha"]:
             reasons.append("MODEL_SOURCE_SHA_CHANGED")
-        if row is not None and row.get("gated") not in (
-            False,
-            "False",
-            "false",
-            None,
-            "",
-        ):
-            reasons.append("MODEL_PROVIDER_ACCESS_NOT_PROVEN")
+        if row is not None:
+            # Missing/null/empty access metadata is unknown, not public.
+            # Use exact types so numeric 0 cannot impersonate bool False.
+            gated = row.get("gated")
+            explicitly_ungated = (type(gated) is bool and gated is False) or (
+                type(gated) is str and gated in ("False", "false")
+            )
+            if not explicitly_ungated:
+                reasons.append("MODEL_PROVIDER_ACCESS_NOT_PROVEN")
         if dataset["state"] != "SOURCE_BYTES_HASHED_TRAIN_ONLY":
             reasons.append("TRAIN_BUNDLE_NOT_VERIFIED")
         if not brain_ready:
