@@ -116,9 +116,7 @@ class SourceRuntimeTests(unittest.TestCase):
 
     def test_docker_uses_canonical_worker_and_helpers(self):
         docker = (ROOT / "training-image" / "Dockerfile").read_text()
-        self.assertIn(
-            "COPY tools/salad/salad_worker.py /work/salad_worker.py", docker
-        )
+        self.assertIn("COPY tools/salad/salad_worker.py /work/salad_worker.py", docker)
         self.assertIn("tools/salad/resume_integrity.py", docker)
         self.assertIn("tools/salad/training_snapshot.py", docker)
         self.assertIn("COPY training-image/source_runtime_contract.py", docker)
