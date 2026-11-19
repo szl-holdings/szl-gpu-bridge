@@ -98,7 +98,12 @@ def assess_stop_preflight(*, intent: object, evidence: object, now_utc: str) -> 
         # Explicitly excludes 404-as-proof, time-based stops and transport errors.
         return _hold("MODEL_METADATA_NOT_VERIFIED")
 
-    for field in ("source_revision", "base_revision", "dataset_revision", "model_revision"):
+    for field in (
+        "source_revision",
+        "base_revision",
+        "dataset_revision",
+        "model_revision",
+    ):
         expected = intent.get(field)
         if not _sha(expected) or evidence.get(field) != expected:
             return _hold("IMMUTABLE_BINDING_UNVERIFIED")
