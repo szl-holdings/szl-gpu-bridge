@@ -280,7 +280,6 @@ class BenchRunnerTests(Base):
         self.assertEqual(recs[0]["decision"], "HOLD_RECEIPT_NOT_BOUND")
         self.assertEqual(salad.mutations(), [])
 
-
     def test_dry_run_does_not_stop_or_patch(self):
         salad = FakeSalad(status="running", running=1)
         recs = self.run_bench(
