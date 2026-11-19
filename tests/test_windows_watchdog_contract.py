@@ -450,25 +450,23 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
                     check=False,
                 )
 
-            expected.write_bytes(b"Write-Output 101\\nWrite-Output 102\\n")
-            installed.write_bytes(b"Write-Output 101\\r\\nWrite-Output 102\\r\\n")
+            expected.write_bytes(b"Write-Output 101\nWrite-Output 102\n")
+            installed.write_bytes(b"Write-Output 101\r\nWrite-Output 102\r\n")
             matched = check()
-            self.assertEqual(
-                matched.returncode, 0, matched.stdout + matched.stderr
-            )
+            self.assertEqual(matched.returncode, 0, matched.stdout + matched.stderr)
             self.assertIn("SOURCE_PARITY_VERIFIED", matched.stdout)
 
-            installed.write_bytes(b"Write-Output 101\\r\\nWrite-Output 103\\r\\n")
+            installed.write_bytes(b"Write-Output 101\r\nWrite-Output 103\r\n")
             changed = check()
             self.assertNotEqual(changed.returncode, 0)
             self.assertIn("SOURCE_PARITY_MISMATCH", changed.stderr)
 
-            installed.write_bytes(b"\\xff")
+            installed.write_bytes(b"\xff")
             invalid = check()
             self.assertNotEqual(invalid.returncode, 0)
             self.assertIn("SOURCE_PARITY_INVALID_UTF8", invalid.stderr)
 
-            installed.write_bytes(b"Write-Output 101\\rWrite-Output 102")
+            installed.write_bytes(b"Write-Output 101\rWrite-Output 102")
             stray = check()
             self.assertNotEqual(stray.returncode, 0)
             self.assertIn("SOURCE_PARITY_STRAY_CR", stray.stderr)
