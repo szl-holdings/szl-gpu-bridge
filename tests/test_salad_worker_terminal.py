@@ -296,6 +296,28 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(terminal["target_steps"], 200)
         self.assertIs(terminal["completion_qualified"], False)
 
+    def test_script_entrypoint_imports_first_party_resume_module_without_repo_pythonpath(self):
+        root = WORKER.parents[2]
+        isolated = [
+            path for path in sys.path if Path(path or ".").resolve() != root
+        ]
+        with patch.object(sys, "path", isolated):
+            self.assertNotIn(str(root), sys.path)
+            spec = importlib.util.spec_from_file_location(
+                "salad_direct_script_launch_under_test", WORKER
+            )
+            direct = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(direct)
+            self.assertIn(str(root), sys.path)
+
+            class Hub:
+                def model_info(self, repo_id, *, files_metadata, timeout):
+                    return types.SimpleNamespace(
+                        sha="a" * 40, private=True, siblings=[]
+                    )
+
+            self.assertIsNone(direct.latest_checkpoint(Hub(), "fixture/private"))
+
     def test_modern_recipe_keeps_explicit_sequence_bound(self):
         self.assertEqual(self.run_worker(), 0)
         self.assertEqual(self.config_kwargs["max_length"], 2048)
