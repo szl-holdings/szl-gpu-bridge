@@ -128,17 +128,16 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     """Bind the exact supported TRL API without treating **kwargs as acceptance.
 
     The baked Salad image pins TRL 0.13.0 (max_seq_length); newer fleet lanes
-    use max_length. TRL 0.15-0.19 ships BOTH fields at once (max_seq_length is
-    deprecated with published removal notices and merely forwards to max_length
-    in __post_init__), which the old "exactly one explicit field" check turned
-    into a perpetual fail-closed boot loop on the ring lanes' pinned trl
-    0.17.0 (measured 2026-11-19: every ring-v1/v1b/v2/serve boot reached RC=8
-    at the precheck with zero provider effects). The overlap is a published,
-    version-documented alias pair, not an ambiguous API: bind the canonical
-    max_length, leave the deprecated alias unset, and verify the binding on
-    the constructed config (verify_sequence_binding). An API that exposes
-    neither field explicitly (**kwargs only) remains a hard stop, never a
-    fallback.
+    use max_length. An unknown or ambiguous API is a hard stop, never a
+    fallback. Measured 2026-11-19: TRL 0.15-0.19 ships BOTH fields at once
+    (max_seq_length deprecated, forwarding to max_length in __post_init__), so
+    every ring lane pinned at trl==0.17.0 fail-closed at this precheck with
+    zero provider effects. The overlap is NOT treated as a binding here: a
+    two-field constructor has no single explicit sequence-bound field, and a
+    deprecated alias could silently reinterpret it. The fleet remedy is the
+    version pin (ring lanes pin-bumped to trl==1.17.1, readback-verified),
+    and verify_sequence_binding additionally checks the constructed config
+    so no silent default can masquerade as a bound length.
     """
     try:
         parameters = inspect.signature(constructor).parameters
@@ -153,12 +152,12 @@ def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     ]
     if len(explicit) == 1:
         return {explicit[0]: length}
-    if set(explicit) == {"max_seq_length", "max_length"}:
-        # Published alias overlap (TRL 0.15-0.19): the deprecated alias only
-        # forwards to the canonical field; bind max_length and verify after
-        # construction so no silent default can masquerade as a binding.
-        return {"max_length": length}
-    raise RuntimeError("SFTConfig must expose exactly one explicit sequence-bound field")
+    raise RuntimeError(
+        "SFTConfig must expose exactly one explicit sequence-bound field "
+        f"(found: {sorted(explicit) or 'none'}); measured alias-overlap TRLs "
+        "0.15-0.19 ship both max_seq_length and max_length and are NOT a "
+        "binding - pin a single-field TRL (fleet remedy 2026-11-19: ring "
+        "lanes pin-bumped to trl==1.17.1) instead of guessing a binding")
 
 
 def verify_sequence_binding(cfg, sequence_kwargs: dict, length: int) -> None:
