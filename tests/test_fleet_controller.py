@@ -241,7 +241,9 @@ class BenchRunnerTests(Base):
         recs = self.run_bench(
             {PREFIX + "20261119T090000.json": receipt_bytes()}, salad, apply=True
         )
-        self.assertEqual(recs[0]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION")
+        self.assertEqual(
+            recs[0]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION"
+        )
         self.assertEqual([m[0] for m in salad.mutations()], ["POST", "PATCH"])
         self.assertEqual(
             recs[0]["action"]["post_readback"]["state"],
@@ -296,7 +298,9 @@ class BenchRunnerTests(Base):
                     self.contract["state_dir"] = str(Path(temp) / "state")
 
                     class RejectedStop(FakeSalad):
-                        def call(self, method, path, body=None, content_type="application/json"):
+                        def call(
+                            self, method, path, body=None, content_type="application/json"
+                        ):
                             if method == "POST" and path.endswith("/stop"):
                                 self.calls.append((method, path, body))
                                 return 0, status, b""
@@ -411,7 +415,9 @@ class BenchLeaseLaterTests(Base):
         self.assertEqual(salad.mutations(), [])
         lease_path.write_bytes(good)
         parked = self.run_bench(files, salad, apply=True)
-        self.assertEqual(parked[-2]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION")
+        self.assertEqual(
+            parked[-2]["decision"], "PARK_PROVIDER_ZERO_REPORTED_NOT_COMPLETION"
+        )
         self.assertEqual([m[0] for m in salad.mutations()], ["POST", "PATCH"])
 
 
