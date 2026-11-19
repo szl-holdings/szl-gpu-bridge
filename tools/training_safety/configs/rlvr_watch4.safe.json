@@ -1,0 +1,24 @@
+{
+ "salad_key_file": "C:\\SZL\\edge-debug\\.sk",
+ "hf_token_file": "C:\\SZL\\edge-debug\\.ht",
+ "churn_threshold": 3,
+ "zero_polls": 10,
+ "zero_interval": 30,
+ "log": "C:\\SZL\\training_safety_fixes_20261119\\rlvr_watch_safe.log",
+ "receipts": "C:\\SZL\\training_safety_fixes_20261119\\rlvr_watch_safe_receipts.jsonl",
+ "cycles": 288,
+ "interval": 300,
+ "groups": [
+  {
+   "name": "szl-rlvr-attempts-r2",
+   "repo": "<OWNER: repo holding rlvr-attempts-r2 final artifacts>",
+   "reason": "lane_log",
+   "target_steps": null,
+   "cache_dir": "C:\\SZL\\training_safety_fixes_20261119\\cache",
+   "backup_dir": "<OWNER: independent backup dir, not C:\\SZL\\edge-debug>",
+   "backup_independent": false,
+   "lane_log_url": "https://huggingface.co/datasets/SZLHOLDINGS/wave-logs/resolve/main/rlvr/rlvr-attempts-r2/lane.log",
+   "completion_marker": null
+  }
+ ]
+}

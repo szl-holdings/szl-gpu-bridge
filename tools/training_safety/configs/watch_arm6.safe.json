@@ -1,0 +1,35 @@
+{
+ "salad_key_file": "C:\\SZL\\edge-debug\\.sk",
+ "hf_token_file": "C:\\SZL\\edge-debug\\.ht",
+ "churn_threshold": 3,
+ "zero_polls": 10,
+ "zero_interval": 30,
+ "log": "C:\\SZL\\training_safety_fixes_20261119\\watch_arm6_safe.log",
+ "receipts": "C:\\SZL\\training_safety_fixes_20261119\\watch_arm6_safe_receipts.jsonl",
+ "cycles": 96,
+ "interval": 300,
+ "groups": [
+  {
+   "name": "szl-train-distill-4b-v1-r1-r2",
+   "repo": "SZLHOLDINGS/salad-distill-4b-v1-r1",
+   "reason": "completion",
+   "target_steps": null,
+   "cache_dir": "C:\\SZL\\training_safety_fixes_20261119\\cache",
+   "backup_dir": "<OWNER: independent backup dir, not C:\\SZL\\edge-debug>",
+   "backup_independent": false
+  },
+  {
+   "name": "szl-train-distill-4b-v2-r1-r2",
+   "repo": "SZLHOLDINGS/salad-distill-4b-v2-r1",
+   "reason": "completion",
+   "target_steps": null,
+   "cache_dir": "C:\\SZL\\training_safety_fixes_20261119\\cache",
+   "backup_dir": "<OWNER: independent backup dir, not C:\\SZL\\edge-debug>",
+   "backup_independent": false
+  },
+  {
+   "name": "szl-rlvr-attempts-r2",
+   "repo": null
+  }
+ ]
+}
