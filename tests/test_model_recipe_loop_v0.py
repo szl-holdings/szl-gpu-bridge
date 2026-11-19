@@ -11,7 +11,7 @@ from tools.proving import model_recipe_loop_v0 as g
 
 SOURCES=dict(g.SOURCE_OWNERS)
 def plan():
-    return {"schema":g.SCHEMA,"source_pins":SOURCES,
+    return {"schema":g.SCHEMA,"source_pins":dict(SOURCES),
             "training_dispatch_enabled":False,"provider_write_enabled":False,
             "private_graph_hydration":False,
             "models":[{"id":"SZLHOLDINGS/A11OY-MINI","observed_sha":"a"*40,
