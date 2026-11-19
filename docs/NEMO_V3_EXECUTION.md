@@ -13,15 +13,44 @@ envelope signed by a private key corresponding to the sole `ACTIVE` entry in
 the reviewed engine keyring. Historical public pins remain available only to
 verify immutable evidence.
 
-## 1. Install or refresh the owner GPU bridge
+## 1. Refresh the *verified existing* owner GPU bridge (no automatic first enrollment)
 
-On the intended Windows/NVIDIA host, from an elevated PowerShell session:
+**Owner admission remains separate.** Identify the independently authorized
+single bridge owner and durable lease before any upgrade. A missing task on
+BETTERWITHAGE or another observation node is not a reason to commission a new
+controller. Record authorized source revision, backup and checkpoint custody,
+a maintenance window, and approved signer trust roots.
+
+On that verified existing Windows/NVIDIA owner only, in an elevated PowerShell
+session and from the exact reviewed, clean local Git checkout:
 
 ```powershell
-irm https://raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/laptop/bootstrap.ps1 | iex
+$sourceRevision = (git rev-parse HEAD).Trim()
+# Independently compare $sourceRevision with the exact approved protected main.
+.\laptop\bootstrap.ps1 -SourceRevision $sourceRevision
 ```
 
-The installer opens no inbound port. It pins the engine public key, generates a host-local Ed25519 receipt key, verifies the training environment, installs the dispatcher and Nemo v3 runner, and starts a single-flight polling task.
+The owner-refresh script fails **before writing anything** unless its checkout
+matches the exact supplied 40-hex Git revision, tracked files are clean, and
+both the original `SZL-GPU-Bridge` task and installed daemon already exist.
+It refuses a currently running task and system/service principals. Required
+dispatcher, runner and preflight source files are taken from this same checkout
+and checked for post-copy byte-hash equality, rather than downloaded from
+moving `main`. **It cannot prove fleet-wide sole-owner identity by itself.**
+
+**First-owner commissioning is not implemented by this refresh.** A separate,
+approved owner-enrollment procedure and evidence review are required; see
+[GPU bridge owner HOLD #260](https://github.com/szl-holdings/szl-gpu-bridge/issues/260).
+Do not convert an unauthenticated observation machine into a dispatcher, or
+work around the guard by installing placeholder tasks. This is a source
+hardening proposal until its protected review and deployment are independently
+verified. Dependency and Miniconda artifact pinning, trusted signer custody,
+and atomic maintenance-window cutover remain separate controls; do not treat
+a successful bootstrap exit as production or model-training qualification.
+
+On an independently qualified owner, the refreshed bridge retains its
+verify-first dispatcher, pinned public trust roots, local receipt identity,
+Nemo v3 runner, and single-flight scheduled task. It opens no inbound port.
 
 Record the exact 16-hex value printed as:
 
