@@ -223,7 +223,7 @@ class ResumeIntegrityTests(unittest.TestCase):
         with patch("tools.salad.resume_integrity.time.sleep") as sleep:
             path = self.run_gate()
         self.assertTrue(Path(path).is_dir())
-        calls = [kw for name, kw in self.hub.calls if name == "snapshot"]
+        calls = [item[1] for item in self.hub.calls if item[0] == "snapshot"]
         self.assertEqual(len(calls), 2)
         self.assertEqual([kw["revision"] for kw in calls], [REVISION, REVISION])
         sleep.assert_called_once_with(2)
@@ -240,7 +240,7 @@ class ResumeIntegrityTests(unittest.TestCase):
                     with self.assertRaisesRegex(ResumeHold, expected):
                         self.run_gate()
                 self.assertEqual(
-                    len([name for name, _ in self.hub.calls if name == "snapshot"]), 1
+                    sum(item[0] == "snapshot" for item in self.hub.calls), 1
                 )
                 sleep.assert_not_called()
 
@@ -250,7 +250,7 @@ class ResumeIntegrityTests(unittest.TestCase):
         with patch("tools.salad.resume_integrity.time.sleep") as sleep:
             with self.assertRaisesRegex(ResumeHold, "DOWNLOAD_UNVERIFIED"):
                 self.run_gate()
-        calls = [kw for name, kw in self.hub.calls if name == "snapshot"]
+        calls = [item[1] for item in self.hub.calls if item[0] == "snapshot"]
         self.assertEqual(len(calls), 3)
         self.assertEqual([kw["revision"] for kw in calls], [REVISION] * 3)
         self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4])
