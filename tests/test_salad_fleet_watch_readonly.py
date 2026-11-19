@@ -115,7 +115,7 @@ class FleetContractTests(unittest.TestCase):
             },
         )
         self.assertFalse(fleet["lifecycle_recheck_is_proven_failure"])
-        self.assertIn("SALAD_PROVIDER_LIFECYCLE_RECHECK", drift)
+        self.assertEqual(drift, [], "One transitional snapshot is not a fault alert")
         self.assertNotIn("SALAD_PROVIDER_STATE_INSTANCE_MISMATCH", drift)
         self.assertEqual(report["release_admission"], "HOLD")
         self.assertFalse(fleet["training_liveness_verified"])
