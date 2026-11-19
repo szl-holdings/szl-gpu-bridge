@@ -870,6 +870,66 @@ def main() -> int:
             zeus_end_window()
 
 
+def restore_terminal_final(a, api, resume: str) -> dict:
+    """Republish only terminal checkpoint files from a clean private staging dir.
+
+    An old output_dir/final/ is not trustworthy evidence of the resumed
+    checkpoint and MUST NOT contaminate upload_folder(path_in_repo='final').
+    This is byte staging plus Hub commit acknowledgement, NOT full Hub
+    artifact readback, further training or model-quality qualification.
+    """
+    import fnmatch
+    import shutil
+    import tempfile
+
+    if not os.path.isdir(resume) or os.path.islink(resume):
+        raise ResumeError("TERMINAL_CHECKPOINT_DIRECTORY_UNAVAILABLE")
+    permitted = []
+    for name in sorted(os.listdir(resume)):
+        source = os.path.join(resume, name)
+        if os.path.islink(source):
+            raise ResumeError("TERMINAL_CHECKPOINT_SYMLINK_FORBIDDEN")
+        if not os.path.isfile(source):
+            continue
+        if any(fnmatch.fnmatch(name, pattern) for pattern in PICKLE_PATTERNS):
+            continue
+        permitted.append(name)
+    if "adapter_model.safetensors" not in permitted:
+        raise ResumeError("TERMINAL_CHECKPOINT_ADAPTER_WEIGHTS_MISSING")
+
+    # Visibility can change after initial repo admission or the Hub listing.
+    verify_private(api, a.adapter_out)
+    os.makedirs(a.output_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".f10-final-", dir=a.output_dir) as staging:
+        for name in permitted:
+            source = os.path.join(resume, name)
+            target = os.path.join(staging, name)
+            if os.path.islink(source) or not os.path.isfile(source):
+                raise ResumeError("TERMINAL_CHECKPOINT_SOURCE_CHANGED")
+            shutil.copy2(source, target, follow_symlinks=False)
+            if os.path.islink(target) or not os.path.isfile(target):
+                raise ResumeError("TERMINAL_CHECKPOINT_STAGED_FILE_INVALID")
+        if os.path.getsize(os.path.join(staging, "adapter_model.safetensors")) == 0:
+            raise ResumeError("TERMINAL_CHECKPOINT_ADAPTER_WEIGHTS_EMPTY")
+        verify_private(api, a.adapter_out)
+        try:
+            commit = receipt_retry(lambda: api.upload_folder(
+                folder_path=staging, path_in_repo="final", repo_id=a.adapter_out,
+                repo_type="model", ignore_patterns=PICKLE_PATTERNS),
+                "final adapter upload")
+        except Exception as error:
+            raise ArtifactError(
+                f"final adapter upload failed ({transport_label(error)})") from None
+    return {
+        "restored_from": os.path.basename(resume),
+        "files": permitted,
+        "final_revision": hub_revision(commit),
+        "scope": "TERMINAL_CHECKPOINT_BYTES_REPUBLISHED_NOT_NEW_TRAINING",
+        "staging": "EXCLUSIVE_CLEAN_CHECKPOINT_ONLY",
+        "artifact_readback": "HUB_COMMIT_ACKNOWLEDGED_NOT_FULL_BYTE_READBACK",
+    }
+
+
 def run_training(a, api) -> int:
     energy_scope = ("DEVICE_TOTAL_INCLUDES_CORESIDENT_WORKLOADS" if a.gpu_memory_budget_mib
                     else "DEVICE_TOTAL_NOT_JOB_ATTRIBUTION")
@@ -932,60 +992,24 @@ def run_training(a, api) -> int:
                 # trained weights, so a respawn now republishes them as final/
                 # under the same visibility checks and pickle exclusions, records
                 # the restoration in the already-complete receipt, and exits 0.
-                import fnmatch, shutil
-                if not os.path.isdir(resume):
-                    receipt("fail-closed",
-                            f"terminal checkpoint {resume!r} is not a readable local "
-                            "directory; final restoration impossible",
-                            {"resume_global_step": rgs, "max_steps": a.max_steps,
-                             "final_adapter_present": False, "completion_qualified": False,
-                             "new_steps_this_boot": 0,
-                             "energy_scope": energy_scope,
-                             "zeus_window": zeus_end_window(),
-                             "energy_start": energy_start, "energy_end": energy_end,
-                             "energy_j": energy_delta(energy_start, energy_end)})
-                    print("FAIL-CLOSED: terminal checkpoint directory unavailable; "
-                          "refusing completion or automatic retraining",
-                          file=sys.stderr, flush=True)
-                    return 7
-                final_local = os.path.join(a.output_dir, "final")
-                os.makedirs(final_local, exist_ok=True)
-                copied = []
-                for name in sorted(os.listdir(resume)):
-                    source = os.path.join(resume, name)
-                    if not os.path.isfile(source):
-                        continue
-                    if any(fnmatch.fnmatch(name, pattern) for pattern in PICKLE_PATTERNS):
-                        continue
-                    shutil.copy2(source, os.path.join(final_local, name))
-                    copied.append(name)
-                if not os.path.isfile(os.path.join(final_local, "adapter_model.safetensors")):
-                    receipt("fail-closed",
-                            f"terminal checkpoint {os.path.basename(resume)} has no "
-                            "adapter_model.safetensors; final publication impossible",
-                            {"resume_global_step": rgs, "max_steps": a.max_steps,
-                             "final_adapter_present": False, "completion_qualified": False,
-                             "new_steps_this_boot": 0,
-                             "energy_scope": energy_scope,
-                             "zeus_window": zeus_end_window(),
-                             "energy_start": energy_start, "energy_end": energy_end,
-                             "energy_j": energy_delta(energy_start, energy_end)})
-                    print("FAIL-CLOSED: terminal checkpoint lacks adapter weights; "
-                          "refusing completion or automatic retraining",
-                          file=sys.stderr, flush=True)
-                    return 7
                 try:
-                    final_commit = receipt_retry(lambda: api.upload_folder(
-                        folder_path=final_local, path_in_repo="final",
-                        repo_id=a.adapter_out, repo_type="model",
-                        ignore_patterns=PICKLE_PATTERNS), "final adapter upload")
-                except Exception as error:
-                    raise ArtifactError(
-                        f"final adapter upload failed ({transport_label(error)})") from None
-                restored = {"restored_from": os.path.basename(resume),
-                            "files": copied,
-                            "final_revision": hub_revision(final_commit),
-                            "scope": "TERMINAL_CHECKPOINT_BYTES_REPUBLISHED_NOT_NEW_TRAINING"}
+                    restored = restore_terminal_final(a, api, resume)
+                except (ResumeError, VisibilityError) as error:
+                    receipt("fail-closed",
+                            "terminal checkpoint final restoration preflight denied",
+                            {"resume_global_step": rgs, "max_steps": a.max_steps,
+                             "final_adapter_present": False,
+                             "completion_qualified": False,
+                             "new_steps_this_boot": 0,
+                             "recovery_refusal": type(error).__name__,
+                             "energy_scope": energy_scope,
+                             "zeus_window": zeus_end_window(),
+                             "energy_start": energy_start, "energy_end": energy_end,
+                             "energy_j": energy_delta(energy_start, energy_end)})
+                    print("FAIL-CLOSED: terminal checkpoint or visibility not "
+                          "verified; refusing completion or automatic retraining",
+                          file=sys.stderr, flush=True)
+                    return 3 if isinstance(error, VisibilityError) else 7
                 final_present = True
             receipt("already-complete" if final_present else "incomplete",
                     f"resumed checkpoint global_step={rgs} >= max_steps={a.max_steps} — "
