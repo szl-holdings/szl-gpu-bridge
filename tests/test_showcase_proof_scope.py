@@ -2,6 +2,7 @@
 
 This is a static source contract, not live HF readback or signature verification.
 """
+
 from pathlib import Path
 import unittest
 
@@ -31,6 +32,7 @@ SCOPE = {
     "hf-spaces/eternal-auditor/static/index.html": "independently trusted signatures",
 }
 
+
 class SourceCopyTruthTests(unittest.TestCase):
     def test_pages_exist_and_disallow_universal_proof_claims(self):
         for path in PAGES:
@@ -48,8 +50,11 @@ class SourceCopyTruthTests(unittest.TestCase):
         for slug in ("frontier-showcase", "szl-energy-hologram"):
             with self.subTest(slug=slug):
                 base = ROOT / "hf-spaces" / slug / "snapshot"
-                self.assertEqual((base / "index.html").read_bytes(),
-                                 (base / "static" / "index.html").read_bytes())
+                self.assertEqual(
+                    (base / "index.html").read_bytes(),
+                    (base / "static" / "index.html").read_bytes(),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
