@@ -473,5 +473,28 @@ class AccessDenialTests(unittest.TestCase):
                 self.assertEqual(salad.calls, ["/szl-bench-example"])
 
 
+class StopSettlementTypeTests(unittest.TestCase):
+    def test_boolean_replica_evidence_cannot_authorize_zero_patch(self):
+        provider = {
+            "group_state_reconciled": True,
+            "provider_status": "stopped",
+            "desired_replicas": 1,
+            "instances_returned": 0,
+            "actual_counts": {key: 0 for key in gates.COUNTS},
+        }
+        self.assertTrue(fc.stop_settled_for_zero_patch(provider, 1))
+        self.assertFalse(fc.stop_settled_for_zero_patch(provider, True))
+        self.assertFalse(fc.stop_settled_for_zero_patch(provider, 0))
+        for field, value in (("desired_replicas", True), ("instances_returned", False)):
+            with self.subTest(field=field):
+                bad = dict(provider)
+                bad[field] = value
+                self.assertFalse(fc.stop_settled_for_zero_patch(bad, 1))
+        bad = dict(provider)
+        bad["actual_counts"] = dict(provider["actual_counts"])
+        bad["actual_counts"][gates.COUNTS[0]] = False
+        self.assertFalse(fc.stop_settled_for_zero_patch(bad, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
