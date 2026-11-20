@@ -132,6 +132,13 @@ class EstatePortfolioTests(unittest.TestCase):
         p["public_assets"]["models"][0]["immutable_hub_sha"] = "main"
         self.deny(p, "ASSET_SHA_UNVERIFIED")
 
+    def test_placeholder_revision_is_not_an_immutable_hub_commit(self):
+        for kind in ("models", "datasets"):
+            p = snapshot()
+            p["public_assets"][kind][0]["immutable_hub_sha"] = "0" * 40
+            with self.subTest(kind=kind):
+                self.deny(p, "ASSET_SHA_UNVERIFIED")
+
     def test_duplicate_model_denied(self):
         p = snapshot()
         p["public_assets"]["models"][1]["repo"] = p["public_assets"]["models"][0][
