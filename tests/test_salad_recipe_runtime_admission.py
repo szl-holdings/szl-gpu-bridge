@@ -37,7 +37,8 @@ MOVING_REFS = (
 
 def _command(pin_set: str, worker: str) -> str:
     return (
-        " ".join(linter.PIN_SETS[pin_set])
+        "pip install "
+        + " ".join(linter.PIN_SETS[pin_set])
         + " PIP_DEFAULT_TIMEOUT=45 PIP_RETRIES=2 "
         + "1.1.1.1 8.8.8.8 HF_HUB_ENABLE_HF_TRANSFER=0 "
         + "hf_hub_download STAGE0 INNER_EXIT "
@@ -72,6 +73,24 @@ class RecipeRuntimeAdmissionTests(unittest.TestCase):
 
     def test_pinned_modern_recipe_is_not_rejected_by_static_checks(self) -> None:
         self.assertFalse(_fails(_command("MODERN", PINNED)))
+
+    def test_pin_strings_in_comment_only_do_not_admit(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails("# " + pins + "\n" + unpinned))
+
+    def test_pin_strings_in_echo_only_do_not_admit(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails('echo "' + pins + '"\n' + unpinned))
+
+    def test_pin_strings_in_printf_only_do_not_admit(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails("printf '%s' '" + pins + "'\n" + unpinned))
 
     def test_legacy_non_worker_use_is_not_newly_prohibited(self) -> None:
         self.assertNotIn(
