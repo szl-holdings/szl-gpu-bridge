@@ -130,16 +130,20 @@ class TerminalContract(unittest.TestCase):
                     fixture.private = False
                 return types.SimpleNamespace(oid=fixture.receipt_revision)
 
-        def download(**kwargs):
-            fixture.receipt_downloads.append(kwargs)
+        def fetch(url, token, max_bytes):
+            # v3.11 seam: the worker readback goes through its module-level
+            # _readback_fetch(url, token, max_bytes) network boundary; this
+            # fixture substitutes it (no socket may be opened in tests).
+            fixture.receipt_downloads.append(
+                {"url": url, "token": token, "max_bytes": max_bytes}
+            )
             if fixture.readback_error:
                 raise fixture.readback_error
-            content = fixture.receipt_bytes[kwargs["filename"]]
+            path_in_repo = url[url.index("mesh/") :]
+            content = fixture.receipt_bytes[path_in_repo]
             if fixture.corrupt_readback:
                 content += b"corrupt"
-            target = Path(fixture.temp.name) / "synthetic-readback.json"
-            target.write_bytes(content)
-            return str(target)
+            return content[:max_bytes]
 
         class Trainer:
             def __init__(self, **kwargs):
@@ -209,7 +213,7 @@ class TerminalContract(unittest.TestCase):
         modules["peft"].LoraConfig = lambda **kwargs: kwargs
         modules["datasets"].load_dataset = lambda *a, **k: Dataset()
         modules["huggingface_hub"].HfApi = API
-        modules["huggingface_hub"].hf_hub_download = download
+
         self.stack.enter_context(patch.dict(sys.modules, modules))
         spec = importlib.util.spec_from_file_location(
             "salad_terminal_under_test", WORKER
@@ -219,6 +223,9 @@ class TerminalContract(unittest.TestCase):
         self.original_receipt = self.worker.build_receipt
         self.real_receipt = self.worker.receipt
         self.sleep = self.stack.enter_context(patch.object(self.worker.time, "sleep"))
+        # v3.11: substitute the receipt-readback network boundary.
+        self.real_readback_fetch = self.worker._readback_fetch
+        self.stack.enter_context(patch.object(self.worker, "_readback_fetch", fetch))
         self.stack.enter_context(
             patch.object(
                 self.worker,
@@ -1117,9 +1124,9 @@ class TerminalContract(unittest.TestCase):
         self.assertEqual(len(self.receipt_uploads), 3)
         self.assertEqual(len({u["path_in_repo"] for u in self.receipt_uploads}), 1)
         self.assertEqual(len({u["path_or_fileobj"] for u in self.receipt_uploads}), 1)
-        self.assertEqual(self.receipt_downloads[0]["revision"], "b" * 40)
-        self.assertIs(self.receipt_downloads[0]["force_download"], True)
-        self.assertIn(value["receipt_sha256"], self.receipt_downloads[0]["filename"])
+        self.assertIn("b" * 40, self.receipt_downloads[0]["url"])
+        self.assertIn("/resolve/", self.receipt_downloads[0]["url"])
+        self.assertIn(value["receipt_sha256"], self.receipt_downloads[0]["url"])
 
     def test_explicit_private_model_channel_uses_only_named_destination(self):
         self.assertEqual(
