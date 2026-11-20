@@ -68,6 +68,59 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         ):
             self.assertIn(anchor, s)
 
+    def test_primary_task_and_daemon_both_required_before_install(self) -> None:
+        """Missing primary task cannot be compensated by a copied daemon file."""
+        source = self.source
+        bind = source.index("- name: Bind execution to an existing SZL bridge owner node")
+        guard = source.index("- name: Refuse stale owner daemon")
+        install = source.index("- name: Install the exact local watchdog package")
+        block = source[bind:guard]
+        self.assertLess(bind, guard)
+        self.assertLess(guard, install)
+        self.assertIn("Get-ScheduledTask -TaskName 'SZL-GPU-Bridge'", block)
+        self.assertIn("Test-Path -LiteralPath", block)
+        self.assertIn("if ($null -eq $task -or -not $daemon) {", block)
+        self.assertNotIn("if ($null -eq $task -and -not $daemon) {", block)
+        self.assertIn("both primary task and installed daemon are required", block)
+        for forbidden in ("Register-ScheduledTask", "Start-ScheduledTask", "Copy-Item"):
+            self.assertNotIn(forbidden, block)
+
+    def test_real_owner_gate_expression_in_isolated_powershell(self) -> None:
+        """Run only the extracted predicate with fake values; no Windows task APIs."""
+        import shutil
+        import subprocess
+
+        binary = shutil.which("powershell.exe") or shutil.which("pwsh")
+        if binary is None:
+            self.skipTest("PowerShell is unavailable; static source contract still runs")
+        block = self.source.split(
+            "- name: Bind execution to an existing SZL bridge owner node", 1
+        )[1].split("- name: Refuse stale owner daemon", 1)[0]
+        marker = "if ($null -eq $task -or -not $daemon) {"
+        predicate = marker + block.split(marker, 1)[1].split("}", 1)[0] + "}"
+        for task_present, daemon_present, accepted in (
+            (False, False, False),
+            (False, True, False),
+            (True, False, False),
+            (True, True, True),
+        ):
+            with self.subTest(task_present=task_present, daemon_present=daemon_present):
+                script = (
+                    "$ErrorActionPreference = 'Stop';"
+                    + ("$task = [pscustomobject]@{};" if task_present else "$task = $null;")
+                    + ("$daemon = $true;" if daemon_present else "$daemon = $false;")
+                    + "try { " + predicate + "; 'ACCEPTED' } catch { 'REFUSED' }"
+                )
+                outcome = subprocess.run(
+                    [binary, "-NoProfile", "-NonInteractive", "-Command", script],
+                    capture_output=True,
+                    check=False,
+                    text=True,
+                    timeout=20,
+                )
+                self.assertEqual(outcome.returncode, 0, outcome.stderr)
+                self.assertEqual(outcome.stdout.strip(), "ACCEPTED" if accepted else "REFUSED")
+
 
 if __name__ == "__main__":
     unittest.main()
