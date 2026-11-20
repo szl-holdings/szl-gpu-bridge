@@ -7,6 +7,7 @@ permission.
 
 - **Snapshot observed at:** 2026-11-20T03:18Z, via a GET-only Salad container-group census
   (no writes; key kept in a device-local env/file, never in chat).
+- **Consolidation provenance:** on 2026-11-20 this file absorbed and superseded docs/GROK_TRAINING_HANDOFF.md (PR #299; that path is now a tombstone pointer). Base text of this file: PR #300.
 - **Canonical sources of truth:** this repo (`szl-holdings/szl-gpu-bridge` `main`),
   `docs/NONSTOP_TRAINING_RUNBOOK.md`, `docs/NEMO_V3_EXECUTION.md`, `README.md`,
   and the receipts chain `SZLHOLDINGS/frontier-54-runs` on Hugging Face.
@@ -14,7 +15,7 @@ permission.
   by the bot itself) counts as proof. No receipt + no live process = STOPPED, never
   "running."
 
-## 0. Doctrine you must follow (locked)
+## 0. Doctrine you must follow (Doctrine v11 — locked)
 
 Honest labels apply **per claim / per table row**, not per section:
 
@@ -57,7 +58,7 @@ roles are `UNAVAILABLE`. `deploying` is not `running`.
 
 | Lane | Where | What | State (honest label) |
 |---|---|---|---|
-| A. Sovereign doctrine fine-tune | a11oy/training/ + training/box/ | Qwen2.5-3B: QLoRA -> SFT -> ORPO -> GGUF q4_k_m -> Ollama szl-sovereign-qwen; run by hand on the OMEN laptop | Corpora deterministic: SFT 1,556 rows (szl_seed_full.jsonl) + ORPO preference set + eval split — MEASURED (files/hashable). No training-run receipt seen: weights MODELED. Standing ruling: laptop = control room only, all GPU work on Salad |
+| A. Sovereign doctrine fine-tune | a11oy/training/ + training/box/ | Qwen2.5-3B: QLoRA -> SFT -> ORPO -> GGUF q4_k_m -> Ollama szl-sovereign-qwen; run by hand on the OMEN laptop (RTX 5050, 8 GB) | Corpora deterministic: SFT 1,556 rows (szl_seed_full.jsonl) + ORPO preference set + eval split — MEASURED (files/hashable). No training-run receipt seen: weights MODELED. Standing ruling: laptop = control room only, all GPU work on Salad |
 | B. Nemotron v3 governed job | gpu-bridge jobspecs/ + queue/ | DSSE-signed jobs (active key b8041281c81c4caa) -> owner GPU -> signed receipts in private HF SZLHOLDINGS/szl-training-receipts | Attempts 1-16 terminal, each with its actual per-attempt quarantined/NEVER_DISPATCH disposition — MEASURED (hash-pinned in queue/quarantine/ + queue/evidence/). Attempt 17: EXPIRED_AWAITING_ENGINE_SIGNATURE — see section 4 |
 | C. Salad burst worker | tools/salad/salad_worker.py v3.10 | Resumable spot training: HF checkpoints, SIGTERM checkpointing, boot/step/complete receipts, NVML/zeus energy, F1-F10 failure guards | Code ACTIVE in main (PRs #236-#265 through 2026-11-19) — MEASURED (repo history). Live footprint at 03:18Z: 5 training-named groups running (section 1) — MEASURED (state only) |
 | D. Frontier-54 + the brains (Brain v3.5, Brain-2c mathlib, Nano-2, The Collective) | Salad; on any restart move to A6000s (runbook section 4) | 54-hour fine-tune + brain legs | The `frontier-op1-4b-r3` / `frontier-op1-9b-r3` / `frontier-vspc-01` groups are running — MEASURED (state only); their mapping to the 2026-11-09 leg names is UNVERIFIED, do not claim it. The 2026-11-09 legs themselves: UNKNOWN from the audit seat |
@@ -83,6 +84,7 @@ Shared receipt bus: HF dataset SZLHOLDINGS/frontier-54-runs (public; last update
 5. Report blockers; escalate owner-only items and stop there.
 6. **No autonomous remediation, no status promotion from stale snapshots.** If your
    observation is older than the cycle, re-measure before claiming.
+7. Laptop lane A is owner-run by hand via RUN_ON_BOX.md. A bot only collects what the scripts print (peak VRAM, final loss, per-family refusal-to-fabricate pass rate) and fills provenance with provenance_stub.py.
 
 ## 4. Nemotron v3 — exact state (do not soften)
 
@@ -146,6 +148,8 @@ Nemotron v3 | bridge | EXPIRED_AWAITING_ENGINE_SIGNATURE (a17, issue #93) | — 
 Laptop sovereign | OMEN | NOT RUN / <loss, VRAM, eval pass %> | | provenance MODELED|signed
 
 Measured deltas this cycle: <...>
+Energy: <J MEASURED (NVML delta; receipt sha; UTC ts)> | UNAVAILABLE (never 0 J)
+New BLOCKED receipts: <job id - reason (receipt sha)>
 Nemotron/blockers: <...>
 Actions taken (GET-only unless owner-ticked): <...>
 UNAVAILABLE/discrepancies: <...>
@@ -166,5 +170,11 @@ Labels check: no MEASURED without receipt/fresh GET ✔  locked=8 ✔  Lambda=Co
 - Anything touching .31.
 - Gateway start path on the laptop (blocked on four deleted credentials; rotation needs
   the owner's named backup-vs-rotate order).
+
+## 9. Change log (history only, NON-AUTHORIZING)
+
+- 2026-11-20 (history from PR #299, now the tombstone path): corrected the runbook section 5 Nemotron row that was overclaiming SETTLED attempt-17 terminal receipt; the stricter README / NEMO_V3_EXECUTION state (EXPIRED_AWAITING_ENGINE_SIGNATURE, issue #93) is authoritative.
+- 2026-11-20 (PR #300): this file created as the consolidation base.
+- 2026-11-20 (consolidation PR, this PR): the two near-duplicate handoffs were merged into this canonical file; docs/GROK_TRAINING_HANDOFF.md is now a tombstone pointer. Entries above are history, not current fleet truth.
 
 *Point-in-time snapshot; re-measure before acting. Apache-2.0. Copyright 2026 SZL Holdings · Stephen P. Lutar Jr.*
