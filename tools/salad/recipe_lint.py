@@ -67,6 +67,14 @@ def _pin_source_without_presentation_lines(command: str) -> str:
             r"^(?:echo|printf)(?:\s|$)", stripped
         ):
             continue
+        # An output-only command chained after a real command does not
+        # establish that any printed version was installed. Keep the
+        # preceding command but never count the echo/printf suffix.
+        display_after_separator = re.search(
+            r"(?:&&|\|\||;|\|)\s*(?:echo|printf)(?:\s|$)", line
+        )
+        if display_after_separator:
+            line = line[: display_after_separator.start()]
         evidence.append(line)
     return "\n".join(evidence)
 
