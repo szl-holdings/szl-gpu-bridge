@@ -1253,5 +1253,61 @@ class TerminalContract(unittest.TestCase):
         )
 
 
+    def test_hub_receipt_redirect_strips_cross_origin_credentials(self):
+        """A default stdlib 302 would otherwise forward a Hub bearer to a CDN."""
+        import urllib.request
+
+        request = urllib.request.Request(
+            "https://huggingface.co/datasets/SZLHOLDINGS/example/resolve/"
+            + "a" * 40 + "/mesh/salad-" + "b" * 64 + ".json",
+            headers={
+                "Authorization": "Bearer SYNTHETIC_ONLY",
+                "Cookie": "session=synthetic",
+                "Proxy-Authorization": "Proxy SYNTHETIC_ONLY",
+            },
+        )
+        redirected = self.worker._SafeReceiptRedirect().redirect_request(
+            request, None, 302, "Found", {},
+            "https://cas-bridge.xethub.hf.co/synthetic-blob",
+        )
+        self.assertEqual(redirected.host, "cas-bridge.xethub.hf.co")
+        for name in ("Authorization", "Cookie", "Proxy-Authorization"):
+            self.assertIsNone(redirected.get_header(name))
+
+    def test_hub_receipt_same_origin_redirect_keeps_necessary_bearer(self):
+        import urllib.request
+
+        request = urllib.request.Request(
+            "https://huggingface.co/datasets/SZLHOLDINGS/example/resolve/"
+            + "a" * 40 + "/mesh/salad-" + "b" * 64 + ".json",
+            headers={"Authorization": "Bearer SYNTHETIC_ONLY"},
+        )
+        redirected = self.worker._SafeReceiptRedirect().redirect_request(
+            request, None, 302, "Found", {},
+            "https://huggingface.co/datasets/SZLHOLDINGS/example/other.json",
+        )
+        self.assertEqual(redirected.get_header("Authorization"), "Bearer SYNTHETIC_ONLY")
+
+    def test_hub_receipt_redirect_rejects_untrusted_destinations_without_network(self):
+        import urllib.request
+
+        request = urllib.request.Request(
+            "https://huggingface.co/datasets/SZLHOLDINGS/example/resolve/"
+            + "a" * 40 + "/mesh/salad-" + "b" * 64 + ".json",
+            headers={"Authorization": "Bearer SYNTHETIC_ONLY"},
+        )
+        for target in (
+            "http://huggingface.co/cleartext",
+            "https://unrelated.invalid/blob",
+            "https://user:password@huggingface.co/blob",
+            "https://huggingface.co:444/blob",
+        ):
+            with self.subTest(target_kind=target.split("/")[2]):
+                with self.assertRaises(self.worker.ReceiptError):
+                    self.worker._SafeReceiptRedirect().redirect_request(
+                        request, None, 302, "Found", {}, target,
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
