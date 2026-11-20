@@ -328,21 +328,29 @@ def evaluate(plan):
 
 
 def _atomic_report(destination, record):
+    """Publish one complete report without replacing a user-owned file.
+
+    A same-directory temporary file is synced before the final hard link.
+    Linking is exclusive: an existing destination, including a symlink,
+    is never truncated, overwritten, or removed.
+    """
     path = Path(destination)
     tmp = None
     try:
+        raw = (json.dumps(record, sort_keys=True, indent=2) + "\n").encode("utf-8")
         fd, name = tempfile.mkstemp(
             dir=str(path.parent), prefix="." + path.name + ".", suffix=".tmp"
         )
         tmp = Path(name)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(record, handle, sort_keys=True, indent=2)
-            handle.write("\n")
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
-        # An existing report may remain if the atomic write cannot complete.
-        os.replace(tmp, path)
+        os.link(tmp, path)
+        if path.read_bytes() != raw:
+            raise OSError("REPORT_READBACK_MISMATCH")
     finally:
+        # Only this call's freshly created scratch is cleaned.
         if tmp:
             try:
                 tmp.unlink(missing_ok=True)
