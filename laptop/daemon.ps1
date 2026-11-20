@@ -46,6 +46,7 @@ try {
   exit 78
 }
 
+$DaemonFailureExit = 0
 try {
   if (-not (Test-Path $Ledger)) { New-Item -ItemType File -Path $Ledger -Force | Out-Null }
   $seen = @{}
@@ -111,7 +112,9 @@ try {
     }
   }
 } catch {
-  Log "daemon error (fail closed, no job ledger mutation): $($_.Exception.Message)"
+  $DaemonFailureExit = 70
+  Log "daemon unexpected exception; reconcile per-job ledger and receipts before retry: $($_.Exception.Message)"
 } finally {
   $LockHandle.Dispose()
 }
+if ($DaemonFailureExit -ne 0) { exit $DaemonFailureExit }
