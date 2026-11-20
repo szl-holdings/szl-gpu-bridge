@@ -658,6 +658,48 @@ Write-Output 'RELEASE_RECOVERED'
             self.assertIn("LEASE_ADMITTED_WITHOUT_DISPATCH", admitted.stdout)
             self.assertTrue(lock.exists(), "The lock sentinel must not be deleted")
 
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_unheld_stale_lock_path_reacquires_without_deleting_history(self) -> None:
+        """An old but UNLOCKED sentinel must not be deleted or treated as busy."""
+        marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+        self.assertIn(marker, self.daemon)
+        snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
+        script = (
+            "$ErrorActionPreference = 'Stop'\n"
+            "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+            "$Log = $env:SZL_TEST_LOG_PATH\n"
+            "function Log($m) { $m | Add-Content -Path $Log }\n"
+            "$LockHandle = $null\n"
+            + snippet
+            + "\nif ($LockHandle) { $LockHandle.Dispose() }\n"
+            "Write-Output 'OLD_UNLOCKED_PATH_ADMITTED_NO_DISPATCH'\n"
+        )
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            lock = root / "daemon.lock"
+            payload = b"historical-unheld-sentinel-must-not-be-deleted\n"
+            lock.write_bytes(payload)
+            os.utime(lock, (946684800, 946684800))  # 2000-01-01 UTC
+            initial_stat = lock.stat()
+            output = self.run_windows_powershell(
+                script,
+                extra_env={
+                    "SZL_TEST_LEASE_PATH": str(lock),
+                    "SZL_TEST_LOG_PATH": str(root / "daemon.log"),
+                },
+            )
+            self.assertIn("OLD_UNLOCKED_PATH_ADMITTED_NO_DISPATCH", output)
+            self.assertTrue(lock.is_file())
+            self.assertEqual(lock.read_bytes(), payload)
+            self.assertEqual(lock.stat().st_ino, initial_stat.st_ino)
+            self.assertIn("[System.IO.FileMode]::OpenOrCreate", snippet)
+            self.assertIn("[System.IO.FileShare]::None", snippet)
+            self.assertNotIn("Remove-Item $Lock", snippet)
+
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
