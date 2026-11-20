@@ -126,6 +126,37 @@ def lint(name: str, command: str, image: str, env: dict | None,
     # Drop presentation-only lines so a commented example or echo of
     # the entire pin set cannot be mistaken for an installed pin set.
     source_for_pins = _pin_source_without_presentation_lines(command)
+    # Detect contradictions among the explicitly tracked package versions.
+    # This is a conservative text check, not an interpretation of shell
+    # execution order, pip resolver output, or the installed environment.
+    # Normalize PEP 503-style package spellings so an underscore/hyphen
+    # variant cannot disguise a conflicting pin.
+    tracked_packages = {
+        re.sub(r"[-_.]+", "-", pin.split("==", 1)[0]).lower()
+        for pins in PIN_SETS.values()
+        for pin in pins
+    }
+    version_declarations: dict[str, set[str]] = {}
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]*)=="
+        r"([0-9]+(?:[.][0-9A-Za-z]+)*(?:[+_-][0-9A-Za-z.]+)?)",
+        source_for_pins,
+    ):
+        name = re.sub(r"[-_.]+", "-", match.group(1)).lower()
+        if name in tracked_packages:
+            version_declarations.setdefault(name, set()).add(match.group(2))
+    conflicting = sorted(
+        name for name, versions in version_declarations.items()
+        if len(versions) > 1
+    )
+    if conflicting:
+        fail(
+            "R5_CONFLICTING_PACKAGE_PINS",
+            "conflicting exact version declarations for tracked packages: "
+            + ", ".join(conflicting)
+            + "; source text does not establish the effective installed version",
+        )
+
     matched_sets = []
     for set_name, pins in PIN_SETS.items():
         if all(p in source_for_pins for p in pins):
