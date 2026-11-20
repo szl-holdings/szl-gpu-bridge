@@ -47,3 +47,9 @@ The stdlib tests cover all five controls, impostor reviewer families, source mis
 ## Next admission gate
 
 Verify actual response bytes from both independently invoked models, real negative-control test execution with fixed artifacts, distinct prompts, immutable tested source and patch, current owner/security approval, signed provenance, protected GitHub CI, and later deployment readback before attempting to integrate this research into a working agent. Two models' unverified votes can never authorize a GitHub merge or GPU transaction.
+
+## Kimi adversarial challenge independently encoded
+
+Kimi K3.1 Pro reviewed a sanitized description of the proposed schema and identified a self-consistent digest forgery: an attacker replaces source and reviewer evidence and supplies internally consistent new hashes. A pure JSON contract cannot independently authenticate those underlying bytes. The regression test named test_self_consistent_forged_hashes_are_not_authenticated now submits this exact class of fabricated identifiers. The structural state remains REVIEW_CANDIDATE_ONLY, while source_bytes_verified, reviewer_output_bytes_verified, signer_identity_verified and release_authorized stay FALSE. **This is a deliberate abstention, not a successful proof of provenance.**
+
+A separate actual Mistral inference was not obtained during this pass, so the Kimi result is not evidence of two working independent models or of code security. A future owner-authorized execution must provide real model outputs and independently verified bytes.
