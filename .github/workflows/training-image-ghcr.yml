@@ -63,6 +63,10 @@ jobs:
           bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
           sys.exit(f"unhashed: {bad}" if bad else 0)
           PY
+      - name: Refuse incompatible pinned NumPy and PyArrow before image build
+        run: >-
+          python3 tools/salad/numpy_pyarrow_preflight.py
+          training-image/requirements.lock --python-version 3.12
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -159,6 +163,9 @@ jobs:
           docker run --rm --entrypoint python3 "${REF}" -c "from tools.salad.resume_integrity import verified_resume_checkpoint; from tools.salad.training_snapshot import model_snapshot; print('PINNED_RESUME_IMPORT_OK')"
           REVISION="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
           test "${REVISION}" = "${GITHUB_SHA}"
+          # Resolver-visible constraints can miss the PyArrow 26/NumPy 1 ABI break.
+          # Verify import in the *pushed exact digest*, before GPU allocation.
+          docker run --rm --entrypoint python3 "${REF}" -c "import numpy,pyarrow; print('NUMPY_PYARROW_RUNTIME_IMPORT_OK', numpy.__version__, pyarrow.__version__)"
           docker run --rm --entrypoint python3 "${REF}" -W ignore /work/readiness_probe.py imports --from-env --no-gpu
           docker run --rm --entrypoint python3 "${REF}" -c "import os,sys; bad=[k for k in os.environ if 'TOKEN' in k or 'SECRET' in k]; print('token env vars in image:', bad); sys.exit(1 if bad else 0)"
           docker run --rm --entrypoint python3 "${REF}" -W ignore -c "import torch,torchvision,torchaudio,transformers,peft,trl; print({m.__name__:m.__version__ for m in (torch,torchvision,torchaudio,transformers,peft,trl)}, 'cuda', torch.version.cuda)"
