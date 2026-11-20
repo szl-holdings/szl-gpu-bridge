@@ -32,8 +32,16 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
     def test_gate_is_pure_and_has_no_runtime_override(self):
         tree = ast.parse(GUARD.read_text(encoding="utf-8"))
         forbidden = {
-            "os", "sys", "subprocess", "socket", "requests", "torch", "trl",
-            "huggingface_hub", "pathlib", "ctypes",
+            "os",
+            "sys",
+            "subprocess",
+            "socket",
+            "requests",
+            "torch",
+            "trl",
+            "huggingface_hub",
+            "pathlib",
+            "ctypes",
         }
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -43,13 +51,16 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
             if isinstance(node, ast.ImportFrom) and node.module:
                 self.assertNotIn(node.module.split(".")[0], forbidden)
         self.assertNotIn("getenv", GUARD.read_text(encoding="utf-8"))
-        self.assertNotIn("training_authorized = True", GUARD.read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "training_authorized = True", GUARD.read_text(encoding="utf-8")
+        )
 
     def test_worker_calls_hold_before_argument_or_provider_side_effect(self):
         source = WORKER.read_text(encoding="utf-8")
         tree = ast.parse(source)
         main = next(
-            node for node in tree.body
+            node
+            for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == "main"
         )
