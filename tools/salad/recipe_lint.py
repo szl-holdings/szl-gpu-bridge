@@ -122,12 +122,14 @@ def lint(name: str, command: str, image: str, env: dict | None,
     # A previously green lint must not authorize an arbitrarily changed
     # GitHub main worker at the next paid boot. This checks the known public
     # GitHub raw/blob URL forms, without making a network request.
-    if re.search(
-        r"(?:raw\\.githubusercontent\\.com|github\\.com)/szl-holdings/"
-        r"szl-gpu-bridge/(?:blob/|raw/|refs/heads/)?main/"
-        r"[^\\s'\"<>]*salad_worker\\.py",
-        command,
-        flags=re.I,
+    moving_worker_urls = (
+        "raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/",
+        "raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/refs/heads/main/",
+        "github.com/szl-holdings/szl-gpu-bridge/blob/main/",
+        "github.com/szl-holdings/szl-gpu-bridge/raw/main/",
+    )
+    if "salad_worker.py" in command and any(
+        url in command.lower() for url in moving_worker_urls
     ):
         fail(
             "R5_MOVING_WORKER_REVISION",
