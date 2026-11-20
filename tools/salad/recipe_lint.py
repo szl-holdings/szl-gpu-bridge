@@ -51,6 +51,24 @@ PIN_SETS = {
 IMAGE_ALLOWLIST_PREFIXES = ("pytorch:",)  # off-pin images (e.g. 2.14.1-cuda12.6) burned lanes
 
 
+def _pin_source_without_presentation_lines(command: str) -> str:
+    """Ignore obvious comments and terminal output when collecting pin evidence.
+
+    A version mentioned only by a shell comment or a display-only
+    echo/printf command is not evidence of an installed dependency.
+    This is deliberately narrow: dynamic shell programs, heredocs,
+    nested invocations, and actual runtime resolution still require
+    independent proof. Never use a static PASS as training admission.
+    """
+    evidence = []
+    for line in command.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#") or re.match(r"^(?:echo|printf)(?:\\s|$)", stripped):
+            continue
+        evidence.append(line)
+    return "\n".join(evidence)
+
+
 def lint(name: str, command: str, image: str, env: dict | None,
          pinset: str | None) -> list[dict]:
     findings: list[dict] = []
@@ -94,13 +112,19 @@ def lint(name: str, command: str, image: str, env: dict | None,
              "command fetches files but no hf_hub_download marker found; "
              "confirm fetch path or add KIT_FETCH_OK/FAIL markers")
 
-    # R5 pin-set completeness (off-pin create class)
+    # R5 pin-set presence is descriptive, not executed-install proof.
+    # Drop presentation-only lines so a commented example or echo of
+    # the entire pin set cannot be mistaken for an installed pin set.
+    source_for_pins = _pin_source_without_presentation_lines(command)
     matched_sets = []
     for set_name, pins in PIN_SETS.items():
-        if all(p in command for p in pins):
+        if all(p in source_for_pins for p in pins):
             matched_sets.append(set_name)
     if not matched_sets:
-        missing = {s: [p for p in pins if p not in command] for s, pins in PIN_SETS.items()}
+        missing = {
+            name: [pin for pin in pins if pin not in source_for_pins]
+            for name, pins in PIN_SETS.items()
+        }
         fail("R5_PINSET", "no allowlisted pin-set fully present in command; "
              f"missing per set: {json.dumps(missing)}")
     elif pinset and pinset not in matched_sets:
