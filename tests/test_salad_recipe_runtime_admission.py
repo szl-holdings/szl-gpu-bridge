@@ -3,6 +3,7 @@
 No cloud/network calls, training imports, credentials or provider mutations.
 A passing static recipe gate is never a live training-readiness verdict.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -46,8 +47,11 @@ def _command(pin_set: str, worker: str) -> str:
 
 def _fails(command: str) -> set[str]:
     findings = linter.lint(
-        "ring admission test", command, "pytorch:reviewed",
-        {"HF_TOKEN": "injected-by-owner"}, None,
+        "ring admission test",
+        command,
+        "pytorch:reviewed",
+        {"HF_TOKEN": "injected-by-owner"},
+        None,
     )
     return {f["rule"] for f in findings if f["severity"] == "FAIL"}
 
