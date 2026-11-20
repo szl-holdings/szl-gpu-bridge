@@ -224,6 +224,7 @@ class TerminalContract(unittest.TestCase):
         self.real_receipt = self.worker.receipt
         self.sleep = self.stack.enter_context(patch.object(self.worker.time, "sleep"))
         # v3.11: substitute the receipt-readback network boundary.
+        self.real_readback_fetch = self.worker._readback_fetch
         self.stack.enter_context(patch.object(self.worker, "_readback_fetch", fetch))
         self.stack.enter_context(
             patch.object(
