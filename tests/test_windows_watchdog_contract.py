@@ -470,7 +470,6 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
             self.assertNotEqual(stray.returncode, 0)
             self.assertIn("SOURCE_PARITY_STRAY_CR", stray.stderr)
 
-
     @unittest.skipUnless(
         WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
     )
@@ -480,9 +479,7 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
             base = Path(dirname)
             marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
             self.assertIn(marker, self.daemon)
-            snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(
-                marker, 1
-            )[0]
+            snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
             test_script = (
                 "$ErrorActionPreference = 'Stop'\n"
                 "$Lock = $env:SZL_TEST_LEASE_PATH\n"
@@ -575,6 +572,7 @@ Write-Output 'RELEASE_RECOVERED'
             )
             self.assertIn("CONTENDER_DENIED", output)
             self.assertIn("RELEASE_RECOVERED", output)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
