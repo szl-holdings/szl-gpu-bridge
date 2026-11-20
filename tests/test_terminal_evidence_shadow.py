@@ -122,7 +122,9 @@ class TerminalEvidenceTests(unittest.TestCase):
             trainer_markers=[],
         )
         result = s.evaluate(row)
-        self.assertNotIn("STOPPED_LABEL_RUNNING_ACTUAL_REPORTED", result["reason_codes"])
+        self.assertNotIn(
+            "STOPPED_LABEL_RUNNING_ACTUAL_REPORTED", result["reason_codes"]
+        )
         self.assertEqual(result["risk"], "TRAINING_EVIDENCE_UNVERIFIED")
         self.assertFalse(result["training_dispatch_authorized"])
 
