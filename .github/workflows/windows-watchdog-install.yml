@@ -43,8 +43,8 @@ jobs:
           }
           $task = Get-ScheduledTask -TaskName 'SZL-GPU-Bridge' -ErrorAction SilentlyContinue
           $daemon = Test-Path -LiteralPath 'C:\szl-bridge\daemon.ps1' -PathType Leaf
-          if ($null -eq $task -and -not $daemon) {
-            throw 'This machine is not bound to the existing SZL GPU bridge.'
+          if ($null -eq $task -or -not $daemon) {
+            throw 'Existing owner prerequisites unavailable: both primary task and installed daemon are required.'
           }
           if ("$(git rev-parse HEAD)" -ne $env:GITHUB_SHA) {
             throw 'Checkout does not own the exact event revision.'
