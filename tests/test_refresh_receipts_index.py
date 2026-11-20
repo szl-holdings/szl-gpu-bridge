@@ -80,9 +80,7 @@ class RefreshTests(unittest.TestCase):
             snap.mkdir()
             with (
                 patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
-                patch.object(
-                    R, "resolve_revision", return_value="a" * 40
-                ) as resolve,
+                patch.object(R, "resolve_revision", return_value="a" * 40) as resolve,
                 patch.object(R, "snapshot") as snapshot,
                 patch.object(R, "publish") as publish,
             ):
