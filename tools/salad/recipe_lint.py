@@ -106,6 +106,35 @@ def lint(name: str, command: str, image: str, env: dict | None,
     elif pinset and pinset not in matched_sets:
         fail("R5_PINSET", f"declared pinset {pinset} not satisfied (found {matched_sets})")
 
+    # The reviewed live worker explicitly refuses the TRL 0.15-0.19
+    # two-field SFTConfig alias overlap (max_length/max_seq_length).
+    # The historical LEGACY pin-set is therefore insufficient to admit
+    # a command that executes salad_worker.py. Prevent the known 20-second
+    # fail/restart/bill cycle *before* any provider create/scale request.
+    if "salad_worker.py" in command and "trl==0.17.0" in command:
+        fail(
+            "R5_KNOWN_FATAL_TRL_WORKER_PAIR",
+            "salad_worker.py with trl==0.17.0 is a measured fail-closed "
+            "SFTConfig alias-overlap boot loop; use independently verified "
+            "runtime pins and a revision-pinned worker before launch",
+        )
+
+    # A previously green lint must not authorize an arbitrarily changed
+    # GitHub main worker at the next paid boot. This checks the known public
+    # GitHub raw/blob URL forms, without making a network request.
+    if re.search(
+        r"(?:raw\\.githubusercontent\\.com|github\\.com)/szl-holdings/"
+        r"szl-gpu-bridge/(?:blob/|raw/|refs/heads/)?main/"
+        r"[^\\s'\"<>]*salad_worker\\.py",
+        command,
+        flags=re.I,
+    ):
+        fail(
+            "R5_MOVING_WORKER_REVISION",
+            "moving main worker fetch in a paid Salad command; pin the "
+            "worker to an independently verified immutable commit before launch",
+        )
+
     # R6 resilience block (boot fragility class)
     for marker, rule, hint in (
         ("1.1.1.1", "R6_RESOLV", "resolv.conf fixup marker missing"),
