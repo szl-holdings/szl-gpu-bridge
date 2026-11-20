@@ -155,6 +155,13 @@ def _reviewers(rows, source_rev, patch):
         normalized.append((role, family, row["verdict"], row["highest_risk"]))
     if roles != {"proposer", "adversary"} or families != {"kimi", "mistral"}:
         raise Hold("REVIEWER_COVERAGE_INVALID")
+    # Required roles and families being present does not bind a model to
+    # the correct role; a swapped pair could otherwise look like agreement.
+    if {(role, family) for role, family, _, _ in normalized} != {
+        ("proposer", "kimi"),
+        ("adversary", "mistral"),
+    }:
+        raise Hold("REVIEWER_IDENTITY_INVALID")
     # Hash inequality is a syntactic check, not proof of independent thinking.
     if len(prompts) != 2 or len(responses) != 2:
         raise Hold("DECLARED_REVIEWS_NOT_DISTINCT")
