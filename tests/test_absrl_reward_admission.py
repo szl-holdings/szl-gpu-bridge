@@ -118,7 +118,9 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
         for node in tree.body:
             if isinstance(node, ast.Import):
                 self.assertFalse(
-                    prohibited.intersection(alias.name.split(".")[0] for alias in node.names)
+                    prohibited.intersection(
+                        alias.name.split(".")[0] for alias in node.names
+                    )
                 )
             elif isinstance(node, ast.ImportFrom) and node.module:
                 self.assertNotIn(node.module.split(".")[0], prohibited)
