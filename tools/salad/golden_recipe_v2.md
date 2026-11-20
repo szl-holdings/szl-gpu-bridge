@@ -72,6 +72,14 @@ self-heal boot, ring family never first-passed (historical PR #279 merged; curre
 
 ## 5. Source-only 2026-11-20 paid-fleet admission correction
 
+The static linter no longer accepts an entire pin-set mentioned only in
+standalone shell comments or display-only `echo`/`printf` lines. These are
+negative controls, not proof that the remaining version strings are installed:
+inline comments, heredocs, shell variables, indirect downloads and resolver
+behavior remain outside the bounded static classifier. Require the exact
+candidate image to pass independent runtime/import and pinned-version checks
+before allocating billable GPUs.
+
 The static linter now denies (a) a command executing `salad_worker.py` with the
 known-fatal `trl==0.17.0` overlap and (b) known GitHub URLs that fetch the
 worker from the moving `main` branch. This closes two known misleading
