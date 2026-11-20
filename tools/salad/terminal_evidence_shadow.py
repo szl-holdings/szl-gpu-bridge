@@ -152,7 +152,7 @@ def evaluate(observation):
         reasons.add("REPEATED_EXIT0_SUSPECTED")
     if {"PROBE_READY", "INSTANCE_RUNNING"} & set(observation["events"]):
         reasons.add("PROVIDER_PROBE_NOT_TRAINER_PROGRESS")
-    if all(claims.values()):
+    if any(claims.values()):
         reasons.add("SELF_REPORTED_EVIDENCE_NOT_INDEPENDENTLY_VERIFIED")
 
     if "REPEATED_EXIT0_SUSPECTED" in reasons:

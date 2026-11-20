@@ -84,6 +84,31 @@ class TerminalEvidenceTests(unittest.TestCase):
         ):
             self.assertFalse(value[name])
 
+    def test_each_partial_self_report_is_unverified(self):
+        # A single asserted signer, final hash, fence or backup field is not
+        # independently corroborated merely because others are False.
+        for key in sorted(s.CLAIMS):
+            with self.subTest(claim=key):
+                fields = {name: (name == key) for name in s.CLAIMS}
+                result = s.evaluate(sample(claimed_evidence=fields))
+                self.assertIn(
+                    "SELF_REPORTED_EVIDENCE_NOT_INDEPENDENTLY_VERIFIED",
+                    result["reason_codes"],
+                )
+                self.assertEqual(result["decision"], "HOLD_NO_PROVIDER_ACTION")
+                self.assertFalse(result["training_completed"])
+                self.assertFalse(result["start_stop_scale_authorized"])
+
+    def test_no_self_report_does_not_invent_a_positive_claim(self):
+        result = s.evaluate(
+            sample(claimed_evidence={key: False for key in s.CLAIMS})
+        )
+        self.assertNotIn(
+            "SELF_REPORTED_EVIDENCE_NOT_INDEPENDENTLY_VERIFIED",
+            result["reason_codes"],
+        )
+        self.assertFalse(result["training_completed"])
+
     def test_unknown_actual_counts_not_zero(self):
         value = s.evaluate(sample(actual_counts=None))
         self.assertIn("REPLICA_COUNTS_PARTIALLY_UNOBSERVED", value["reason_codes"])
