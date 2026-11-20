@@ -83,6 +83,31 @@ class RefreshTests(unittest.TestCase):
                 build.assert_not_called()
                 publish.assert_not_called()
 
+    def test_repeated_429_on_same_pinned_snapshot_never_creates_index(self):
+        error = RuntimeError("rate limited")
+        error.response = SimpleNamespace(status_code=429)
+        wrapper = RuntimeError("snapshot wrapper")
+        wrapper.__cause__ = error
+        revision = "a" * 40
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "github-output"
+            with (
+                patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
+                patch.object(R, "resolve_revision", return_value=revision),
+                patch.object(R, "snapshot", side_effect=[error, wrapper]) as snapshot,
+                patch.object(R, "publish") as publish,
+            ):
+                for _ in range(2):
+                    self.assertEqual(R.main(["--workdir", temp]), 3)
+            self.assertEqual(snapshot.call_count, 2)
+            for call in snapshot.call_args_list:
+                self.assertEqual(call.args, (R.DEFAULT_REPO, revision, root / "snapshot"))
+                self.assertTrue(call.kwargs["read_only"])
+            self.assertEqual(output.read_text(), "check_status=CHECK_UNAVAILABLE\n" * 2)
+            self.assertFalse((root / "new-index.jsonl").exists())
+            publish.assert_not_called()
+
     def test_other_failures_and_publish_429_still_raise(self):
         for mode, status in (("check", 403), ("publish", 429)):
             error = RuntimeError("HTTP response")
