@@ -134,10 +134,12 @@ class TerminalContract(unittest.TestCase):
             # v3.11 seam: the worker readback goes through its module-level
             # _readback_fetch(url, token, max_bytes) network boundary; this
             # fixture substitutes it (no socket may be opened in tests).
-            fixture.receipt_downloads.append({"url": url, "token": token, "max_bytes": max_bytes})
+            fixture.receipt_downloads.append(
+                {"url": url, "token": token, "max_bytes": max_bytes}
+            )
             if fixture.readback_error:
                 raise fixture.readback_error
-            path_in_repo = url[url.index("mesh/"):]
+            path_in_repo = url[url.index("mesh/") :]
             content = fixture.receipt_bytes[path_in_repo]
             if fixture.corrupt_readback:
                 content += b"corrupt"
