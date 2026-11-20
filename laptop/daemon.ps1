@@ -46,6 +46,7 @@ try {
   exit 78
 }
 
+$DaemonFailureExit = 0
 try {
   if (-not (Test-Path $Ledger)) { New-Item -ItemType File -Path $Ledger -Force | Out-Null }
   $seen = @{}
@@ -111,7 +112,13 @@ try {
     }
   }
 } catch {
-  Log "daemon error (fail closed, no job ledger mutation): $($_.Exception.Message)"
+  $DaemonFailureExit = 70
+  try {
+    Log "daemon unexpected exception; reconcile per-job ledger and receipts before retry: $($_.Exception.Message)"
+  } catch {
+    [Console]::Error.WriteLine("SZL_DAEMON_ERROR_LOG_UNAVAILABLE; exit=70")
+  }
 } finally {
   $LockHandle.Dispose()
 }
+if ($DaemonFailureExit -ne 0) { exit $DaemonFailureExit }
