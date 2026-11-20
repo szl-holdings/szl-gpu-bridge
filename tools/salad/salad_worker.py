@@ -247,6 +247,20 @@ def transport_label(error: Exception) -> str:
         status = getattr(error, "code", None)
     return f"HTTP {status}" if type(status) is int else type(error).__name__
 
+def _readback_fetch(url: str, token: str, max_bytes: int) -> bytes:
+    # v3.11 seam: the single network boundary of the receipt readback, kept
+    # module-level so contract tests can substitute it deterministically.
+    # A direct immutable-revision GET via stdlib; the attempted bytes are
+    # byte-compared against the response body.
+    import urllib.request
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=120) as response:
+        status = int(getattr(response, "status", 200) or 200)
+        if status != 200:
+            raise ReceiptError(f"receipt readback HTTP {status}")
+        return response.read(max_bytes)
+
 
 def receipt_retry(operation, stage):
     # v3.9: a fleet-wide Hub commit storm (many lanes sharing one receipt repo)
@@ -303,8 +317,6 @@ class ReceiptChannel:
                 raise ReceiptError("model receipt channel is not verified private") from None
 
     def publish(self, value):
-        from huggingface_hub import hf_hub_download
-
         raw = (json.dumps(value, indent=2, allow_nan=False) + "\n").encode()
         digest = value["receipt_sha256"]
         path = f"mesh/salad-{digest}.json"
@@ -333,19 +345,15 @@ class ReceiptChannel:
             # v3.11: hf_hub_download on the node-resolved hub 2.4.0 stack dies
             # with TypeError "process() takes no keyword arguments" inside its
             # httpx2 response decoder (hubprobe-k23, 2026-11-20), route-
-            # independent (force_download or not). Readback is now a direct,
-            # immutable-revision HTTPS GET through stdlib: same byte
-            # guarantee, always network-fresh, retry semantics unchanged.
-            import urllib.request
+            # independent (force_download or not). Readback now goes through
+            # _readback_fetch: a direct, immutable-revision HTTPS GET via
+            # stdlib - same byte guarantee, always network-fresh, retry
+            # semantics unchanged.
             prefix = "datasets/" if self.repo_type == "dataset" else ""
             url = f"https://huggingface.co/{prefix}{self.repo_id}/resolve/{revision}/{path}"
-            req = urllib.request.Request(
-                url, headers={"Authorization": f"Bearer {self.token}"} if self.token else {})
-            with urllib.request.urlopen(req, timeout=120) as response:
-                status = int(getattr(response, "status", 200) or 200)
-                if status != 200:
-                    raise ReceiptError(f"receipt readback HTTP {status}")
-                observed = response.read(len(raw) + 1)
+            observed = _readback_fetch(url, self.token, len(raw) + 1)
+            if observed != raw:
+                raise ReceiptError("receipt byte readback does not match the attempted bytes")
             if observed != raw:
                 raise ReceiptError("receipt byte readback does not match the attempted bytes")
 
