@@ -138,6 +138,10 @@ def evaluate(observation):
         and actual["running"] == 0
     ):
         reasons.add("RUNNING_LABEL_ZERO_ACTUAL_REPORTED")
+    if actual is not None and observation["group_status"] == "STOPPED" and actual["running"] > 0:
+        # Both fields are untrusted: the contradiction requires reconciliation,
+        # not an assertion that the provider is truly running or stopped.
+        reasons.add("STOPPED_LABEL_RUNNING_ACTUAL_REPORTED")
     if actual is not None and desired is not None and sum(actual.values()) > desired:
         reasons.add("NONATOMIC_OR_CONFLICTING_INSTANCE_COUNTS")
     if "ALREADY_DONE" in tags or "FRONTIER_EXIT" in tags:
@@ -151,15 +155,14 @@ def evaluate(observation):
     if all(claims.values()):
         reasons.add("SELF_REPORTED_EVIDENCE_NOT_INDEPENDENTLY_VERIFIED")
 
-    risk = (
-        "RESTART_LOOP_SUSPECTED_NOT_PROVEN"
-        if "REPEATED_EXIT0_SUSPECTED" in reasons
-        else (
-            "REPORTED_REPLICA_GAP"
-            if "RUNNING_LABEL_ZERO_ACTUAL_REPORTED" in reasons
-            else "TRAINING_EVIDENCE_UNVERIFIED"
-        )
-    )
+    if "REPEATED_EXIT0_SUSPECTED" in reasons:
+        risk = "RESTART_LOOP_SUSPECTED_NOT_PROVEN"
+    elif "STOPPED_LABEL_RUNNING_ACTUAL_REPORTED" in reasons:
+        risk = "REPORTED_STATUS_INSTANCE_CONFLICT"
+    elif "RUNNING_LABEL_ZERO_ACTUAL_REPORTED" in reasons:
+        risk = "REPORTED_REPLICA_GAP"
+    else:
+        risk = "TRAINING_EVIDENCE_UNVERIFIED"
     return {
         "schema": RESULT,
         "decision": "HOLD_NO_PROVIDER_ACTION",
