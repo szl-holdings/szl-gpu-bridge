@@ -75,11 +75,10 @@ class RecipeRuntimeAdmissionTests(unittest.TestCase):
             _fails(_command("LEGACY", "run_other_legacy_tool.py")),
         )
 
-    def test_static_pass_cannot_claim_training(self) -> None:
-        # A deliberately nonexistent commit digest is enough to demonstrate
-        # that linting is only static syntax and not provider/source attestation.
-        self.assertFalse(_fails(_command("MODERN", PINNED)))
-        self.assertNotIn("saladcloud", sys.modules)
+    def test_legacy_moving_main_emits_both_independent_holds(self) -> None:
+        fails = _fails(_command("LEGACY", MOVING_MAIN))
+        self.assertIn("R5_KNOWN_FATAL_TRL_WORKER_PAIR", fails)
+        self.assertIn("R5_MOVING_WORKER_REVISION", fails)
 
 
 if __name__ == "__main__":
