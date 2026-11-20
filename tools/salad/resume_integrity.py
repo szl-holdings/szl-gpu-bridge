@@ -66,7 +66,7 @@ def inspect_pinned_checkpoint(api, repo_id, *, expected_steps=None):
     # This resume layout accepts files directly inside checkpoint-N only.
     # Reject nested Hub metadata before broad snapshot_download can fetch it;
     # post-download local coverage checks remain defense in depth.
-    if any("/" in name[len(prefix):] for name in selected):
+    if any("/" in name[len(prefix) :] for name in selected):
         raise ResumeHold("CHECKPOINT_UNEXPECTED_NESTING")
     if any(prefix + item not in names for item in REQUIRED):
         raise ResumeHold("CHECKPOINT_REQUIRED_STATE_MISSING")
