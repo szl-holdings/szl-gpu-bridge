@@ -211,7 +211,9 @@ def _read_file(path):
             object_pairs_hook=_unique,
             parse_constant=_nonfinite,
         )
-    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+    except ShadowHold:
+        raise
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as exc:
         raise ShadowHold("INVALID_JSON") from exc
     return evaluate(value)
 
