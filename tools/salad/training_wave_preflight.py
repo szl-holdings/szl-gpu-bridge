@@ -23,6 +23,7 @@ MAX_INPUT_BYTES = 2 * 1024 * 1024
 MAX_MODELS = 500
 MAX_MICRO_USD = 10**13
 SHA = re.compile(r"^[0-9a-f]{64}$")
+GIT_SHA40 = re.compile(r"^[0-9a-f]{40}$")
 MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 LANE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{1,96}$")
 SKU = re.compile(r"^[a-zA-Z0-9._-]{2,64}$")
@@ -134,7 +135,16 @@ def _bounded_json(path):
 
 
 def _sha(text):
+    """SHA-256 for content fingerprints, manifests and evidence receipts."""
     return isinstance(text, str) and SHA.fullmatch(text) is not None
+
+
+def _git_revision(text):
+    """Git object ID syntax: immutable 40-hex commit, not SHA-256 digest.
+
+    Existence, signer, branch ownership and provider readback remain unverified.
+    """
+    return type(text) is str and GIT_SHA40.fullmatch(text) is not None
 
 
 def _id(text):
@@ -196,11 +206,11 @@ def _row(row):
         and type(row["artifact_kind"]) is str
         and row["artifact_kind"] in ARTIFACTS
         and _id(row["base_model_id"])
-        and _sha(row["base_revision"])
+        and _git_revision(row["base_revision"])
         and _id(row["dataset_id"])
-        and _sha(row["dataset_revision"])
+        and _git_revision(row["dataset_revision"])
         and _sha(row["recipe_sha256"])
-        and _sha(row["trainer_commit_sha"])
+        and _git_revision(row["trainer_commit_sha"])
     ):
         _raise("LINEAGE_INCOMPLETE")
     if (

@@ -93,3 +93,46 @@ This task did not establish trained status of ~401 Hub models. A CDP readback
 of the existing Edge Cloudflare tab displayed sign-in, not monetization
 analytics. Snowflake tab readback was unavailable. Do not report either
 provider fully wired from those observations.
+
+## Revision identity versus artifact checksum ? 2026-11-20 follow-up
+
+**Source-only compatibility correction:** GitHub and Hugging Face repository
+revisions read through the current Git SHA-1 APIs are immutable **40-character
+lowercase hexadecimal commit IDs**. A SHA-256 of recipe bytes, catalog bytes,
+or a separate canary/evaluation receipt is a **64-character hexadecimal
+checksum**. These are different identity domains, and neither establishes a
+signature or independent training/evaluation success.
+
+The original preflight used a 64-hex \`SHA\` validator for
+\`base_revision\`, \`dataset_revision\` and \`trainer_commit_sha\`. It rejected
+actual pinned Git commit IDs and syntactically accepted arbitrary SHA-256
+strings as if they named a repository revision. The distinct
+\`_git_revision\` validator now requires 40-hex syntax for those fields while
+\`_sha\` still requires 64-hex for content and receipt fingerprints.
+The exact source commit must be independently resolved at the correct
+repository before a real execution gate could be considered.
+
+This is **not an authorization improvement** by itself; all preflight
+reports remain \`HOLD_NO_COMPUTE\`, including externally reported valid
+credentials or budget. Input rights, dataset license, canary evaluation
+and receipt digest fields remain caller-reported and unsigned.
+
+Kimi K3.1 Pro and Mistral Large 4 separately identified this mismatch in
+public-source advisory reviews via local Ollama. The third-party
+\`treyleo16/gpt-6-astra:latest\` alias also noted it; its suggested
+single \`40|64\` regex was **not adopted** because it conflates identity
+types. Neither alias proves access to proprietary OpenAI/Mistral/Moonshot
+training internals. Several extra peer claims about missing global gates
+were rejected after inspecting the *full* \`evaluate\` body rather than
+the bounded excerpt the models saw.
+
+Published techniques worth independently evaluating rather than copying:
+[TRL SFTTrainer](https://huggingface.co/docs/trl/sft_trainer) for LoRA,
+assistant-only loss and validated TRL version compatibility;
+[NVIDIA NeMo AutoModel](https://docs.nvidia.com/nemo/automodel/get-started/about)
+for configuration-bound training recipes and distributed checkpointing;
+and [PyTorch torchtune](https://github.com/meta-pytorch/torchtune)
+for source-visible LoRA/DPO recipes. Before a live experiment, require a
+fixed held-out evaluation, legal data rights, exact image/dependency
+resolution, checkpoint/resume proof, provider auth and owner-controlled
+cost cap. Do not launch 401 paid model jobs from a namespace census.

@@ -20,11 +20,11 @@ def model(**changes):
         "intent": "train",
         "artifact_kind": "adapter",
         "base_model_id": "Qwen/test-base",
-        "base_revision": "b" * 64,
+        "base_revision": "b" * 40,
         "dataset_id": "SZLHOLDINGS/test-data",
-        "dataset_revision": "c" * 64,
+        "dataset_revision": "c" * 40,
         "recipe_sha256": "d" * 64,
-        "trainer_commit_sha": "e" * 64,
+        "trainer_commit_sha": "e" * 40,
         "eval_receipt_sha256": "f" * 64,
         "canary_receipt_sha256": "1" * 64,
         "license_rights_state": "OWNER_REPORTED_REVIEWED",
@@ -319,6 +319,66 @@ class TrainingWavePreflightTests(unittest.TestCase):
             source.write_text(json.dumps(broken), encoding="utf-8")
             self.assertEqual(s.main([str(source), str(output)]), 1)
             self.assertNotIn("test_secret", output.read_text(encoding="utf-8"))
+
+    def test_exact_git_hub_revision_widths(self):
+        # GitHub and HF immutable repo commits are 40-hex SHA-1 source IDs,
+        # not 64-hex SHA-256 content digests. Structural acceptance is NOT
+        # independent provider/source verification or training admission.
+        good = model(
+            base_revision="b" * 40,
+            dataset_revision="c" * 40,
+            trainer_commit_sha="e" * 40,
+        )
+        self.assertIs(s._row(good), good)
+        outcome = s.evaluate(plan(models=[good]))
+        self.assertEqual(outcome["decision"], "HOLD_NO_COMPUTE")
+        self.assertFalse(outcome["training_authorized"])
+
+    def test_git_revision_fields_cannot_accept_recipe_digest_width(self):
+        good = model(
+            base_revision="b" * 40,
+            dataset_revision="c" * 40,
+            trainer_commit_sha="e" * 40,
+        )
+        for name in ("base_revision", "dataset_revision", "trainer_commit_sha"):
+            with self.subTest(field=name):
+                bad = dict(good, **{name: "a" * 64})
+                with self.assertRaisesRegex(s.PreflightError, "LINEAGE_INCOMPLETE"):
+                    s._row(bad)
+
+    def test_sha256_artifact_digests_remain_64_hex(self):
+        good = model(
+            base_revision="b" * 40,
+            dataset_revision="c" * 40,
+            trainer_commit_sha="e" * 40,
+        )
+        for name in ("recipe_sha256", "canary_receipt_sha256", "eval_receipt_sha256"):
+            with self.subTest(field=name):
+                bad = dict(good, **{name: "f" * 40})
+                with self.assertRaisesRegex(s.PreflightError, "LINEAGE_INCOMPLETE"):
+                    s._row(bad)
+        with self.assertRaisesRegex(s.PreflightError, "INPUT_INVALID"):
+            s.evaluate(plan(catalog_sha256="f" * 40))
+
+    def test_git_revision_rejects_moving_ref_and_invalid_case(self):
+        good = model(
+            base_revision="b" * 40,
+            dataset_revision="c" * 40,
+            trainer_commit_sha="e" * 40,
+        )
+        for value in (
+            "main",
+            "refs/heads/main",
+            "a" * 39,
+            "a" * 41,
+            "G" * 40,
+            "A" * 40,
+            "a" * 64,
+            "",
+        ):
+            with self.subTest(value_length=len(value)):
+                with self.assertRaisesRegex(s.PreflightError, "LINEAGE_INCOMPLETE"):
+                    s._row(dict(good, base_revision=value))
 
 
 if __name__ == "__main__":
