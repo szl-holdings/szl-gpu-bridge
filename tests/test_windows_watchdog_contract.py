@@ -91,13 +91,13 @@ class WindowsWatchdogContractTests(unittest.TestCase):
         self.assertIn("New-TimeSpan -Hours 26", self.installer)
         self.assertIn("daemon.ps1", self.installer)
         self.assertIn("Test-DaemonLogFreshness", self.watchdog)
-        self.assertIn("if (Test-Path $Lock)", self.daemon)
-        self.assertIn("$age.TotalHours -lt 26", self.daemon)
-        self.assertIn("New-Item -ItemType File -Path $Lock -Force", self.daemon)
+        self.assertIn("[System.IO.File]::Open(", self.daemon)
+        self.assertIn("[System.IO.FileMode]::OpenOrCreate", self.daemon)
+        self.assertIn("[System.IO.FileShare]::None", self.daemon)
         self.assertIn("finally {", self.daemon)
-        self.assertIn(
-            "Remove-Item $Lock -Force -ErrorAction SilentlyContinue", self.daemon
-        )
+        self.assertIn("$LockHandle.Dispose()", self.daemon)
+        self.assertNotIn("New-Item -ItemType File -Path $Lock -Force", self.daemon)
+        self.assertNotIn("Remove-Item $Lock", self.daemon)
 
     def test_state_reset_does_not_pollute_the_success_pipeline(self) -> None:
         self.assertIn(
