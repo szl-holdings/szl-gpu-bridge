@@ -1,16 +1,18 @@
 name: Windows GPU bridge watchdog install
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "laptop/watchdog.ps1"
-      - "laptop/install_watchdog.ps1"
-      - "laptop/daemon.ps1"
-      - "laptop/storage_preflight.py"
-      - "laptop/source_parity.ps1"
-      - ".github/workflows/windows-watchdog-install.yml"
-  workflow_dispatch: {}
+  # Never run an action-bearing watchdog installer automatically on push/merge.
+  workflow_dispatch:
+    inputs:
+      authorize_install:
+        description: "Explicit one-run owner-authorized installation, default denied"
+        required: true
+        type: boolean
+        default: false
+      reviewed_source_sha:
+        description: "Exact 40-character protected-main commit reviewed for this run"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -21,10 +23,28 @@ concurrency:
 
 jobs:
   install-and-prove:
+    # GitHub variables and task presence are defense in depth, not trusted owner attestations.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.authorize_install == true && vars.SZL_WATCHDOG_INSTALL_ENABLED == 'true' && github.actor == vars.SZL_WATCHDOG_INSTALL_OPERATOR }}
     name: Install, reconcile, and prove bounded liveness
     runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 20
     steps:
+      - name: Require immutable reviewed main and intended owner runner
+        shell: powershell
+        env:
+          SZL_REVIEWED_SOURCE_SHA: ${{ inputs.reviewed_source_sha }}
+          SZL_APPROVED_RUNNER_NAME: ${{ vars.SZL_WATCHDOG_APPROVED_RUNNER_NAME }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF -cne 'refs/heads/main') { throw 'WATCHDOG_NOT_PROTECTED_MAIN' }
+          if ($env:SZL_REVIEWED_SOURCE_SHA -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:SZL_REVIEWED_SOURCE_SHA -cne $env:GITHUB_SHA) {
+            throw 'WATCHDOG_REVIEWED_SHA_MISMATCH'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SZL_APPROVED_RUNNER_NAME) -or
+              $env:RUNNER_NAME -cne $env:SZL_APPROVED_RUNNER_NAME) {
+            throw 'WATCHDOG_OWNER_RUNNER_UNVERIFIED'
+          }
       - name: Checkout exact protected source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -43,8 +63,31 @@ jobs:
           }
           $task = Get-ScheduledTask -TaskName 'SZL-GPU-Bridge' -ErrorAction SilentlyContinue
           $daemon = Test-Path -LiteralPath 'C:\szl-bridge\daemon.ps1' -PathType Leaf
-          if ($null -eq $task -and -not $daemon) {
-            throw 'This machine is not bound to the existing SZL GPU bridge.'
+          if ($null -eq $task -or -not $daemon) {
+            throw 'Existing owner prerequisites unavailable: both primary task and installed daemon are required.'
+          }
+          # Presence is not authorization: inspect one exact task action, before install.
+          function Test-ReviewedPrimaryTaskAction {
+            param($Task)
+            if ($null -eq $Task -or @($Task).Count -ne 1) { return $false }
+            if ($null -eq $Task.Actions -or @($Task.Actions).Count -ne 1) { return $false }
+            if ([string]$Task.TaskPath -cne '\') { return $false }
+            if ($null -eq $Task.Principal) { return $false }
+            $account = [string]$Task.Principal.UserId
+            if ([string]::IsNullOrWhiteSpace($account)) { return $false }
+            if ($account -match '^(SYSTEM|NT AUTHORITY\\(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)|LOCAL SERVICE|NETWORK SERVICE)$') { return $false }
+            if ([string]$Task.Principal.LogonType -notin @('Interactive','S4U')) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$env:SystemRoot)) { return $false }
+            $expectedExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $expectedArgs = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "C:\szl-bridge\daemon.ps1"'
+            $action = @($Task.Actions)[0]
+            if (-not [string]::Equals([string]$action.Execute, $expectedExe, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if (-not [string]::Equals([string]$action.Arguments, $expectedArgs, [StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if (-not [string]::IsNullOrWhiteSpace([string]$action.WorkingDirectory)) { return $false }
+            return $true
+          }
+          if (-not (Test-ReviewedPrimaryTaskAction -Task $task)) {
+            throw 'Existing primary task action is unverified or differs from reviewed installer.'
           }
           if ("$(git rev-parse HEAD)" -ne $env:GITHUB_SHA) {
             throw 'Checkout does not own the exact event revision.'

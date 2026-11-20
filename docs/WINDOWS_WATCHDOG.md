@@ -68,10 +68,32 @@ read, and inbound ports were not opened.
 ## Installation
 
 The protected-main workflow
-`.github/workflows/windows-watchdog-install.yml` runs on an existing Windows x64
-self-hosted bridge node after the package merges. It first requires either the
-existing `SZL-GPU-Bridge` task or `C:\szl-bridge\daemon.ps1`, preventing the
-package from silently installing on an unrelated Windows runner.
+`.github/workflows/windows-watchdog-install.yml` is **manual-only** and
+**default-deny**. A merge, push, PR or schedule cannot run its task installer.
+The repository administrator must independently verify a trusted operator,
+the actual sole authorized owner runner and its permissions before setting
+`SZL_WATCHDOG_INSTALL_ENABLED=true`, `SZL_WATCHDOG_INSTALL_OPERATOR`, and
+`SZL_WATCHDOG_APPROVED_RUNNER_NAME`. Even then, a manual dispatch requires
+an explicit Boolean authorization and an exact immutable main SHA that
+matches the event checkout. A missing/mismatching operator, runner, opt-in,
+ref or SHA refuses installation before any task mutation. Repository variables,
+runner names and a green workflow are **not** independent cryptographic owner
+attestation; no unverified GitHub environment is relied upon as protection.
+The workflow must run only on the independently established Windows x64 owner
+runner after separate operator review. It requires **both** the existing `SZL-GPU-Bridge` scheduled task **and**
+the already-installed bridge daemon before any installation. A copied daemon
+file without a previously established primary task must not create a new
+bridge owner. The pre-install workflow additionally fails closed unless the exact primary
+task has one root-scoped action running the canonical Windows PowerShell
+executable and the reviewed daemon argument vector, without an alternate
+working directory or a service-account principal. This is **source-only
+verification of task shape**, not proof of trusted cross-host ownership.
+The local read-only inspection on 2026-11-20 found the primary task's executable
+and arguments differ from the reviewed installer, so **do not install or
+restart**: correct only after independent owner investigation and review.
+
+This presence check is not independent proof of sole authorized
+cross-host ownership: #260 remains HOLD pending owner/operator attestation.
 
 **Source parity is mandatory before task mutation.** The workflow independently
 compares the installed `daemon.ps1` and `storage_preflight.py` to the exact
