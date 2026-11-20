@@ -100,9 +100,7 @@ class TerminalEvidenceTests(unittest.TestCase):
                 self.assertFalse(result["start_stop_scale_authorized"])
 
     def test_no_self_report_does_not_invent_a_positive_claim(self):
-        result = s.evaluate(
-            sample(claimed_evidence={key: False for key in s.CLAIMS})
-        )
+        result = s.evaluate(sample(claimed_evidence={key: False for key in s.CLAIMS}))
         self.assertNotIn(
             "SELF_REPORTED_EVIDENCE_NOT_INDEPENDENTLY_VERIFIED",
             result["reason_codes"],
