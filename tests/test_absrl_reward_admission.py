@@ -62,13 +62,18 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
         self.assertTrue(
             any(
                 isinstance(n, ast.Return)
-                and isinstance(n.value, ast.Attribute)
-                and n.value.attr == "TRAINING_HOLD_EXIT_CODE"
+                and isinstance(n.value, ast.Name)
+                and n.value.id == "TRAINING_HOLD_EXIT_CODE"
                 for handler in first.handlers
                 for n in ast.walk(handler)
             )
         )
-        self.assertLess(first.lineno, source.index("ap = argparse.ArgumentParser()") + 1)
+        parser_line = next(
+            index
+            for index, line in enumerate(source.splitlines(), 1)
+            if "ap = argparse.ArgumentParser()" in line
+        )
+        self.assertLess(first.lineno, parser_line)
         self.assertNotIn("rewards_v2", source)
 
     def test_v1_reward_stays_explicitly_unqualified(self):
