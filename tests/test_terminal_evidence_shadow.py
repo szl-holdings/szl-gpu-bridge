@@ -236,6 +236,23 @@ class TerminalEvidenceTests(unittest.TestCase):
             self.assertNotIn("PRIVATE_NEVER_ECHO", stdout.getvalue())
             self.assertEqual(json.loads(stdout.getvalue())["risk"], "INVALID_INPUT")
 
+    def test_excessive_json_integer_digits_fail_closed(self):
+        # CPython 3.11+ may raise ValueError for integer literals >4300 digits.
+        # Always return sanitized INVALID_INPUT and exit 78, not a traceback.
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "oversized_integer.json"
+            path.write_bytes(
+                b'{"schema":"' + s.SCHEMA.encode() + b'","extra":'
+                + b"9" * 5000 + b"}"
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                self.assertEqual(s.main([str(path)]), 78)
+            result = json.loads(stdout.getvalue())
+            self.assertEqual(result["risk"], "INVALID_INPUT")
+            self.assertEqual(result["decision"], "HOLD_NO_PROVIDER_ACTION")
+            self.assertFalse(result["training_completed"])
+
     def test_nonfinite_and_oversized_inputs_hold(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "invalid.json"
