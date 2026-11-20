@@ -21,9 +21,7 @@ _PIN = re.compile(r"\s*(numpy|pyarrow)==([0-9]+\.[0-9]+\.[0-9]+)\s*\\?\s*\Z")
 MAX_LOCK_BYTES = 256_000
 # Specific older wheels with NumPy 1.26 documented in upstream Apache Arrow
 # issue #53954, plus the owner-reproduced 19.0.1 lane. Other pairs stay HOLD.
-_NUMPY1_ARROW = {
-    "19.0.1", "21.0.0", "22.0.0", "23.0.1", "24.0.0", "25.0.1"
-}
+_NUMPY1_ARROW = {"19.0.1", "21.0.0", "22.0.0", "23.0.1", "24.0.0", "25.0.1"}
 _NUMPY2_ARROW = {"26.0.0", "26.0.1"}
 
 
@@ -70,7 +68,11 @@ def review_pair(*, numpy: object, pyarrow: object, python: object) -> dict:
 
 def review_lock_contents(contents: object, *, python: str) -> dict:
     """Parse only NumPy and PyArrow exact pins in a bounded pip hash-lock."""
-    if type(contents) is not str or not contents or len(contents.encode("utf-8")) > MAX_LOCK_BYTES:
+    if (
+        type(contents) is not str
+        or not contents
+        or len(contents.encode("utf-8")) > MAX_LOCK_BYTES
+    ):
         return _hold("LOCK_BYTES_INVALID")
     pinned: dict[str, str] = {}
     for line in contents.splitlines():
