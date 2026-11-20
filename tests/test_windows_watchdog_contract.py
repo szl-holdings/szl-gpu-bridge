@@ -91,13 +91,13 @@ class WindowsWatchdogContractTests(unittest.TestCase):
         self.assertIn("New-TimeSpan -Hours 26", self.installer)
         self.assertIn("daemon.ps1", self.installer)
         self.assertIn("Test-DaemonLogFreshness", self.watchdog)
-        self.assertIn("if (Test-Path $Lock)", self.daemon)
-        self.assertIn("$age.TotalHours -lt 26", self.daemon)
-        self.assertIn("New-Item -ItemType File -Path $Lock -Force", self.daemon)
+        self.assertIn("[System.IO.File]::Open(", self.daemon)
+        self.assertIn("[System.IO.FileMode]::OpenOrCreate", self.daemon)
+        self.assertIn("[System.IO.FileShare]::None", self.daemon)
         self.assertIn("finally {", self.daemon)
-        self.assertIn(
-            "Remove-Item $Lock -Force -ErrorAction SilentlyContinue", self.daemon
-        )
+        self.assertIn("$LockHandle.Dispose()", self.daemon)
+        self.assertNotIn("New-Item -ItemType File -Path $Lock -Force", self.daemon)
+        self.assertNotIn("Remove-Item $Lock", self.daemon)
 
     def test_state_reset_does_not_pollute_the_success_pipeline(self) -> None:
         self.assertIn(
@@ -469,6 +469,234 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
             stray = check()
             self.assertNotEqual(stray.returncode, 0)
             self.assertIn("SOURCE_PARITY_STRAY_CR", stray.stderr)
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_daemon_lock_failure_with_unwritable_log_still_exits_hold(self) -> None:
+        """Exercise only the exact-head lease snippet, not the live daemon."""
+        with tempfile.TemporaryDirectory() as dirname:
+            base = Path(dirname)
+            marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+            self.assertIn(marker, self.daemon)
+            snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
+            test_script = (
+                "$ErrorActionPreference = 'Stop'\n"
+                "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+                "$Log = $env:SZL_TEST_LOG_PATH\n"
+                "function Log($m) { $m | Add-Content -Path $Log }\n"
+                "$LockHandle = $null\n"
+                + snippet
+                + "\nWrite-Output 'UNEXPECTED_QUEUE_REACHED'\n"
+            )
+            env = os.environ.copy()
+            env["SZL_TEST_LEASE_PATH"] = str(base / "missing-lock" / "daemon.lock")
+            env["SZL_TEST_LOG_PATH"] = str(base / "missing-log" / "daemon.log")
+            completed = subprocess.run(
+                [
+                    str(WINDOWS_POWERSHELL),
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    test_script,
+                ],
+                check=False,
+                capture_output=True,
+                env=env,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                completed.returncode,
+                78,
+                f"stdout:{completed.stdout}\nstderr:{completed.stderr}",
+            )
+            self.assertIn("logging failed", completed.stdout + completed.stderr)
+            self.assertNotIn("UNEXPECTED_QUEUE_REACHED", completed.stdout)
+            self.assertFalse((base / "missing-lock").exists())
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_file_lease_exclusive_across_processes_and_released(self) -> None:
+        """Independent job cannot obtain the same OS handle until disposal."""
+        with tempfile.TemporaryDirectory() as dirname:
+            lock = str(Path(dirname) / "isolated-lease.lock")
+            output = self.run_windows_powershell(
+                r"""
+$ErrorActionPreference = 'Stop'
+$path = $env:SZL_TEST_LEASE_PATH
+$handle = [System.IO.File]::Open(
+    $path,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+)
+try {
+    $job = Start-Job -ArgumentList $path -ScriptBlock {
+        param($p)
+        try {
+            $other = [System.IO.File]::Open(
+                $p,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+            $other.Dispose()
+            'INCORRECT_ADMISSION'
+        } catch [System.IO.IOException] {
+            'BLOCKED'
+        }
+    }
+    $null = Wait-Job $job -Timeout 15
+    $result = @(Receive-Job $job)
+    Remove-Job $job -Force
+    if ($result.Count -ne 1 -or $result[0] -ne 'BLOCKED') {
+        throw ('contending independent process was not blocked: ' + ($result -join ','))
+    }
+    Write-Output 'CONTENDER_DENIED'
+} finally {
+    $handle.Dispose()
+}
+$again = [System.IO.File]::Open(
+    $path,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+)
+$again.Dispose()
+Write-Output 'RELEASE_RECOVERED'
+""",
+                extra_env={"SZL_TEST_LEASE_PATH": lock},
+            )
+            self.assertIn("CONTENDER_DENIED", output)
+            self.assertIn("RELEASE_RECOVERED", output)
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_actual_daemon_lease_denies_contender_and_recovers(self) -> None:
+        """Test the *real* lease guard, without invoking the daemon or queue."""
+        import ctypes
+
+        marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+        self.assertIn(marker, self.daemon)
+        snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
+        script = (
+            "$ErrorActionPreference = 'Stop'\n"
+            "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+            "$Log = $env:SZL_TEST_LOG_PATH\n"
+            "function Log($m) { $m | Add-Content -Path $Log }\n"
+            "$LockHandle = $null\n"
+            + snippet
+            + "\nif ($LockHandle) { $LockHandle.Dispose() }\n"
+            "Write-Output 'LEASE_ADMITTED_WITHOUT_DISPATCH'\n"
+        )
+        with tempfile.TemporaryDirectory() as dirname:
+            base = Path(dirname)
+            lock = base / "daemon.lock"
+            log = base / "daemon.log"
+            env = os.environ.copy()
+            env["SZL_TEST_LEASE_PATH"] = str(lock)
+            env["SZL_TEST_LOG_PATH"] = str(log)
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            create = kernel.CreateFileW
+            create.argtypes = [
+                ctypes.c_wchar_p,
+                ctypes.c_uint32,
+                ctypes.c_uint32,
+                ctypes.c_void_p,
+                ctypes.c_uint32,
+                ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create.restype = ctypes.c_void_p
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel.CloseHandle.restype = ctypes.c_int
+            # Win32 GENERIC_READ|GENERIC_WRITE, dwShareMode=0, OPEN_ALWAYS.
+            handle = create(str(lock), 0xC0000000, 0, None, 4, 0x80, None)
+            invalid = ctypes.c_void_p(-1).value
+            self.assertNotIn(handle, (None, invalid), ctypes.get_last_error())
+
+            def probe() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        str(WINDOWS_POWERSHELL),
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        script,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    env=env,
+                    text=True,
+                    timeout=30,
+                )
+
+            try:
+                blocked = probe()
+                self.assertEqual(
+                    blocked.returncode,
+                    78,
+                    f"stdout:{blocked.stdout}\nstderr:{blocked.stderr}",
+                )
+                self.assertNotIn("LEASE_ADMITTED_WITHOUT_DISPATCH", blocked.stdout)
+                self.assertIn("exclusive daemon lease unavailable", log.read_text())
+            finally:
+                self.assertTrue(kernel.CloseHandle(handle))
+
+            admitted = probe()
+            self.assertEqual(
+                admitted.returncode,
+                0,
+                f"stdout:{admitted.stdout}\nstderr:{admitted.stderr}",
+            )
+            self.assertIn("LEASE_ADMITTED_WITHOUT_DISPATCH", admitted.stdout)
+            self.assertTrue(lock.exists(), "The lock sentinel must not be deleted")
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_unheld_stale_lock_path_reacquires_without_deleting_history(self) -> None:
+        """An old but UNLOCKED sentinel must not be deleted or treated as busy."""
+        marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+        self.assertIn(marker, self.daemon)
+        snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
+        script = (
+            "$ErrorActionPreference = 'Stop'\n"
+            "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+            "$Log = $env:SZL_TEST_LOG_PATH\n"
+            "function Log($m) { $m | Add-Content -Path $Log }\n"
+            "$LockHandle = $null\n"
+            + snippet
+            + "\nif ($LockHandle) { $LockHandle.Dispose() }\n"
+            "Write-Output 'OLD_UNLOCKED_PATH_ADMITTED_NO_DISPATCH'\n"
+        )
+        with tempfile.TemporaryDirectory() as dirname:
+            root = Path(dirname)
+            lock = root / "daemon.lock"
+            payload = b"historical-unheld-sentinel-must-not-be-deleted\n"
+            lock.write_bytes(payload)
+            os.utime(lock, (946684800, 946684800))  # 2000-01-01 UTC
+            initial_stat = lock.stat()
+            output = self.run_windows_powershell(
+                script,
+                extra_env={
+                    "SZL_TEST_LEASE_PATH": str(lock),
+                    "SZL_TEST_LOG_PATH": str(root / "daemon.log"),
+                },
+            )
+            self.assertIn("OLD_UNLOCKED_PATH_ADMITTED_NO_DISPATCH", output)
+            self.assertTrue(lock.is_file())
+            self.assertEqual(lock.read_bytes(), payload)
+            self.assertEqual(lock.stat().st_ino, initial_stat.st_ino)
+            self.assertIn("[System.IO.FileMode]::OpenOrCreate", snippet)
+            self.assertIn("[System.IO.FileShare]::None", snippet)
+            self.assertNotIn("Remove-Item $Lock", snippet)
 
 
 if __name__ == "__main__":

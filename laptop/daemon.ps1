@@ -21,15 +21,32 @@ $PreflightEvidence = "$Root\logs\storage-preflight"
 
 function Log($m) { "$(Get-Date -Format o)  $m" | Add-Content -Path $Log }
 
-# single flight -- a long training run must not be trampled by the 15-min trigger
-if (Test-Path $Lock) {
-  $age = (Get-Date) - (Get-Item $Lock).LastWriteTime
-  if ($age.TotalHours -lt 26) { Log "lock present (age $([int]$age.TotalMinutes)m) -- another run in flight, exiting"; exit 0 }
-  Log "stale lock (> 26h) -- clearing"
-  Remove-Item $Lock -Force
+# Single-flight admission is an OS-owned exclusive handle, not a check-then-
+# create sentinel. OpenOrCreate + FileShare.None is atomic on Windows; the
+# handle stays live through the entire dispatch pass and is released by the
+# operating system if this process exits unexpectedly. A leftover lock file
+# is not proof of an active owner and is never deleted to force admission.
+$LockHandle = $null
+try {
+  $LockHandle = [System.IO.File]::Open(
+    $Lock,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+  )
+} catch {
+  # Reporting a denied lease must not override the documented HOLD exit when
+  # the log directory is absent or unwritable. Never attempt dispatch here.
+  $leaseError = $_.Exception.GetType().Name
+  try {
+    Log "exclusive daemon lease unavailable ($leaseError) -- HOLD, no queue or job dispatch"
+  } catch {
+    Write-Warning "exclusive daemon lease unavailable ($leaseError), logging failed -- HOLD"
+  }
+  exit 78
 }
-New-Item -ItemType File -Path $Lock -Force | Out-Null
 
+$DaemonFailureExit = 0
 try {
   if (-not (Test-Path $Ledger)) { New-Item -ItemType File -Path $Ledger -Force | Out-Null }
   $seen = @{}
@@ -95,7 +112,13 @@ try {
     }
   }
 } catch {
-  Log "daemon error (fail closed, no job ledger mutation): $($_.Exception.Message)"
+  $DaemonFailureExit = 70
+  try {
+    Log "daemon unexpected exception; reconcile per-job ledger and receipts before retry: $($_.Exception.Message)"
+  } catch {
+    [Console]::Error.WriteLine("SZL_DAEMON_ERROR_LOG_UNAVAILABLE; exit=70")
+  }
 } finally {
-  Remove-Item $Lock -Force -ErrorAction SilentlyContinue
+  $LockHandle.Dispose()
 }
+if ($DaemonFailureExit -ne 0) { exit $DaemonFailureExit }
