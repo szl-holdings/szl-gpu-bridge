@@ -142,6 +142,47 @@ class VerifierGapShadowTest(unittest.TestCase):
             row["proxy_reward_half_units"] = 2 if i < 4 else 1
         self.hold(plan, obs, "ORACLE_NEGATIVE_CONTROL_MISSING")
 
+    def test_stratum_negative_controls_are_required_in_each_group(self):
+        for stratum, indices in (
+            ("answerable", (2, 3)),
+            ("unanswerable", (6, 7)),
+        ):
+            with self.subTest(stratum=stratum):
+                plan, obs = fixture()
+                for i in indices:
+                    obs["rows"][i]["oracle_result"] = "CORRECT"
+                    obs["rows"][i]["proxy_reward_half_units"] = 2 if i < 4 else 1
+                result = self.hold(plan, obs, "STRATUM_NEGATIVE_CONTROL_MISSING")
+                self.assertEqual(result[stratum + "_oracle_incorrect"], 0)
+                self.assertGreater(result["oracle_incorrect"], 0)
+
+    def test_stratum_positive_controls_are_required_in_each_group(self):
+        for stratum, indices in (
+            ("answerable", (0, 1)),
+            ("unanswerable", (4, 5)),
+        ):
+            with self.subTest(stratum=stratum):
+                plan, obs = fixture()
+                for i in indices:
+                    obs["rows"][i]["oracle_result"] = "INCORRECT"
+                    obs["rows"][i]["proxy_reward_half_units"] = 0
+                result = self.hold(plan, obs, "STRATUM_POSITIVE_CONTROL_MISSING")
+                self.assertEqual(result[stratum + "_oracle_correct"], 0)
+                self.assertGreater(result["oracle_correct"], 0)
+
+    def test_valid_shadow_preserves_cross_stratum_contingency(self):
+        result = assess()
+        self.assertEqual(
+            (
+                result["answerable_oracle_correct"],
+                result["answerable_oracle_incorrect"],
+                result["unanswerable_oracle_correct"],
+                result["unanswerable_oracle_incorrect"],
+            ),
+            (2, 2, 2, 2),
+        )
+        self.assertIs(result["training_authorized"], False)
+
     def test_wrong_stratum_credit_not_hidden_by_positive_reward(self):
         plan, obs = fixture()
         obs["rows"][0]["proxy_reward_half_units"] = 1

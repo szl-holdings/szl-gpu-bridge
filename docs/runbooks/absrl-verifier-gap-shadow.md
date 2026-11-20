@@ -40,6 +40,16 @@ For each observed case i:
 - A missing or unknown oracle outcome **never becomes false, zero or pass**.
   A zero attempted denominator or absent negative-control population is HOLD.
 
+For each answerability stratum `s`, let `N_s^+` count oracle-CORRECT
+cases and `N_s^-` oracle-INCORRECT cases. The shadow requires
+`N_s^+ >= 1` **and** `N_s^- >= 1` for both strata; otherwise it
+fails closed with `STRATUM_POSITIVE_CONTROL_MISSING` or
+`STRATUM_NEGATIVE_CONTROL_MISSING`. Global positive/negative totals
+are insufficient: an answerable-only positive cohort could hide false
+positive proxy rewards from that stratum. The four aggregate contingency
+counts are reported without raw case IDs; this is a basic coverage control,
+not statistically powered evidence or independent oracle validation.
+
 The result contains only bounded aggregate counters: frozen case total,
 attempted, missing, unknown, oracle-correct, oracle-incorrect,
 optimistic-credit violations, and reward mismatches. No prompts, gold answers,

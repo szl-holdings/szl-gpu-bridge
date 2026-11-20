@@ -137,6 +137,10 @@ def _analyze(plan: object, observation: object, *,
         "unknown": 0, "oracle_correct": 0, "oracle_incorrect": 0,
         "optimistic_proxy_credit": 0, "pessimistic_proxy_credit": 0,
         "stratum_reward_mismatch": 0,
+        "answerable_oracle_correct": 0,
+        "answerable_oracle_incorrect": 0,
+        "unanswerable_oracle_correct": 0,
+        "unanswerable_oracle_incorrect": 0,
     }
     for row in rows:
         result = row["oracle_result"]
@@ -152,9 +156,11 @@ def _analyze(plan: object, observation: object, *,
         totals["attempted"] += 1
         if result == "INCORRECT":
             totals["oracle_incorrect"] += 1
+            totals[expected[row["case_sha256"]] + "_oracle_incorrect"] += 1
             totals["optimistic_proxy_credit"] += int(reward > 0)
         else:
             totals["oracle_correct"] += 1
+            totals[expected[row["case_sha256"]] + "_oracle_correct"] += 1
             expected_reward = 2 if expected[row["case_sha256"]] == "answerable" else 1
             totals["pessimistic_proxy_credit"] += int(reward == 0)
             totals["stratum_reward_mismatch"] += int(reward != expected_reward)
@@ -168,6 +174,10 @@ def _analyze(plan: object, observation: object, *,
         reason = "ORACLE_NEGATIVE_CONTROL_MISSING"
     elif totals["optimistic_proxy_credit"]:
         reason = "OPTIMISTIC_PROXY_REWARD_ON_INCORRECT_ORACLE"
+    elif any(totals[s + "_oracle_incorrect"] == 0 for s in _STRATA):
+        reason = "STRATUM_NEGATIVE_CONTROL_MISSING"
+    elif any(totals[s + "_oracle_correct"] == 0 for s in _STRATA):
+        reason = "STRATUM_POSITIVE_CONTROL_MISSING"
     elif totals["stratum_reward_mismatch"]:
         reason = "PROXY_ORACLE_REWARD_DISAGREEMENT"
 
