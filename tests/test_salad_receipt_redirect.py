@@ -4,12 +4,13 @@ Tests run with the existing fake Salad worker fixture: no live credentials,
 network requests, Hub writes, GPUs, training, or controller mutations.
 """
 
+import importlib.util
 import urllib.error
 import urllib.request
 import unittest
 from unittest.mock import Mock, patch
 
-from test_salad_worker_terminal import TerminalContract
+from test_salad_worker_terminal import TerminalContract, WORKER
 
 _REVISION = "a" * 40
 _DIGEST = "b" * 64
@@ -28,7 +29,16 @@ class ReceiptRedirectSafety(unittest.TestCase):
             "test_unconfigured_or_missing_token_cannot_emit_local_success"
         )
         self.fixture.setUp()
-        self.worker = self.fixture.worker
+        # The existing terminal tests deliberately replace _readback_fetch
+        # with a deterministic fake. Load a second source-pinned worker module
+        # with the same mocked dependencies but without that transport seam
+        # override, so THESE tests evaluate the actual redirect implementation.
+        spec = importlib.util.spec_from_file_location(
+            "salad_receipt_transport_under_test", WORKER
+        )
+        assert spec is not None and spec.loader is not None
+        self.worker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.worker)
 
     def tearDown(self):
         self.fixture.doCleanups()
