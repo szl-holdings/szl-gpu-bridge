@@ -211,6 +211,85 @@ class EstatePortfolioTests(unittest.TestCase):
                 v.write_exclusive(p, report)
             self.assertEqual(original, p.read_bytes())
 
+    def test_nominal_gpu_hour_math_does_not_admit_training(self):
+        report = v.review_portfolio(snapshot(401), now=NOW)
+        self.assertEqual(
+            report["nominal_aggregate_single_gpu_hours_unqualified"], 21654
+        )
+        self.assertEqual(report["training_jobs_started"], 0)
+        self.assertFalse(report["all_models_admitted"])
+        scenario = v.hypothetical_single_gpu_capacity(401, 20)
+        self.assertEqual(scenario["nominal_aggregate_single_gpu_hours"], 21654)
+        self.assertEqual(scenario["hypothetical_capacity_gpu_hours"], 1080)
+        self.assertEqual(scenario["nominal_uncovered_gpu_hours"], 20574)
+        self.assertEqual(
+            scenario["minimum_preemptible_aggregate_lower_bound_hours"], 1083
+        )
+        self.assertEqual(scenario["minimum_complete_job_wallclock_hours"], 1134)
+        self.assertEqual(scenario["max_complete_indivisible_jobs_in_window"], 20)
+        self.assertEqual(scenario["unserved_indivisible_job_count"], 381)
+        self.assertFalse(scenario["possible_within_window_under_one_gpu_assumption"])
+        self.assertFalse(scenario["provider_capacity_verified"])
+        self.assertFalse(scenario["spend_limit_verified"])
+        self.assertFalse(scenario["training_authorized"])
+        self.assertFalse(scenario["training_quality_verified"])
+
+    def test_hypothetical_single_gpu_math_rounding_and_zero(self):
+        self.assertEqual(
+            v.hypothetical_single_gpu_capacity(2, 1)[
+                "minimum_complete_job_wallclock_hours"
+            ],
+            108,
+        )
+        zero = v.hypothetical_single_gpu_capacity(0, 1)
+        self.assertEqual(zero["nominal_aggregate_single_gpu_hours"], 0)
+        self.assertTrue(zero["possible_within_window_under_one_gpu_assumption"])
+        self.assertFalse(zero["training_authorized"])
+
+    def test_aggregate_gpu_hours_cannot_overclaim_indivisible_jobs(self):
+        # 3 x 54-hour jobs demand 162 GPU-hours, exactly the aggregate
+        # capacity of two slots x 81h. Yet each slot can finish only one.
+        s = v.hypothetical_single_gpu_capacity(3, 2, window_hours=81)
+        self.assertEqual(s["nominal_aggregate_single_gpu_hours"], 162)
+        self.assertEqual(s["hypothetical_capacity_gpu_hours"], 162)
+        self.assertEqual(s["minimum_preemptible_aggregate_lower_bound_hours"], 81)
+        self.assertEqual(s["minimum_complete_job_wallclock_hours"], 108)
+        self.assertEqual(s["max_complete_indivisible_jobs_in_window"], 2)
+        self.assertEqual(s["unserved_indivisible_job_count"], 1)
+        self.assertFalse(s["possible_within_window_under_one_gpu_assumption"])
+        # Unlike the 81h counterexample, 108h does fit 2 then 1 full jobs.
+        enough = v.hypothetical_single_gpu_capacity(3, 2, window_hours=108)
+        self.assertTrue(enough["possible_within_window_under_one_gpu_assumption"])
+        self.assertEqual(enough["unserved_indivisible_job_count"], 0)
+        self.assertFalse(enough["provider_capacity_verified"])
+        self.assertFalse(enough["training_authorized"])
+
+    def test_hypothetical_slots_and_hours_invalid(self):
+        for slots in (False, True, 0, -1, 1.5, "20", 1001):
+            with self.subTest(slots=slots):
+                with self.assertRaisesRegex(v.Hold, "HYPOTHETICAL_SLOTS_INVALID"):
+                    v.hypothetical_single_gpu_capacity(401, slots)
+        for count in (-1, True, 1001):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(v.Hold, "MODEL_COUNT_INVALID"):
+                    v.hypothetical_single_gpu_capacity(count, 20)
+        for hours in (0, True, 8761):
+            with self.subTest(hours=hours):
+                with self.assertRaisesRegex(v.Hold, "HYPOTHETICAL_WINDOW_INVALID"):
+                    v.hypothetical_single_gpu_capacity(401, 20, window_hours=hours)
+
+    def test_scenario_is_deterministic_and_never_signs(self):
+        import json
+
+        a = v.hypothetical_single_gpu_capacity(401, 20)
+        b = v.hypothetical_single_gpu_capacity(401, 20)
+        self.assertEqual(
+            json.dumps(a, sort_keys=True, separators=(",", ":")),
+            json.dumps(b, sort_keys=True, separators=(",", ":")),
+        )
+        self.assertFalse(a["training_authorized"])
+        self.assertNotIn("spend_verified_usd", a)
+
 
 if __name__ == "__main__":
     unittest.main()

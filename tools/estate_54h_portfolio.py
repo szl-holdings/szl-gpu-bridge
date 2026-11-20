@@ -196,6 +196,63 @@ def validate_snapshot(s: dict, *, now: datetime) -> None:
                 )
 
 
+def hypothetical_single_gpu_capacity(
+    model_count: int, gpu_slots: int, *, window_hours: int = REQUESTED_HOURS
+) -> dict:
+    """Pure nominal scheduling arithmetic, NEVER provider capacity or training admission.
+
+    Every candidate is hypothetically assigned one GPU for REQUESTED_HOURS.
+    Real jobs may require multiple GPUs, less/more time, different rights, or no
+    training at all. A number here never proves available GPUs or cost.
+    """
+    _require(
+        type(model_count) is int and 0 <= model_count <= MAX_ASSETS,
+        "MODEL_COUNT_INVALID",
+    )
+    _require(
+        type(gpu_slots) is int and 1 <= gpu_slots <= MAX_ASSETS,
+        "HYPOTHETICAL_SLOTS_INVALID",
+    )
+    _require(
+        type(window_hours) is int and 1 <= window_hours <= 24 * 365,
+        "HYPOTHETICAL_WINDOW_INVALID",
+    )
+    requested = model_count * REQUESTED_HOURS
+    capacity = gpu_slots * window_hours
+    # 54h jobs are indivisible and pinned to one single-GPU slot for their
+    # full notional length. Aggregate GPU-hours alone can falsely claim a
+    # schedule fits when no slot has enough time for another complete job.
+    whole_jobs_per_slot = window_hours // REQUESTED_HOURS
+    full_jobs_fit = gpu_slots * whole_jobs_per_slot
+    full_job_waves = (model_count + gpu_slots - 1) // gpu_slots
+    full_job_wallclock = full_job_waves * REQUESTED_HOURS
+    preemptible_lower_bound = (
+        (requested + gpu_slots - 1) // gpu_slots if requested else 0
+    )
+    return {
+        "scope": "PURE_ARITHMETIC_UNQUALIFIED_ONE_GPU_PER_MODEL",
+        "requested_model_count": model_count,
+        "nominal_gpu_hours_per_model": REQUESTED_HOURS,
+        "nominal_aggregate_single_gpu_hours": requested,
+        "hypothetical_gpu_slots": gpu_slots,
+        "hypothetical_window_hours": window_hours,
+        "hypothetical_capacity_gpu_hours": capacity,
+        "nominal_uncovered_gpu_hours": max(0, requested - capacity),
+        "max_complete_indivisible_jobs_in_window": full_jobs_fit,
+        "unserved_indivisible_job_count": max(0, model_count - full_jobs_fit),
+        "minimum_preemptible_aggregate_lower_bound_hours": preemptible_lower_bound,
+        "minimum_complete_job_wallclock_hours": full_job_wallclock,
+        "possible_within_window_under_one_gpu_assumption": (
+            full_job_wallclock <= window_hours
+        ),
+        "provider_capacity_verified": False,
+        "gpu_compatible": False,
+        "spend_limit_verified": False,
+        "training_authorized": False,
+        "training_quality_verified": False,
+    }
+
+
 def review_portfolio(snapshot: dict, *, now: datetime) -> dict:
     """Return 54-hour REVIEW REQUESTS; never training instructions or ADMIT."""
     validate_snapshot(snapshot, now=now)
@@ -240,6 +297,8 @@ def review_portfolio(snapshot: dict, *, now: datetime) -> dict:
         "model_file_signals": dict(sorted(signals.items())),
         "datasets_without_specific_license_declaration": ds_unknown,
         "requested_hours_per_model": REQUESTED_HOURS,
+        "nominal_aggregate_single_gpu_hours_unqualified": len(models) * REQUESTED_HOURS,
+        "nominal_single_gpu_assumption": "NOT_AN_EXECUTABLE_PLAN_OR_COST_ESTIMATE",
         "training_jobs_started": 0,
         "provider_writes": 0,
         "model_promotions": 0,
@@ -281,6 +340,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--public-snapshot", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--hypothetical-gpu-slots",
+        type=int,
+        default=None,
+        help="Pure offline capacity arithmetic only; never confirms available provider GPUs.",
+    )
     args = parser.parse_args()
     source = Path(args.public_snapshot)
     _require(source.is_file() and not source.is_symlink(), "INPUT_PATH_NOT_FILE")
@@ -290,6 +355,10 @@ def main() -> int:
         parse_public_snapshot(raw), now=datetime.now(timezone.utc)
     )
     report["public_snapshot_sha256"] = hashlib.sha256(raw).hexdigest()
+    if args.hypothetical_gpu_slots is not None:
+        report["capacity_scenario_unqualified"] = hypothetical_single_gpu_capacity(
+            report["portfolio_model_count"], args.hypothetical_gpu_slots
+        )
     digest = write_exclusive(Path(args.out), report)
     print(
         json.dumps(

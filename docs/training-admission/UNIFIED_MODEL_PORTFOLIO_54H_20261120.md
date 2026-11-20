@@ -42,6 +42,41 @@ create-only JSON receipt, SHA-256
 The dataset inventory and this report remain on BETTERWITHAGE, not uploaded
 to Hugging Face or any other model provider.
 
+## Nominal capacity mathematics — not a budget or GPU booking
+
+An unspecialized request to devote 54 **single-GPU-hours per listed model**
+would nominally require `401 × 54 = 21,654 single-GPU-hours`. This is **not**
+an estimate of actual trainable model count or real GPU demand: the 401
+entries include adapters, inference weights and nonrecognized formats.
+Training architecture, rights, memory, multiple-GPU needs, evaluation and
+availability must be independently qualified per candidate.
+
+For an illustrative **20 single-GPU-slot** scenario over a 54-hour wall-clock
+window, aggregate theoretical capacity is only `20 × 54 = 1,080 GPU-hours`,
+leaving `20,574 nominal GPU-hours` uncovered. The fractional/preemptible
+**aggregate lower bound** at 20 slots is `ceil(21,654 / 20) = 1,083 h`,
+but **indivisible complete 54-hour jobs cannot be arbitrarily split**.
+If each model instead occupies one slot for its entire 54-hour job,
+the real mathematical lower bound becomes `ceil(401 / 20) × 54 = 1,134 h`
+across **21 waves**. A 54-hour window can fit only 20 such complete jobs,
+leaving 381 unserved, even before memory/quality/rights/overhead gates.
+To finish within 54 hours would hypothetically require 401 simultaneous
+single-GPU slots (not 401 verified trainable models). A counterexample to
+aggregate-only admission: three 54-hour jobs need 162 GPU-hours; two slots
+over an 81-hour window provide that aggregate, but can finish only two
+complete jobs. The third requires a second 54-hour wave (108h total).
+This is **not** evidence that SaladCloud offers 20 slots, that they have the
+right VRAM, or that any billable capacity, quotas, rates, permissions, or
+execution rights have been granted.
+
+The compiler now supports optional **offline-only arithmetic** using
+`--hypothetical-gpu-slots 20`; it produces no trainer run, API request,
+lease, payment or estimate in USD. All returned `provider_capacity_verified`,
+`spend_limit_verified`, `training_authorized` and
+`training_quality_verified` fields remain `false`. It is a transparency
+aid, not a scheduler. Existing owner-controlled Salad admission remains
+the only possible future execution path.
+
 ## The one-stack architecture
 
 1. **Registry / lazy residency.** A versioned graph indexed by
