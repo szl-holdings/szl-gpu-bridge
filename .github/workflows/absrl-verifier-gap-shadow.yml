@@ -1,0 +1,39 @@
+name: ABS-RL reward verifier-gap shadow (source only)
+
+on:
+  pull_request:
+    paths:
+      - "tools/absrl/verifier_gap_shadow.py"
+      - "tests/test_verifier_gap_shadow.py"
+      - "docs/runbooks/absrl-verifier-gap-shadow.md"
+      - ".github/workflows/absrl-verifier-gap-shadow.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: absrl-verifier-gap-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  offline-reward-shadow:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - name: Checkout exact source without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pin Python runtime
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile pure source
+        run: python -B -m py_compile tools/absrl/verifier_gap_shadow.py
+      - name: Replay adversarial source-only cases
+        run: python -B -m unittest discover -s tests -p test_verifier_gap_shadow.py -v
