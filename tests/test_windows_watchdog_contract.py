@@ -573,6 +573,91 @@ Write-Output 'RELEASE_RECOVERED'
             self.assertIn("CONTENDER_DENIED", output)
             self.assertIn("RELEASE_RECOVERED", output)
 
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_actual_daemon_lease_denies_contender_and_recovers(self) -> None:
+        """Test the *real* lease guard, without invoking the daemon or queue."""
+        import ctypes
+
+        marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+        self.assertIn(marker, self.daemon)
+        snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(marker, 1)[0]
+        script = (
+            "$ErrorActionPreference = 'Stop'\n"
+            "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+            "$Log = $env:SZL_TEST_LOG_PATH\n"
+            "function Log($m) { $m | Add-Content -Path $Log }\n"
+            "$LockHandle = $null\n"
+            + snippet
+            + "\nif ($LockHandle) { $LockHandle.Dispose() }\n"
+            "Write-Output 'LEASE_ADMITTED_WITHOUT_DISPATCH'\n"
+        )
+        with tempfile.TemporaryDirectory() as dirname:
+            base = Path(dirname)
+            lock = base / "daemon.lock"
+            log = base / "daemon.log"
+            env = os.environ.copy()
+            env["SZL_TEST_LEASE_PATH"] = str(lock)
+            env["SZL_TEST_LOG_PATH"] = str(log)
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            create = kernel.CreateFileW
+            create.argtypes = [
+                ctypes.c_wchar_p,
+                ctypes.c_uint32,
+                ctypes.c_uint32,
+                ctypes.c_void_p,
+                ctypes.c_uint32,
+                ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create.restype = ctypes.c_void_p
+            kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+            kernel.CloseHandle.restype = ctypes.c_int
+            # Win32 GENERIC_READ|GENERIC_WRITE, dwShareMode=0, OPEN_ALWAYS.
+            handle = create(str(lock), 0xC0000000, 0, None, 4, 0x80, None)
+            invalid = ctypes.c_void_p(-1).value
+            self.assertNotIn(handle, (None, invalid), ctypes.get_last_error())
+
+            def probe() -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [
+                        str(WINDOWS_POWERSHELL),
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        script,
+                    ],
+                    check=False,
+                    capture_output=True,
+                    env=env,
+                    text=True,
+                    timeout=30,
+                )
+
+            try:
+                blocked = probe()
+                self.assertEqual(
+                    blocked.returncode,
+                    78,
+                    f"stdout:{blocked.stdout}\nstderr:{blocked.stderr}",
+                )
+                self.assertNotIn("LEASE_ADMITTED_WITHOUT_DISPATCH", blocked.stdout)
+                self.assertIn("exclusive daemon lease unavailable", log.read_text())
+            finally:
+                self.assertTrue(kernel.CloseHandle(handle))
+
+            admitted = probe()
+            self.assertEqual(
+                admitted.returncode,
+                0,
+                f"stdout:{admitted.stdout}\nstderr:{admitted.stderr}",
+            )
+            self.assertIn("LEASE_ADMITTED_WITHOUT_DISPATCH", admitted.stdout)
+            self.assertTrue(lock.exists(), "The lock sentinel must not be deleted")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
