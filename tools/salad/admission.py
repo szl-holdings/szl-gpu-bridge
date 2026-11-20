@@ -41,6 +41,7 @@ Honesty boundaries kept explicit:
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 import json
 import re
 
@@ -381,14 +382,8 @@ def admit(
         return record
 
 
-def _reason_of(intent):  # pragma: no cover - helper retained for readability
-    return "INTENT_SCHEMA_MISMATCH"
-
-
 def intent_sha256(intent_bytes):
     """Stable id for the registry head: sha256 of the exact intent bytes."""
     if type(intent_bytes) is not bytes:
         raise ValueError("INTENT_BYTES_REQUIRED")
-    import hashlib
-
     return hashlib.sha256(intent_bytes).hexdigest()
