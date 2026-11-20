@@ -171,12 +171,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         if powershell is None:
             self.skipTest("PowerShell unavailable; source guard remains enforced")
         after = self.source.split("function Test-ReviewedPrimaryTaskAction {", 1)[1]
-        function = (
-            "function Test-ReviewedPrimaryTaskAction {"
-            + after.split(
-                "if (-not (Test-ReviewedPrimaryTaskAction -Task $task))", 1
-            )[0]
-        )
+        terminator = "if (-not (Test-ReviewedPrimaryTaskAction -Task $task))"
+        function_source = "function Test-ReviewedPrimaryTaskAction {"
+        function_source += after.split(terminator, 1)[0]
         synthetic = r"""
 $ErrorActionPreference = 'Stop'
 $exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -217,7 +214,13 @@ if ($cases.Count -ne 12 -or $failures.Count -ne 0) {
 'PASS=12'
 """
         result = subprocess.run(
-            [powershell, "-NoProfile", "-NonInteractive", "-Command", function + synthetic],
+            [
+                powershell,
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                function_source + synthetic,
+            ],
             capture_output=True,
             text=True,
             check=False,
