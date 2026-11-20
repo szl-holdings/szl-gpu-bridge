@@ -21,16 +21,7 @@ Fail-closed posture (same doctrine as salad_worker.py):
 from __future__ import annotations
 import argparse, datetime, hashlib, json, os, sys, time
 
-os.environ.setdefault("HF_HOME", os.environ.get("HF_HOME", os.path.expanduser("~/hf-cache")))
-
-import torch
-from transformers import AutoModelForCausalLM
-from peft import LoraConfig
-from datasets import load_dataset
-from huggingface_hub import HfApi
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from rewards import abstention_reward
 from reward_admission import (
     TRAINING_HOLD_EXIT_CODE,
     TrainingAdmissionHold,
@@ -53,6 +44,8 @@ def receipt(kind: str, detail: str, extra: dict | None = None):
     tok = os.environ.get("HF_TOKEN", "")
     if tok:
         try:
+            from huggingface_hub import HfApi
+
             HfApi(token=tok).upload_file(
                 path_or_fileobj=json.dumps(r, indent=2).encode(),
                 path_in_repo=f"mesh/absrl-{r['receipt_sha256'][:12]}.json",
@@ -82,7 +75,9 @@ def ensure_private_repo(api, repo_id: str, token: str, repo_type: str = "model")
     verify_private(api, repo_id, repo_type)
 
 
-def load_reward_dataset(a, api: HfApi):
+def load_reward_dataset(a, api: object):
+    from datasets import load_dataset
+
     kwargs = {"split": "train"}
     if a.dataset_config:
         kwargs["name"] = a.dataset_config
@@ -122,6 +117,15 @@ def main() -> int:
     if not a.hf_token:
         print("FAIL-CLOSED: HF_TOKEN required (env or --hf-token)", file=sys.stderr)
         return 2
+
+    # Every heavyweight ML/provider import is behind the denial-only gate.
+    # This entrypoint must fail safely without torch/TRL or Hub SDK installed.
+    os.environ.setdefault("HF_HOME", os.path.expanduser("~/hf-cache"))
+    import torch
+    from huggingface_hub import HfApi
+    from peft import LoraConfig
+    from rewards import abstention_reward
+    from transformers import AutoModelForCausalLM
 
     try:
         from trl import GRPOConfig, GRPOTrainer  # trl>=0.14
