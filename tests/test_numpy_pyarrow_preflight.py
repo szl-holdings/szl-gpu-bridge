@@ -44,7 +44,8 @@ class ArrowNumpyPreflightTests(unittest.TestCase):
         result = self.review("3.0.0", "26.0.1")
         self.assertEqual(result["reason"], "PYARROW26_REQUIRES_NUMPY2")
         result = self.review("1.26.4", "27.0.0")
-        self.assertEqual(result["reason"], "PYARROW_VERSION_NOT_IN_QUALIFIED_SOURCE_SET")
+        reason = result["reason"]
+        self.assertEqual(reason, "PYARROW_VERSION_NOT_IN_QUALIFIED_SOURCE_SET")
 
     def test_numpy2_not_assumed_compatible_with_older_arrow(self):
         result = self.review("2.1.3", "19.0.1")
