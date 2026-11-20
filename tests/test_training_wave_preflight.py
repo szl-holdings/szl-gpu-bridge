@@ -255,6 +255,29 @@ class TrainingWavePreflightTests(unittest.TestCase):
         self.assertFalse(r["training_authorized"])
         self.assertNotIn("test-lane-400", json.dumps(r))
 
+    def test_existing_unrelated_report_is_never_overwritten(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source, output = root / "operator.json", root / "prior-report.json"
+            source.write_text(json.dumps(plan()), encoding="utf-8")
+            original = b"USER_OWNED_REPORT_DO_NOT_REPLACE"
+            output.write_bytes(original)
+            self.assertEqual(s.main([str(source), str(output)]), 1)
+            self.assertEqual(output.read_bytes(), original)
+            self.assertEqual(list(root.glob(".prior-report.json.*.tmp")), [])
+
+    def test_fresh_report_readback_is_exclusive(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            source, output = root / "operator.json", root / "new-report.json"
+            source.write_text(json.dumps(plan()), encoding="utf-8")
+            self.assertEqual(s.main([str(source), str(output)]), 1)
+            contents = output.read_bytes()
+            self.assertEqual(json.loads(contents)["decision"], "HOLD_NO_COMPUTE")
+            self.assertEqual(s.main([str(source), str(output)]), 1)
+            self.assertEqual(output.read_bytes(), contents)
+            self.assertEqual(list(root.glob(".new-report.json.*.tmp")), [])
+
     def test_same_input_output_path_does_not_destroy_private_plan(self):
         with tempfile.TemporaryDirectory() as d:
             source = Path(d) / "operator-manifest.json"
