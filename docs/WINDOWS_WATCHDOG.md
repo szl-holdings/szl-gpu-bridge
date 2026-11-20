@@ -72,7 +72,16 @@ The protected-main workflow
 self-hosted bridge node after the package merges. It requires **both** the existing `SZL-GPU-Bridge` scheduled task **and**
 the already-installed bridge daemon before any installation. A copied daemon
 file without a previously established primary task must not create a new
-bridge owner. This presence check is not independent proof of sole authorized
+bridge owner. The pre-install workflow additionally fails closed unless the exact primary
+task has one root-scoped action running the canonical Windows PowerShell
+executable and the reviewed daemon argument vector, without an alternate
+working directory or a service-account principal. This is **source-only
+verification of task shape**, not proof of trusted cross-host ownership.
+The local read-only inspection on 2026-11-20 found the primary task's executable
+and arguments differ from the reviewed installer, so **do not install or
+restart**: correct only after independent owner investigation and review.
+
+This presence check is not independent proof of sole authorized
 cross-host ownership: #260 remains HOLD pending owner/operator attestation.
 
 **Source parity is mandatory before task mutation.** The workflow independently
