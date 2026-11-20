@@ -126,7 +126,6 @@ class RegistryTests(unittest.TestCase):
                     sac.validate_registry(reg)
                 self.assertEqual(str(ctx.exception), reason)
 
-
     def test_unhashable_actor_registry_is_denied_without_exception(self):
         # Registry data is untrusted. Never let set(actors) crash admission.
         for actors in ([{}], [["nested"]], ["vibe-cto", {}], ["vibe-cto", ["nested"]]):
