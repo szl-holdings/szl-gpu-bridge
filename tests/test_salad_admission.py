@@ -108,6 +108,9 @@ class RegistryTests(unittest.TestCase):
             ("REGISTRY_ACTORS_INVALID", registry(actors=[])),
             ("REGISTRY_ACTORS_INVALID", registry(actors=["a", "a"])),
             ("REGISTRY_ACTORS_INVALID", registry(actors=["Bad Actor"])),
+            ("REGISTRY_ACTORS_INVALID", registry(actors=[{}])),
+            ("REGISTRY_ACTORS_INVALID", registry(actors=[["unexpected"]])),
+            ("REGISTRY_ACTORS_INVALID", registry(actors=["vibe-cto", {}])),
             ("BUDGET_SCHEMA_MISMATCH", registry(budget={"remaining": 1})),
             ("BUDGET_VALUE_INVALID", registry(budget={**BUDGET, "remaining": -1})),
             ("BUDGET_VALUE_INVALID", registry(budget={**BUDGET, "remaining": 1.5})),
@@ -122,6 +125,15 @@ class RegistryTests(unittest.TestCase):
                 with self.assertRaises(ValueError) as ctx:
                     sac.validate_registry(reg)
                 self.assertEqual(str(ctx.exception), reason)
+
+    def test_unhashable_actor_registry_is_denied_without_exception(self):
+        # Registry data is untrusted. Never let set(actors) crash admission.
+        for actors in ([{}], [["nested"]], ["vibe-cto", {}], ["vibe-cto", ["nested"]]):
+            with self.subTest(actors=repr(actors)):
+                result = admit(intent(), registry(actors=actors))
+                self.assertEqual(result["decision"], "DENY")
+                self.assertEqual(result["reason"], "REGISTRY_INVALID")
+                self.assertFalse(result["salad_mutation_authorized"])
 
 
 class IntentParseTests(unittest.TestCase):
