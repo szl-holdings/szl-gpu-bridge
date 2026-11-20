@@ -12,9 +12,10 @@ name: Receipts index
 #           Needs no secret: the dataset is public.
 #   publish (dispatch with publish=true only) commits ONLY
 #           data/receipts-index.jsonl. Gated by the `receipts-index-publish`
-#           environment (required reviewer) and the HF_TOKEN secret, the same
-#           secret hf-training-receipts-card.yml uses. A fine-grained token
-#           scoped to write on this one dataset is preferred.
+#           environment. An admin must verify required review and the main-only
+#           deployment policy before setting RECEIPTS_INDEX_PUBLISH_ENABLED=true
+#           and adding the dataset-scoped HF_RECEIPTS_INDEX_PUBLISH_TOKEN.
+#           Do not provision this token as an organization or repository secret.
 # Nothing here merges, deploys or writes anywhere else.
 
 on:
@@ -92,7 +93,7 @@ jobs:
             }
 
   publish:
-    if: ${{ inputs.publish }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: receipts-index-publish
@@ -115,13 +116,17 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest tests.test_receipts_index_builder tests.test_refresh_receipts_index -v
-      - name: Require approved Hugging Face credential
+      - name: Require publish opt-in and dedicated credential
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: test -n "$HF_TOKEN"
+          PUBLISH_ENABLED: ${{ vars.RECEIPTS_INDEX_PUBLISH_ENABLED }}
+          HF_TOKEN: ${{ secrets.HF_RECEIPTS_INDEX_PUBLISH_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$PUBLISH_ENABLED" = true
+          test -n "$HF_TOKEN"
       - name: Rebuild and publish data/receipts-index.jsonl only
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_RECEIPTS_INDEX_PUBLISH_TOKEN }}
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check huggingface-hub==1.19.0
