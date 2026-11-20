@@ -134,11 +134,11 @@ def validate_registry(registry):
         if (
             type(actors) is not list
             or not actors
-            or len(set(actors)) != len(actors)
             or any(
                 type(actor) is not str or _ACTOR.fullmatch(actor) is None
                 for actor in actors
             )
+            or len(set(actors)) != len(actors)
         ):
             raise ValueError("REGISTRY_ACTORS_INVALID")
         _validate_budget(lane["budget"])
