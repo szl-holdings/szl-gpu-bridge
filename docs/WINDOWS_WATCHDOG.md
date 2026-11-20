@@ -69,9 +69,11 @@ read, and inbound ports were not opened.
 
 The protected-main workflow
 `.github/workflows/windows-watchdog-install.yml` runs on an existing Windows x64
-self-hosted bridge node after the package merges. It first requires either the
-existing `SZL-GPU-Bridge` task or `C:\szl-bridge\daemon.ps1`, preventing the
-package from silently installing on an unrelated Windows runner.
+self-hosted bridge node after the package merges. It requires **both** the existing `SZL-GPU-Bridge` scheduled task **and**
+the already-installed bridge daemon before any installation. A copied daemon
+file without a previously established primary task must not create a new
+bridge owner. This presence check is not independent proof of sole authorized
+cross-host ownership: #260 remains HOLD pending owner/operator attestation.
 
 **Source parity is mandatory before task mutation.** The workflow independently
 compares the installed `daemon.ps1` and `storage_preflight.py` to the exact
