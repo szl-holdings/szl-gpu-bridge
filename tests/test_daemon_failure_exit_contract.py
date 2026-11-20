@@ -40,7 +40,7 @@ class DaemonFailureExitContractTests(unittest.TestCase):
     @unittest.skipUnless(POWERSHELL, "Windows PowerShell is required")
     def test_only_extracted_catch_finally_in_isolated_fixture(self) -> None:
         source = DAEMON.read_text(encoding="utf-8")
-        tail = source[source.rfind("} catch {"):]
+        tail = source[source.rfind("} catch {") :]
         self.assertIn("if ($DaemonFailureExit -ne 0)", tail)
         self.assertIn("$LockHandle.Dispose()", tail)
         fixture = tail.replace(
@@ -50,19 +50,24 @@ class DaemonFailureExitContractTests(unittest.TestCase):
         )
         prefix = (
             '$ErrorActionPreference="Stop"; '
-            '$Lock=$env:SZL_TEST_LOCK_PATH; '
+            "$Lock=$env:SZL_TEST_LOCK_PATH; "
             'function Log($m) { Write-Output "FIXTURE_CAUGHT" }; '
-            '$LockHandle=[System.IO.File]::Open($Lock, '
-            '[System.IO.FileMode]::OpenOrCreate, '
-            '[System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); '
+            "$LockHandle=[System.IO.File]::Open($Lock, "
+            "[System.IO.FileMode]::OpenOrCreate, "
+            "[System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); "
             '$DaemonFailureExit=0; try { throw "SYNTHETIC_POST_LOCK_FAILURE" '
         )
         with tempfile.TemporaryDirectory() as dirname:
             env = os.environ.copy()
             env["SZL_TEST_LOCK_PATH"] = str(Path(dirname) / "fixture.lock")
             result = subprocess.run(
-                [POWERSHELL, "-NoProfile", "-NonInteractive",
-                 "-Command", prefix + fixture + '\nWrite-Output "FALSE_SUCCESS"'],
+                [
+                    POWERSHELL,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    prefix + fixture + '\nWrite-Output "FALSE_SUCCESS"',
+                ],
                 capture_output=True,
                 text=True,
                 env=env,
