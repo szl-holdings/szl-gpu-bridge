@@ -21,14 +21,23 @@ $PreflightEvidence = "$Root\logs\storage-preflight"
 
 function Log($m) { "$(Get-Date -Format o)  $m" | Add-Content -Path $Log }
 
-# single flight -- a long training run must not be trampled by the 15-min trigger
-if (Test-Path $Lock) {
-  $age = (Get-Date) - (Get-Item $Lock).LastWriteTime
-  if ($age.TotalHours -lt 26) { Log "lock present (age $([int]$age.TotalMinutes)m) -- another run in flight, exiting"; exit 0 }
-  Log "stale lock (> 26h) -- clearing"
-  Remove-Item $Lock -Force
+# Single-flight admission is an OS-owned exclusive handle, not a check-then-
+# create sentinel. OpenOrCreate + FileShare.None is atomic on Windows; the
+# handle stays live through the entire dispatch pass and is released by the
+# operating system if this process exits unexpectedly. A leftover lock file
+# is not proof of an active owner and is never deleted to force admission.
+$LockHandle = $null
+try {
+  $LockHandle = [System.IO.File]::Open(
+    $Lock,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+  )
+} catch {
+  Log "exclusive daemon lease unavailable -- HOLD, no queue or job dispatch"
+  exit 78
 }
-New-Item -ItemType File -Path $Lock -Force | Out-Null
 
 try {
   if (-not (Test-Path $Ledger)) { New-Item -ItemType File -Path $Ledger -Force | Out-Null }
@@ -97,5 +106,5 @@ try {
 } catch {
   Log "daemon error (fail closed, no job ledger mutation): $($_.Exception.Message)"
 } finally {
-  Remove-Item $Lock -Force -ErrorAction SilentlyContinue
+  $LockHandle.Dispose()
 }
