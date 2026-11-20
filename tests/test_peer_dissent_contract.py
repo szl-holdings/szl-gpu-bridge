@@ -180,6 +180,14 @@ class PeerDissentTests(unittest.TestCase):
         x["reviewers"][1]["role"] = "proposer"
         self.assertEqual(run(x)["reason"], "REVIEWER_COVERAGE_INVALID")
 
+    def test_swapped_kimi_mistral_roles_fail_closed(self):
+        # Both required roles and both families are still present; independent
+        # set coverage must not accept a semantically reversed peer assignment.
+        x = fixture()
+        x["reviewers"][0]["role"] = "adversary"
+        x["reviewers"][1]["role"] = "proposer"
+        self.assertEqual(run(x)["reason"], "REVIEWER_IDENTITY_INVALID")
+
     def test_model_families_must_be_distinct(self):
         x = fixture()
         x["reviewers"][1]["family"] = "kimi"
