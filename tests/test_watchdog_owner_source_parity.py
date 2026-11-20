@@ -235,7 +235,12 @@ if ($cases.Count -ne 12 -or $failures.Count -ne 0) {
         s = self.source
         triggers = s.split("\npermissions:", 1)[0]
         self.assertIn("  workflow_dispatch:", triggers)
-        for event in ("  push:", "  schedule:", "  pull_request:", "  pull_request_target:"):
+        for event in (
+            "  push:",
+            "  schedule:",
+            "  pull_request:",
+            "  pull_request_target:",
+        ):
             self.assertNotIn(event, triggers)
         self.assertIn("authorize_install:", triggers)
         self.assertIn("default: false", triggers)
@@ -255,7 +260,9 @@ if ($cases.Count -ne 12 -or $failures.Count -ne 0) {
     def test_owner_runner_and_source_checks_precede_checkout(self) -> None:
         """The owner gate must reject wrong SHA or runner before action-bearing steps."""
         s = self.source
-        start = s.index("- name: Require immutable reviewed main and intended owner runner")
+        start = s.index(
+            "- name: Require immutable reviewed main and intended owner runner"
+        )
         checkout = s.index("- name: Checkout exact protected source")
         mutation = s.index("- name: Install the exact local watchdog package")
         self.assertLess(start, checkout)
@@ -271,7 +278,12 @@ if ($cases.Count -ne 12 -or $failures.Count -ne 0) {
             "$env:RUNNER_NAME",
         ):
             self.assertIn(required, block)
-        for forbidden in ("Register-ScheduledTask", "Start-ScheduledTask", "Remove-Item", "Copy-Item"):
+        for forbidden in (
+            "Register-ScheduledTask",
+            "Start-ScheduledTask",
+            "Remove-Item",
+            "Copy-Item",
+        ):
             self.assertNotIn(forbidden, block)
 
 
