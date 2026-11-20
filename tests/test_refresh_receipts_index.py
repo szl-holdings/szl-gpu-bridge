@@ -102,7 +102,9 @@ class RefreshTests(unittest.TestCase):
                     self.assertEqual(R.main(["--workdir", temp]), 3)
             self.assertEqual(snapshot.call_count, 2)
             for call in snapshot.call_args_list:
-                self.assertEqual(call.args, (R.DEFAULT_REPO, revision, root / "snapshot"))
+                self.assertEqual(
+                    call.args, (R.DEFAULT_REPO, revision, root / "snapshot")
+                )
                 self.assertTrue(call.kwargs["read_only"])
             self.assertEqual(output.read_text(), "check_status=CHECK_UNAVAILABLE\n" * 2)
             self.assertFalse((root / "new-index.jsonl").exists())
