@@ -154,6 +154,26 @@ class ResumeIntegrityTests(unittest.TestCase):
             self.run_gate()
         self.assertEqual(len(self.hub.calls), 1)
 
+    def test_nested_checkpoint_manifest_holds_before_download(self):
+        # A required flat set does not make unknown nested paths safe to fetch.
+        for nested in (
+            "checkpoint-50/nested/extras.bin",
+            "checkpoint-50/optimizer.pt/chunk-001",
+        ):
+            with self.subTest(nested=nested):
+                self.hub = FakeHub()
+                self.hub.files[nested] = b"opaque-unexpected-bytes"
+                with self.assertRaisesRegex(
+                    ResumeHold, "CHECKPOINT_UNEXPECTED_NESTING"
+                ):
+                    self.run_gate()
+                self.assertEqual(
+                    [event[0] for event in self.hub.calls], ["model_info"]
+                )
+                self.assertFalse(
+                    (Path(self.temp.name) / ".szl-verified-resume").exists()
+                )
+
     def test_optimizer_and_rng_are_required_as_opaque_state(self):
         for name in ("checkpoint-50/optimizer.pt", "checkpoint-50/rng_state.pth"):
             with self.subTest(name=name):
