@@ -147,7 +147,7 @@ class ReceiptRedirectSafety(unittest.TestCase):
             ):
                 with self.subTest(target=target[:54]):
                     with self.assertRaises(self.worker.ReceiptError):
-                        self.worker._readback_fetch(
+                        self.fixture.real_readback_fetch(
                             target, "SYNTHETIC_NOT_A_CREDENTIAL", 256
                         )
 
@@ -171,7 +171,7 @@ class ReceiptRedirectSafety(unittest.TestCase):
         with patch.object(
             self.worker.urllib.request, "build_opener", return_value=opener
         ) as build:
-            result = self.worker._readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
+            result = self.fixture.real_readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
         self.assertEqual(result, b"expected")
         self.assertEqual(response.requested_bytes, 9)
         self.assertIsInstance(build.call_args.args[0], self.worker._SafeReceiptRedirect)
@@ -196,7 +196,7 @@ class ReceiptRedirectSafety(unittest.TestCase):
             self.worker.urllib.request, "build_opener", return_value=opener
         ):
             with self.assertRaises(self.worker.ReceiptError):
-                self.worker._readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
+                self.fixture.real_readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
 
     def test_urllib_401_403_404_fail_without_retry_sleep(self):
         for status in (401, 403, 404):
