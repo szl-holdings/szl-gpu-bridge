@@ -113,7 +113,11 @@ try {
   }
 } catch {
   $DaemonFailureExit = 70
-  Log "daemon unexpected exception; reconcile per-job ledger and receipts before retry: $($_.Exception.Message)"
+  try {
+    Log "daemon unexpected exception; reconcile per-job ledger and receipts before retry: $($_.Exception.Message)"
+  } catch {
+    [Console]::Error.WriteLine("SZL_DAEMON_ERROR_LOG_UNAVAILABLE; exit=70")
+  }
 } finally {
   $LockHandle.Dispose()
 }
