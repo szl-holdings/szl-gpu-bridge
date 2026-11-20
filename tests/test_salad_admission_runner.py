@@ -30,7 +30,7 @@ def _budget(start=0):
     }
 
 
-def _registry(start=0):
+def _registry(start=1):
     return {
         "schema": "szl.desired-state-registry/v1",
         "last_intent_sha256": None,
