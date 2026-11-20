@@ -128,7 +128,8 @@ def validate_snapshot(s: dict, *, now: datetime) -> None:
             _require(rid not in seen, "DUPLICATE_ASSET_ID")
             seen.add(rid)
             _require(
-                type(sha) is str and SHA40.fullmatch(sha) is not None,
+                type(sha) is str and SHA40.fullmatch(sha) is not None
+                and sha != "0" * 40,
                 "ASSET_SHA_UNVERIFIED",
             )
             _require(
