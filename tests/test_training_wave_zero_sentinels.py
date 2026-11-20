@@ -130,11 +130,13 @@ class SentinelEvidenceContract(unittest.TestCase):
         self.assertEqual(decision["decision"], "HOLD_NO_COMPUTE")
         self.assertFalse(decision["model_training_verified"])
 
-
     def test_external_catalog_ids_cannot_be_training_targets(self):
         # External popular base models are not SZLHOLDINGS training outputs.
-        for external in ("openai-community/gpt2", "Qwen/Qwen2.5-0.5B",
-                         "alloyscape/external-model"):
+        for external in (
+            "openai-community/gpt2",
+            "Qwen/Qwen2.5-0.5B",
+            "alloyscape/external-model",
+        ):
             with self.subTest(output=external):
                 candidate = _candidate()
                 candidate["model_id"] = external
