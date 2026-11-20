@@ -63,7 +63,9 @@ def _pin_source_without_presentation_lines(command: str) -> str:
     evidence = []
     for line in command.splitlines():
         stripped = line.lstrip()
-        if stripped.startswith("#") or re.match(r"^(?:echo|printf)(?:\\s|$)", stripped):
+        if stripped.startswith("#") or re.match(
+            r"^(?:echo|printf)(?:\s|$)", stripped
+        ):
             continue
         evidence.append(line)
     return "\n".join(evidence)
