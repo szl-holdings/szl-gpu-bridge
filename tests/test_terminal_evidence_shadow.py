@@ -242,8 +242,7 @@ class TerminalEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "oversized_integer.json"
             path.write_bytes(
-                b'{"schema":"' + s.SCHEMA.encode() + b'","extra":'
-                + b"9" * 5000 + b"}"
+                b'{"schema":"' + s.SCHEMA.encode() + b'","extra":' + b"9" * 5000 + b"}"
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
