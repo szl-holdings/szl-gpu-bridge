@@ -133,6 +133,99 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
                     outcome.stdout.strip(), "ACCEPTED" if accepted else "REFUSED"
                 )
 
+    def test_primary_action_identity_must_be_verified_before_install(self) -> None:
+        """A task name alone cannot authorize an action-bearing watchdog installer."""
+        s = self.source
+        bind = s.index("- name: Bind execution to an existing SZL bridge owner node")
+        verify = s.index("function Test-ReviewedPrimaryTaskAction")
+        installed = s.index("- name: Install the exact local watchdog package")
+        self.assertLess(bind, verify)
+        self.assertLess(verify, installed)
+        block = s[bind:installed]
+        self.assertIn("Test-ReviewedPrimaryTaskAction -Task $task", block)
+        self.assertIn("Existing primary task action is unverified", block)
+        for required in (
+            "@($Task.Actions).Count -ne 1",
+            "[string]$Task.TaskPath -cne",
+            "[string]$Task.Principal.UserId",
+            "[string]$Task.Principal.LogonType",
+            "StringComparison]::OrdinalIgnoreCase",
+            "IsNullOrWhiteSpace([string]$action.WorkingDirectory)",
+        ):
+            self.assertIn(required, block)
+        for forbidden in (
+            "Register-ScheduledTask",
+            "Start-ScheduledTask",
+            "Copy-Item",
+            "Remove-Item",
+            "Set-ScheduledTask",
+        ):
+            self.assertNotIn(forbidden, block)
+
+    def test_reviewed_action_predicate_12_synthetic_cases(self) -> None:
+        """Run the real source predicate on fake task objects, never Task Scheduler."""
+        import shutil
+        import subprocess
+
+        powershell = shutil.which("powershell.exe") or shutil.which("pwsh")
+        if powershell is None:
+            self.skipTest("PowerShell unavailable; source guard remains enforced")
+        after = self.source.split("function Test-ReviewedPrimaryTaskAction {", 1)[1]
+        function = (
+            "function Test-ReviewedPrimaryTaskAction {"
+            + after.split(
+                "if (-not (Test-ReviewedPrimaryTaskAction -Task $task))", 1
+            )[0]
+        )
+        synthetic = r"""
+$ErrorActionPreference = 'Stop'
+$exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$argsValue = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "C:\szl-bridge\daemon.ps1"'
+function MakeFixture {
+  param([string]$Executable,[string]$Arguments,[string]$TaskPath='\',[string]$WorkingDirectory='',[string]$User='TEST\Owner',[string]$LogonType='Interactive')
+  if ($null -eq $Executable) { $Executable = $exe }
+  if ($null -eq $Arguments) { $Arguments = $argsValue }
+  [pscustomobject]@{TaskPath=$TaskPath;Actions=@([pscustomobject]@{Execute=$Executable;Arguments=$Arguments;WorkingDirectory=$WorkingDirectory});Principal=[pscustomobject]@{UserId=$User;LogonType=$LogonType}}
+}
+$good = MakeFixture -Executable $exe -Arguments $argsValue
+$noActions = MakeFixture -Executable $exe -Arguments $argsValue; $noActions.Actions=@()
+$nullActions = MakeFixture -Executable $exe -Arguments $argsValue; $nullActions.Actions=$null
+$twoActions = MakeFixture -Executable $exe -Arguments $argsValue; $twoActions.Actions=@($good.Actions[0],[pscustomobject]@{Execute='cmd.exe';Arguments='/c calc';WorkingDirectory=''})
+$noPrincipal = MakeFixture -Executable $exe -Arguments $argsValue; $noPrincipal.Principal=$null
+$cases = @(
+  [pscustomobject]@{name='valid';task=$good;want=$true},
+  [pscustomobject]@{name='noTask';task=$null;want=$false},
+  [pscustomobject]@{name='zeroActions';task=$noActions;want=$false},
+  [pscustomobject]@{name='nullActions';task=$nullActions;want=$false},
+  [pscustomobject]@{name='extraAction';task=$twoActions;want=$false},
+  [pscustomobject]@{name='wrongExe';task=(MakeFixture -Executable 'C:\Windows\System32\cmd.exe' -Arguments $argsValue);want=$false},
+  [pscustomobject]@{name='injectedArgs';task=(MakeFixture -Executable $exe -Arguments ($argsValue+' -EncodedCommand abc'));want=$false},
+  [pscustomobject]@{name='wrongTaskPath';task=(MakeFixture -Executable $exe -Arguments $argsValue -TaskPath '\Custom\');want=$false},
+  [pscustomobject]@{name='workingDirectory';task=(MakeFixture -Executable $exe -Arguments $argsValue -WorkingDirectory 'C:\Other');want=$false},
+  [pscustomobject]@{name='serviceAccount';task=(MakeFixture -Executable $exe -Arguments $argsValue -User 'NT AUTHORITY\SYSTEM');want=$false},
+  [pscustomobject]@{name='badLogon';task=(MakeFixture -Executable $exe -Arguments $argsValue -LogonType 'ServiceAccount');want=$false},
+  [pscustomobject]@{name='noPrincipal';task=$noPrincipal;want=$false}
+)
+$failures = @()
+foreach ($case in $cases) {
+  $observed = Test-ReviewedPrimaryTaskAction -Task $case.task
+  if ($observed -ne $case.want) { $failures += $case.name }
+}
+if ($cases.Count -ne 12 -or $failures.Count -ne 0) {
+  throw ('SYNTHETIC_OWNER_TASK_GUARD_FAILED:' + ($failures -join ','))
+}
+'PASS=12'
+"""
+        result = subprocess.run(
+            [powershell, "-NoProfile", "-NonInteractive", "-Command", function + synthetic],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=45,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("PASS=12", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
