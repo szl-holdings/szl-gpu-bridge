@@ -167,9 +167,7 @@ class ResumeIntegrityTests(unittest.TestCase):
                     ResumeHold, "CHECKPOINT_UNEXPECTED_NESTING"
                 ):
                     self.run_gate()
-                self.assertEqual(
-                    [event[0] for event in self.hub.calls], ["model_info"]
-                )
+                self.assertEqual([event[0] for event in self.hub.calls], ["model_info"])
                 self.assertFalse(
                     (Path(self.temp.name) / ".szl-verified-resume").exists()
                 )
