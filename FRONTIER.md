@@ -57,6 +57,17 @@ before training, with an import self-test that logs KERNELS_OK or KERNEL-BUILD-F
 adopt the kernel path only if the measured s/it and final receipts beat v4 under the same
 harvest standard.
 
+## Resolved A/B: frontier-v5 kernel verdict (measured 2026-11-20)
+
+Measured receipts: SZLHOLDINGS/salad-frontier-v5-r1 (Hub finals: 200/200 steps, checkpoint + final + benchmark + held-out evaluation + integrity receipts); speed and energy cross-read from the v5-r7 and v4-r1 completion receipts in the shared receipts dataset (the v5-r1 shared-receipts folder was absent at read time - same kernel-path recipe, stated openly).
+
+- **Kernel A/B resolved in favor of the kernel path** under the decision rule above: same final train loss (1.079), measured 82.35 s/step vs 129.16 s/step (**1.57x faster**), final-receipt energy 3,537,901 J vs 4,877,373 J (**27.5% less**, dual NVML + Zeus meters agree). The compiled-kernel path becomes the default for every Salad frontier run.
+- **Quality is explicitly NOT accepted.** The held-out evaluation (2026-11-17) FAILED: the adapter refuses 75% of probes (base: 10%) and answers neutral 25% of the time (base: 95%). The kernel path is adopted for compute; the recipe is rejected for behavior. Held-out quality remains explicitly false until separate gates are measured.
+- **Root-cause direction: data, not kernels.** v5 cloned v4's recipe exactly, including the szl-frontier-sft-mix-v4 SFT mix (26.7K rows, source labels), so the over-refusal lives in the mix. The next run (v6) must rebalance that mix (fewer refusal examples, more ordinary helpful answers) and re-run the same held-out check before any acceptance claim.
+- **v6 is blocked until a valid Salad API key exists:** both known keys now return 401 (invalidated portal-side, 2026-11-20). No run starts on an unauthenticated control plane; fail closed.
+
+Honesty markers: KERNEL_PATH_ADOPTED_1.57X_27PCT_LESS_ENERGY; RECIPE_HELDOUT_FAIL_OVERREFUSAL_75_VS_10; V6_DATA_REBALANCE_GATED_ON_NEW_SALAD_KEY. No decipherment claims. Fail closed.
+
 ## Research-derived candidate stack (each gated on a receipted A/B before adoption)
 
 1. **DoRA / rsLoRA** — peft flags on the next training lane (LoRA SOTA 2025 family);
