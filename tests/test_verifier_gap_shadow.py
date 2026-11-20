@@ -114,7 +114,9 @@ class VerifierGapShadowTest(unittest.TestCase):
         plan, obs = fixture()
         obs["rows"][0].update(oracle_result="MISSING", proxy_reward_half_units=None)
         result = self.hold(plan, obs, "INCOMPLETE_ORACLE_COVERAGE")
-        self.assertEqual((result["attempted"], result["missing"], result["unknown"]), (7, 1, 0))
+        self.assertEqual(
+            (result["attempted"], result["missing"], result["unknown"]), (7, 1, 0)
+        )
         plan, obs = fixture()
         obs["rows"][1].update(oracle_result="UNKNOWN", proxy_reward_half_units=None)
         result = self.hold(plan, obs, "INCOMPLETE_ORACLE_COVERAGE")
@@ -225,15 +227,28 @@ class VerifierGapShadowTest(unittest.TestCase):
         self.assertEqual((plan, obs), before)
         plan["cases"].reverse()
         obs["rows"].reverse()
-        self.assertEqual(assess(plan, obs)["state"], "SOURCE_SHADOW_CONSISTENT_NOT_ATTESTED")
+        self.assertEqual(
+            assess(plan, obs)["state"], "SOURCE_SHADOW_CONSISTENT_NOT_ATTESTED"
+        )
         self.assertNotEqual(GAP.plan_commitment(plan), result["plan_sha256"])
 
     def test_no_effectful_imports_or_raw_generation_export(self):
         tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
-        forbidden = {"os", "socket", "subprocess", "requests", "urllib", "torch", "trl", "huggingface_hub"}
+        forbidden = {
+            "os",
+            "socket",
+            "subprocess",
+            "requests",
+            "urllib",
+            "torch",
+            "trl",
+            "huggingface_hub",
+        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                self.assertFalse(forbidden.intersection(a.name.split(".")[0] for a in node.names))
+                self.assertFalse(
+                    forbidden.intersection(a.name.split(".")[0] for a in node.names)
+                )
             if isinstance(node, ast.ImportFrom):
                 self.assertNotIn(node.module.split(".")[0], forbidden)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
