@@ -8,6 +8,8 @@ from __future__ import annotations
 import ast
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +88,41 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
         )
         self.assertLess(first.lineno, parser_line)
         self.assertNotIn("rewards_v2", source)
+
+    def test_denial_without_installed_ml_packages(self):
+        # -S excludes site-packages. A missing torch/TRL/HF SDK must never
+        # prevent the unconditional source-level training denial.
+        result = subprocess.run(
+            [sys.executable, "-S", str(WORKER)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, gate.TRAINING_HOLD_EXIT_CODE)
+        self.assertIn("FAIL-CLOSED: ABS_RL_REWARD_V1_UNSAFE", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_no_ml_or_provider_import_runs_before_main_guard(self):
+        source = WORKER.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        prohibited = {
+            "torch",
+            "transformers",
+            "peft",
+            "datasets",
+            "huggingface_hub",
+            "trl",
+        }
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                self.assertFalse(
+                    prohibited.intersection(alias.name.split(".")[0] for alias in node.names)
+                )
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                self.assertNotIn(node.module.split(".")[0], prohibited)
+        self.assertNotIn("os.environ.setdefault", source.split("def main() -> int:")[0])
 
     def test_v1_reward_stays_explicitly_unqualified(self):
         source = WORKER.read_text(encoding="utf-8")
