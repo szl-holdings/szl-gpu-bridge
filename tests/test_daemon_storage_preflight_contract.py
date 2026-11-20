@@ -55,7 +55,7 @@ def _gate_block(source: str) -> str:
 class DaemonStoragePreflightOrderingTests(unittest.TestCase):
     def test_gate_runs_after_lock_inside_loop_and_before_dispatch(self) -> None:
         source = _daemon()
-        lock_check = source.index("if (Test-Path $Lock)")
+        lock_check = source.index("$LockHandle = [System.IO.File]::Open(")
         loop = source.index("foreach ($f in $files)")
         seen_skip = source.index("if ($seen[$jobId]) { continue }")
         invocation = source.index(INVOCATION_MARKER)
@@ -66,6 +66,25 @@ class DaemonStoragePreflightOrderingTests(unittest.TestCase):
         self.assertLess(seen_skip, invocation)
         self.assertLess(invocation, dispatch)
         self.assertEqual(source.count(DISPATCH), 1)
+
+    def test_exclusive_lease_is_os_owned_fail_closed_and_not_deleted(self) -> None:
+        source = _daemon()
+        lease = source.index("$LockHandle = [System.IO.File]::Open(")
+        network = source.index("Invoke-RestMethod -Uri")
+        dispatch = source.index(DISPATCH)
+        self.assertLess(lease, network)
+        self.assertLess(lease, dispatch)
+        for required in (
+            "[System.IO.FileMode]::OpenOrCreate",
+            "[System.IO.FileAccess]::ReadWrite",
+            "[System.IO.FileShare]::None",
+            "$LockHandle.Dispose()",
+            "exit 78",
+        ):
+            self.assertIn(required, source)
+        self.assertNotIn("New-Item -ItemType File -Path $Lock -Force", source)
+        self.assertNotIn("Remove-Item $Lock", source)
+        self.assertNotIn("if (Test-Path $Lock)", source)
 
     def test_thresholds_are_fixed_constants_not_spec_values(self) -> None:
         line = _invocation_line(_daemon())
