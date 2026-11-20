@@ -471,5 +471,110 @@ Write-Output 'MALFORMED_STATE_PIPELINE_OK'
             self.assertIn("SOURCE_PARITY_STRAY_CR", stray.stderr)
 
 
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_daemon_lock_failure_with_unwritable_log_still_exits_hold(self) -> None:
+        """Exercise only the exact-head lease snippet, not the live daemon."""
+        with tempfile.TemporaryDirectory() as dirname:
+            base = Path(dirname)
+            marker = "\ntry {\n  if (-not (Test-Path $Ledger))"
+            self.assertIn(marker, self.daemon)
+            snippet = self.daemon.split("$LockHandle = $null", 1)[1].split(
+                marker, 1
+            )[0]
+            test_script = (
+                "$ErrorActionPreference = 'Stop'\n"
+                "$Lock = $env:SZL_TEST_LEASE_PATH\n"
+                "$Log = $env:SZL_TEST_LOG_PATH\n"
+                "function Log($m) { $m | Add-Content -Path $Log }\n"
+                "$LockHandle = $null\n"
+                + snippet
+                + "\nWrite-Output 'UNEXPECTED_QUEUE_REACHED'\n"
+            )
+            env = os.environ.copy()
+            env["SZL_TEST_LEASE_PATH"] = str(base / "missing-lock" / "daemon.lock")
+            env["SZL_TEST_LOG_PATH"] = str(base / "missing-log" / "daemon.log")
+            completed = subprocess.run(
+                [
+                    str(WINDOWS_POWERSHELL),
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    test_script,
+                ],
+                check=False,
+                capture_output=True,
+                env=env,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(
+                completed.returncode,
+                78,
+                f"stdout:{completed.stdout}\nstderr:{completed.stderr}",
+            )
+            self.assertIn("logging failed", completed.stdout + completed.stderr)
+            self.assertNotIn("UNEXPECTED_QUEUE_REACHED", completed.stdout)
+            self.assertFalse((base / "missing-lock").exists())
+
+    @unittest.skipUnless(
+        WINDOWS_POWERSHELL.is_file(), "Windows PowerShell 5.1 is required"
+    )
+    def test_file_lease_exclusive_across_processes_and_released(self) -> None:
+        """Independent job cannot obtain the same OS handle until disposal."""
+        with tempfile.TemporaryDirectory() as dirname:
+            lock = str(Path(dirname) / "isolated-lease.lock")
+            output = self.run_windows_powershell(
+                r"""
+$ErrorActionPreference = 'Stop'
+$path = $env:SZL_TEST_LEASE_PATH
+$handle = [System.IO.File]::Open(
+    $path,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+)
+try {
+    $job = Start-Job -ArgumentList $path -ScriptBlock {
+        param($p)
+        try {
+            $other = [System.IO.File]::Open(
+                $p,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+            $other.Dispose()
+            'INCORRECT_ADMISSION'
+        } catch [System.IO.IOException] {
+            'BLOCKED'
+        }
+    }
+    $null = Wait-Job $job -Timeout 15
+    $result = @(Receive-Job $job)
+    Remove-Job $job -Force
+    if ($result.Count -ne 1 -or $result[0] -ne 'BLOCKED') {
+        throw ('contending independent process was not blocked: ' + ($result -join ','))
+    }
+    Write-Output 'CONTENDER_DENIED'
+} finally {
+    $handle.Dispose()
+}
+$again = [System.IO.File]::Open(
+    $path,
+    [System.IO.FileMode]::OpenOrCreate,
+    [System.IO.FileAccess]::ReadWrite,
+    [System.IO.FileShare]::None
+)
+$again.Dispose()
+Write-Output 'RELEASE_RECOVERED'
+""",
+                extra_env={"SZL_TEST_LEASE_PATH": lock},
+            )
+            self.assertIn("CONTENDER_DENIED", output)
+            self.assertIn("RELEASE_RECOVERED", output)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -35,7 +35,14 @@ try {
     [System.IO.FileShare]::None
   )
 } catch {
-  Log "exclusive daemon lease unavailable -- HOLD, no queue or job dispatch"
+  # Reporting a denied lease must not override the documented HOLD exit when
+  # the log directory is absent or unwritable. Never attempt dispatch here.
+  $leaseError = $_.Exception.GetType().Name
+  try {
+    Log "exclusive daemon lease unavailable ($leaseError) -- HOLD, no queue or job dispatch"
+  } catch {
+    Write-Warning "exclusive daemon lease unavailable ($leaseError), logging failed -- HOLD"
+  }
   exit 78
 }
 
