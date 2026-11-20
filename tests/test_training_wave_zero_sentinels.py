@@ -131,5 +131,42 @@ class SentinelEvidenceContract(unittest.TestCase):
         self.assertFalse(decision["model_training_verified"])
 
 
+    def test_external_catalog_ids_cannot_be_training_targets(self):
+        # External popular base models are not SZLHOLDINGS training outputs.
+        for external in ("openai-community/gpt2", "Qwen/Qwen2.5-0.5B",
+                         "alloyscape/external-model"):
+            with self.subTest(output=external):
+                candidate = _candidate()
+                candidate["model_id"] = external
+                with self.assertRaisesRegex(s.PreflightError, "LINEAGE_INCOMPLETE"):
+                    s.evaluate({**_plan(), "models": [candidate]})
+
+    def test_external_checkpoint_destination_refused(self):
+        candidate = _candidate()
+        candidate["checkpoint_target"] = "other-org/checkpoints"
+        with self.assertRaisesRegex(s.PreflightError, "CHECKPOINT_PLAN_INVALID"):
+            s.evaluate({**_plan(), "models": [candidate]})
+
+    def test_external_base_remains_separate_unverified_source(self):
+        candidate = _candidate()
+        candidate["base_model_id"] = "openai-community/gpt2"
+        report = s.evaluate({**_plan(), "models": [candidate]})
+        self.assertEqual(report["plan_model_count"], 1)
+        self.assertEqual(report["decision"], "HOLD_NO_COMPUTE")
+        self.assertFalse(report["source_data_authenticated"])
+        self.assertFalse(report["training_authorized"])
+
+    def test_reported_two_thousand_dollars_not_compute_authority(self):
+        reported = _plan()
+        reported["owner_budget_micro_usd"] = 2_000_000_000
+        reported["owner_budget_approved"] = True
+        result = s.evaluate(reported)
+        self.assertEqual(result["owner_budget_reported_micro_usd"], 2_000_000_000)
+        self.assertEqual(result["decision"], "HOLD_NO_COMPUTE")
+        self.assertFalse(result["training_authorized"])
+        self.assertFalse(result["provider_writes_authorized"])
+        self.assertFalse(result["receipt_signatures_checked"])
+
+
 if __name__ == "__main__":
     unittest.main()
