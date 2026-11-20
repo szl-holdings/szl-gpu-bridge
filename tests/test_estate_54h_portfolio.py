@@ -156,6 +156,15 @@ class EstatePortfolioTests(unittest.TestCase):
         p["public_assets"]["models"][0]["weight_file_count"] = 0
         self.deny(p, "MODEL_SIGNAL_CONTRADICTED")
 
+    def test_invalid_artifact_signal_types_fail_with_typed_hold(self):
+        # JSON-compatible list/dict values were previously unhashable when
+        # checked for membership in ARTIFACT_SIGNALS, raising TypeError.
+        for value in ([], {}, None, False, 7, "UNKNOWN"):
+            with self.subTest(value=repr(value)):
+                p = snapshot()
+                p["public_assets"]["models"][0]["artifact_signal"] = value
+                self.deny(p, "MODEL_ARTIFACT_SIGNAL")
+
     def test_unsafe_extra_model_field_denied(self):
         p = snapshot()
         p["public_assets"]["models"][0]["approved_compute"] = True

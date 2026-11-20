@@ -152,7 +152,8 @@ def validate_snapshot(s: dict, *, now: datetime) -> None:
                     "MODEL_METADATA_SCHEMA",
                 )
                 _require(
-                    row["artifact_signal"] in ARTIFACT_SIGNALS,
+                    type(row["artifact_signal"]) is str
+                    and row["artifact_signal"] in ARTIFACT_SIGNALS,
                     "MODEL_ARTIFACT_SIGNAL",
                 )
                 _require(
