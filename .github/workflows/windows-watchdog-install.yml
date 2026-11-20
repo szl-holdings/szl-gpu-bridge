@@ -57,7 +57,8 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($account)) { return $false }
             if ($account -match '^(SYSTEM|NT AUTHORITY\\(SYSTEM|LOCAL SERVICE|NETWORK SERVICE)|LOCAL SERVICE|NETWORK SERVICE)$') { return $false }
             if ([string]$Task.Principal.LogonType -notin @('Interactive','S4U')) { return $false }
-            $expectedExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            if ([string]::IsNullOrWhiteSpace([string]$env:SystemRoot)) { return $false }
+            $expectedExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
             $expectedArgs = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "C:\szl-bridge\daemon.ps1"'
             $action = @($Task.Actions)[0]
             if (-not [string]::Equals([string]$action.Execute, $expectedExe, [StringComparison]::OrdinalIgnoreCase)) { return $false }
