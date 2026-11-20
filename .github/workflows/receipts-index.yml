@@ -8,7 +8,8 @@ name: Receipts index
 # never see a stale index.
 #
 #   check   (schedule, dispatch) READ ONLY. Rebuilds the index from one pinned
-#           dataset revision and opens/updates one issue when it is stale.
+#           dataset revision and opens/updates an issue when stale or when
+#           Hub rate limiting makes the check unavailable.
 #           Needs no secret: the dataset is public.
 #   publish (dispatch with publish=true only) commits ONLY
 #           data/receipts-index.jsonl. Gated by the `receipts-index-publish`
@@ -64,15 +65,18 @@ jobs:
           python tools/receipts_index/refresh_receipts_index.py \
             --workdir "$RUNNER_TEMP/receipts-index" --mode check \
             --report "$RUNNER_TEMP/report.md"
-      - name: File or update the stale-index issue
-        if: ${{ steps.refresh.outputs.stale == 'true' }}
+      - name: File or update the receipts-index alert
+        if: ${{ !cancelled() && (steps.refresh.outputs.check_status == 'STALE' || steps.refresh.outputs.check_status == 'CHECK_UNAVAILABLE') }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           REPORT_PATH: ${{ runner.temp }}/report.md
+          CHECK_STATUS: ${{ steps.refresh.outputs.check_status }}
         with:
           script: |
             const fs = require("fs");
-            const title = "Receipts index is stale";
+            const title = process.env.CHECK_STATUS === "CHECK_UNAVAILABLE"
+              ? "Receipts index check is unavailable"
+              : "Receipts index is stale";
             const body = fs.readFileSync(process.env.REPORT_PATH, "utf8");
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo,

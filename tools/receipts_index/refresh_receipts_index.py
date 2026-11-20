@@ -6,8 +6,9 @@ Pins ONE dataset revision, snapshots only its *.json/*.jsonl files, rebuilds the
 index with build_receipts_index.py, and compares it with the index published at
 that same revision.
 
-  check   (default) read-only. Writes stale=true|false to $GITHUB_OUTPUT and a
-          markdown report to --report. Never writes to the Hub.
+  check   (default) read-only. Reports FRESH or STALE after a complete check.
+          If Hub rate limiting prevents completion, reports CHECK_UNAVAILABLE
+          and returns nonzero. Never writes to the Hub.
   publish commits ONLY data/receipts-index.jsonl (a single-file commit that
           cannot overwrite other writers' files). Refuses when any published
           row would be removed or any row is INVALID_JSON, because that needs a
@@ -96,7 +97,9 @@ def markdown_report(report: dict, revision: str, stale: bool, max_added: int) ->
     )
 
 
-def snapshot(repo: str, revision: str, dest: Path) -> None:
+def snapshot(
+    repo: str, revision: str, dest: Path, *, read_only: bool = False
+) -> None:
     from huggingface_hub import snapshot_download
 
     snapshot_download(
@@ -105,14 +108,17 @@ def snapshot(repo: str, revision: str, dest: Path) -> None:
         revision=revision,
         local_dir=str(dest),
         allow_patterns=["*.json", "*.jsonl"],
-        token=os.environ.get("HF_TOKEN") or None,
+        token=False if read_only else os.environ.get("HF_TOKEN") or None,
+        **({"max_workers": 2} if read_only else {}),
     )
 
 
-def resolve_revision(repo: str) -> str:
+def resolve_revision(repo: str, *, read_only: bool = False) -> str:
     from huggingface_hub import HfApi
 
-    refs = HfApi().list_repo_refs(repo, repo_type="dataset")
+    refs = HfApi().list_repo_refs(
+        repo, repo_type="dataset", **({"token": False} if read_only else {})
+    )
     return next(b.target_commit for b in refs.branches if b.name == "main")
 
 
@@ -129,6 +135,30 @@ def publish(repo: str, index_path: Path, revision: str, report: dict, source_sha
     )
 
 
+def is_rate_limited(error: BaseException) -> bool:
+    """Find a real 429 response, including one wrapped by the Hub client."""
+    seen: set[int] = set()
+    while id(error) not in seen:
+        seen.add(id(error))
+        if getattr(getattr(error, "response", None), "status_code", None) == 429:
+            return True
+        next_error = error.__cause__ or error.__context__
+        if next_error is None:
+            break
+        error = next_error
+    return False
+
+
+def write_report(markdown: str, path: Path | None, **outputs: str) -> None:
+    print(markdown)
+    if path:
+        path.write_text(markdown + "\n", encoding="utf-8")
+    if gh_out := os.environ.get("GITHUB_OUTPUT"):
+        with open(gh_out, "a", encoding="utf-8") as fh:
+            for name, value in outputs.items():
+                fh.write(f"{name}={value}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--repo", default=DEFAULT_REPO)
@@ -139,9 +169,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--source-sha", default=os.environ.get("GITHUB_SHA", "unknown"))
     args = ap.parse_args(argv)
 
-    revision = resolve_revision(args.repo)
     snap = args.workdir / "snapshot"
-    snapshot(args.repo, revision, snap)
+    read_only = args.mode == "check"
+    try:
+        revision = resolve_revision(args.repo, read_only=read_only)
+        snapshot(args.repo, revision, snap, read_only=read_only)
+    except Exception as exc:
+        if args.mode != "check" or not is_rate_limited(exc):
+            raise
+        write_report(
+            "## Receipts index check unavailable\n\n"
+            "Hugging Face returned HTTP 429 before the comparison completed. "
+            "Index freshness was not determined. No index was published.",
+            args.report,
+            check_status="CHECK_UNAVAILABLE",
+        )
+        return 3
     published = snap / builder.INDEX_RELPATH
     old_rows = (
         [
@@ -158,14 +201,13 @@ def main(argv: list[str] | None = None) -> int:
     report = builder.compare(old_rows, rows)
     stale = is_stale(report, args.max_added)
 
-    md = markdown_report(report, revision, stale, args.max_added)
-    print(md)
-    if args.report:
-        args.report.write_text(md + "\n", encoding="utf-8")
-    gh_out = os.environ.get("GITHUB_OUTPUT")
-    if gh_out:
-        with open(gh_out, "a", encoding="utf-8") as fh:
-            fh.write(f"stale={'true' if stale else 'false'}\nrevision={revision}\n")
+    write_report(
+        markdown_report(report, revision, stale, args.max_added),
+        args.report,
+        check_status="STALE" if stale else "FRESH",
+        stale="true" if stale else "false",
+        revision=revision,
+    )
 
     if args.mode == "publish":
         blockers = publish_blockers(report, rows)
