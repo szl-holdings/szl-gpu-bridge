@@ -110,6 +110,31 @@ class RecipeRuntimeAdmissionTests(unittest.TestCase):
         unpinned = base.replace("pip install " + pins, "pip install", 1)
         self.assertIn("R5_PINSET", _fails("true | printf '" + pins + "'\n" + unpinned))
 
+    def test_modern_conflicting_transformers_versions_fail_closed(self) -> None:
+        command = _command("MODERN", PINNED) + " transformers==4.51.3"
+        fails = _fails(command)
+        self.assertIn("R5_CONFLICTING_PACKAGE_PINS", fails)
+        self.assertNotIn("R5_PINSET", fails)
+
+    def test_legacy_conflicting_peft_versions_fail_closed(self) -> None:
+        command = _command("LEGACY", "run_other_legacy_tool.py") + " peft==0.21.2"
+        fails = _fails(command)
+        self.assertIn("R5_CONFLICTING_PACKAGE_PINS", fails)
+        self.assertNotIn("R5_PINSET", fails)
+
+    def test_canonical_package_aliases_cannot_hide_conflicts(self) -> None:
+        command = _command("MODERN", PINNED) + " huggingface-hub==1.99.0"
+        self.assertIn("R5_CONFLICTING_PACKAGE_PINS", _fails(command))
+
+    def test_display_only_old_version_is_not_conflicting(self) -> None:
+        command = _command("MODERN", PINNED)
+        command += "\necho 'transformers==4.51.3'\n# peft==0.15.2"
+        self.assertNotIn("R5_CONFLICTING_PACKAGE_PINS", _fails(command))
+
+    def test_repeated_same_pin_is_not_a_version_conflict(self) -> None:
+        command = _command("MODERN", PINNED) + " transformers==5.22.2"
+        self.assertNotIn("R5_CONFLICTING_PACKAGE_PINS", _fails(command))
+
     def test_legacy_non_worker_use_is_not_newly_prohibited(self) -> None:
         self.assertNotIn(
             "R5_KNOWN_FATAL_TRL_WORKER_PAIR",
