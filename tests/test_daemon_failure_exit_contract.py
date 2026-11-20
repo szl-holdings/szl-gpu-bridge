@@ -33,6 +33,10 @@ class DaemonFailureExitContractTests(unittest.TestCase):
         self.assertIn("$DaemonFailureExit = 70", source[catch:finally_block])
         self.assertIn("$LockHandle.Dispose()", source[finally_block:post_finally_exit])
         self.assertIn("reconcile per-job ledger and receipts", source)
+        self.assertIn(
+            '[Console]::Error.WriteLine("SZL_DAEMON_ERROR_LOG_UNAVAILABLE; exit=70")',
+            source[catch:finally_block],
+        )
         self.assertNotIn("no job ledger mutation", source)
         self.assertIn("exit 78", source)  # lock denial remains distinct
         self.assertNotIn("Remove-Item $Lock", source)
@@ -76,6 +80,47 @@ class DaemonFailureExitContractTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 70, result.stderr)
             self.assertIn("FIXTURE_CAUGHT", result.stdout)
+            self.assertIn("FIXTURE_FINALLY", result.stdout)
+            self.assertNotIn("FALSE_SUCCESS", result.stdout)
+
+    @unittest.skipUnless(POWERSHELL, "Windows PowerShell is required")
+    def test_log_failure_still_exits_70_after_finally(self) -> None:
+        source = DAEMON.read_text(encoding="utf-8")
+        tail = source[source.rfind("} catch {") :]
+        self.assertIn("SZL_DAEMON_ERROR_LOG_UNAVAILABLE", tail)
+        fixture = tail.replace(
+            "$LockHandle.Dispose()",
+            '$LockHandle.Dispose(); Write-Output "FIXTURE_FINALLY"',
+            1,
+        )
+        prefix = (
+            '$ErrorActionPreference="Stop"; '
+            "$Lock=$env:SZL_TEST_LOCK_PATH; "
+            'function Log($m) { throw "ISOLATED_LOG_FAILURE" }; '
+            "$LockHandle=[System.IO.File]::Open($Lock, "
+            "[System.IO.FileMode]::OpenOrCreate, "
+            "[System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); "
+            '$DaemonFailureExit=0; try { throw "SYNTHETIC_POST_LOCK_FAILURE" '
+        )
+        with tempfile.TemporaryDirectory() as dirname:
+            env = os.environ.copy()
+            env["SZL_TEST_LOCK_PATH"] = str(Path(dirname) / "fixture.lock")
+            result = subprocess.run(
+                [
+                    POWERSHELL,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    prefix + fixture + '\nWrite-Output "FALSE_SUCCESS"',
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=25,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 70, result.stderr)
+            self.assertIn("SZL_DAEMON_ERROR_LOG_UNAVAILABLE", result.stderr)
             self.assertIn("FIXTURE_FINALLY", result.stdout)
             self.assertNotIn("FALSE_SUCCESS", result.stdout)
 
