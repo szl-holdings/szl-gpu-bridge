@@ -70,7 +70,7 @@ No boot receipt = the leg never started; don't wait for a training receipt.
 | Brain-2c (mathlib) | 4090 / Salad — same rule | UNKNOWN |
 | Nano-2 | 4090 / Salad — same rule | UNKNOWN |
 | The Collective (teach/dream/create) | Salad — crashed 2026-11-09, needs A6000 restart | STOPPED |
-| Nemotron v3 chain | A6000 .145 via gpu-bridge | **SETTLED — attempt-17 terminal receipt** ✅ |
+| Nemotron v3 chain | A6000 .145 via gpu-bridge | **EXPIRED_AWAITING_ENGINE_SIGNATURE** (non-terminal; issue #93) — NOT SETTLED: attempts 1–16 terminal (quarantined, NEVER_DISPATCH); attempt 17 was never engine-signed and its review window expired 2026-08-15; no terminal receipt; no automated retry, dispatch, or quarantine override; see docs/NEMO_V3_EXECUTION.md and README |
 | A6000 bench leg | .145 | completed; next run needs the energy-meter patch (PR #134) |
 
 ## 6. What makes this "non-stop" honest
