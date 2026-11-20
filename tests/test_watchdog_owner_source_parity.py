@@ -176,7 +176,8 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         function_source += after.split(terminator, 1)[0]
         synthetic = r"""
 $ErrorActionPreference = 'Stop'
-$exe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+if ([string]::IsNullOrWhiteSpace([string]$env:SystemRoot)) { $env:SystemRoot='C:\Windows' }
+$exe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $argsValue = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -File "C:\szl-bridge\daemon.ps1"'
 function MakeFixture {
   param([string]$Executable,[string]$Arguments,[string]$TaskPath='\',[string]$WorkingDirectory='',[string]$User='TEST\Owner',[string]$LogonType='Interactive')
