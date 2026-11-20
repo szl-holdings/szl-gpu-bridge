@@ -92,6 +92,57 @@ class TerminalEvidenceTests(unittest.TestCase):
         value = s.evaluate(sample(group_status="ALLOCATING"))
         self.assertNotIn("RUNNING_LABEL_ZERO_ACTUAL_REPORTED", value["reason_codes"])
 
+    def test_stopped_label_with_running_instance_is_conflicting_evidence(self):
+        row = sample(
+            surface="APPROVED_SDK",
+            api_state="AUTHORIZED_READ",
+            instance_get_confirmed=True,
+            group_status="STOPPED",
+            desired_replicas=1,
+            actual_counts={"allocating": 0, "creating": 0, "running": 1, "stopping": 0},
+            events=[],
+            trainer_markers=[],
+        )
+        result = s.evaluate(row)
+        self.assertIn("STOPPED_LABEL_RUNNING_ACTUAL_REPORTED", result["reason_codes"])
+        self.assertEqual(result["risk"], "REPORTED_STATUS_INSTANCE_CONFLICT")
+        self.assertEqual(result["decision"], "HOLD_NO_PROVIDER_ACTION")
+        self.assertFalse(result["training_completed"])
+        self.assertFalse(result["start_stop_scale_authorized"])
+
+    def test_stopped_zero_running_is_not_a_status_conflict(self):
+        row = sample(
+            surface="APPROVED_SDK",
+            api_state="AUTHORIZED_READ",
+            instance_get_confirmed=True,
+            group_status="STOPPED",
+            desired_replicas=0,
+            actual_counts={"allocating": 0, "creating": 0, "running": 0, "stopping": 0},
+            events=[],
+            trainer_markers=[],
+        )
+        result = s.evaluate(row)
+        self.assertNotIn("STOPPED_LABEL_RUNNING_ACTUAL_REPORTED", result["reason_codes"])
+        self.assertEqual(result["risk"], "TRAINING_EVIDENCE_UNVERIFIED")
+        self.assertFalse(result["training_dispatch_authorized"])
+
+    def test_restart_loop_warning_takes_precedence_over_stopped_conflict(self):
+        row = sample(
+            surface="APPROVED_SDK",
+            api_state="AUTHORIZED_READ",
+            instance_get_confirmed=True,
+            group_status="STOPPED",
+            desired_replicas=1,
+            actual_counts={"allocating": 0, "creating": 0, "running": 1, "stopping": 0},
+            events=["EXIT_0", "EXIT_0"],
+            trainer_markers=[],
+        )
+        result = s.evaluate(row)
+        self.assertIn("STOPPED_LABEL_RUNNING_ACTUAL_REPORTED", result["reason_codes"])
+        self.assertIn("REPEATED_EXIT0_SUSPECTED", result["reason_codes"])
+        self.assertEqual(result["risk"], "RESTART_LOOP_SUSPECTED_NOT_PROVEN")
+        self.assertFalse(result["training_completed"])
+
     def test_nonatomic_counts_not_deployment_proof(self):
         row = sample(
             actual_counts={"allocating": 1, "creating": 1, "running": 1, "stopping": 0}
