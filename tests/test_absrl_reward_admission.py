@@ -126,6 +126,38 @@ class AbsRlTrainingHoldTests(unittest.TestCase):
                 self.assertNotIn(node.module.split(".")[0], prohibited)
         self.assertNotIn("os.environ.setdefault", source.split("def main() -> int:")[0])
 
+    def test_imported_main_has_no_ml_or_provider_import_side_effect(self):
+        # Covers the direct Python-import/function entry point as well as
+        # the script entry point tested above. No model, network or GPU.
+        canary = (
+            "import builtins, importlib.util, sys\n"
+            "_original = builtins.__import__\n"
+            "_forbidden = {'torch', 'trl', 'peft', 'datasets',\n"
+            "              'transformers', 'huggingface_hub'}\n"
+            "def _tripwire(name, *args, **kwargs):\n"
+            "    if name.split('.')[0] in _forbidden:\n"
+            "        raise RuntimeError('FORBIDDEN_PROVIDER_IMPORT:' + name)\n"
+            "    return _original(name, *args, **kwargs)\n"
+            "builtins.__import__ = _tripwire\n"
+            "spec = importlib.util.spec_from_file_location(\n"
+            "    'staged_absrl_worker', sys.argv[1]\n"
+            ")\n"
+            "worker = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(worker)\n"
+            "assert worker.main() == 86\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-S", "-c", canary, str(WORKER)],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("FAIL-CLOSED: ABS_RL_REWARD_V1_UNSAFE", result.stderr)
+        self.assertNotIn("FORBIDDEN_PROVIDER_IMPORT", result.stderr)
+
     def test_v1_reward_stays_explicitly_unqualified(self):
         source = WORKER.read_text(encoding="utf-8")
         self.assertIn("from rewards import abstention_reward", source)
