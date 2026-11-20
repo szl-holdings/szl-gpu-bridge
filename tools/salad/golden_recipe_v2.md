@@ -81,6 +81,14 @@ behavior remain outside the bounded static classifier. Require the exact
 candidate image to pass independent runtime/import and pinned-version checks
 before allocating billable GPUs.
 
+The static gate additionally refuses **contradictory exact version pins**
+for packages named in its existing allowlisted recipe sets. It normalizes
+PEP 503-style hyphen/underscore spelling to avoid source-level alias evasion.
+This does not interpret execution order, dependency resolution, shell substitutions,
+heredocs, or imported environments: conflicting declarations HOLD, not infer the
+version that would be installed. Independent, exact-image package metadata and
+an SFTConfig constructor/import smoke are still mandatory for launch admission.
+
 The static linter now denies (a) a command executing `salad_worker.py` with the
 known-fatal `trl==0.17.0` overlap and (b) known GitHub URLs that fetch the
 worker from the moving `main` branch. This closes two known misleading
