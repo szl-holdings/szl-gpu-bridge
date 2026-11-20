@@ -136,7 +136,7 @@ def _bounded_json(path):
 
 def _sha(text):
     """SHA-256 for content fingerprints, manifests and evidence receipts."""
-    return isinstance(text, str) and SHA.fullmatch(text) is not None
+    return type(text) is str and SHA.fullmatch(text) is not None and text != "0" * 64
 
 
 def _git_revision(text):
@@ -144,7 +144,9 @@ def _git_revision(text):
 
     Existence, signer, branch ownership and provider readback remain unverified.
     """
-    return type(text) is str and GIT_SHA40.fullmatch(text) is not None
+    return (
+        type(text) is str and GIT_SHA40.fullmatch(text) is not None and text != "0" * 40
+    )
 
 
 def _id(text):
