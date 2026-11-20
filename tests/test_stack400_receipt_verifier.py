@@ -136,6 +136,44 @@ class Stack400ReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(v.ReceiptHold, "RECEIPT_MARKER_LOSS_MISMATCH"):
             self.verify(receipt, markers)
 
+    def test_zero_movement_with_false_noop_flag_denied(self):
+        receipt, markers = fixtures()
+        receipt["training"].update(
+            mean_delta=0.0, max_delta=0.0, adapter_trainable_l1=0.0
+        )
+        markers[6].update(mean_delta=0.0, max_delta=0.0, no_op=False)
+        rehash(receipt)
+        markers[-2]["recorded_hash"] = receipt["recorded_hash"]
+        with self.assertRaisesRegex(v.ReceiptHold, "TRAIN_MOVEMENT_INCONSISTENT"):
+            self.verify(receipt, markers)
+
+    def test_invalid_movement_bounds_are_not_consistent_training(self):
+        for changes in (
+            {"mean_delta": -0.1},
+            {"max_delta": 0.1, "mean_delta": 0.8},
+            {"adapter_trainable_l1": 0.0},
+        ):
+            with self.subTest(changes=changes):
+                receipt, markers = fixtures()
+                receipt["training"].update(changes)
+                rehash(receipt)
+                markers[-2]["recorded_hash"] = receipt["recorded_hash"]
+                with self.assertRaisesRegex(
+                    v.ReceiptHold, "TRAIN_MOVEMENT_INCONSISTENT"
+                ):
+                    self.verify(receipt, markers)
+
+    def test_zero_mean_with_positive_max_stays_review_only(self):
+        receipt, markers = fixtures()
+        receipt["training"]["mean_delta"] = 0.0
+        markers[6]["mean_delta"] = 0.0
+        rehash(receipt)
+        markers[-2]["recorded_hash"] = receipt["recorded_hash"]
+        result = self.verify(receipt, markers)
+        self.assertEqual(result["verdict"], "REVIEW_ONLY_HOLD")
+        self.assertTrue(result["source_markers_consistent"])
+        self.assertFalse(result["reward_eligible"])
+
     def test_noop_quarantined_even_with_matching_self_hash(self):
         receipt, markers = fixtures()
         markers[6]["no_op"] = True
