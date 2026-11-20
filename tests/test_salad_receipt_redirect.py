@@ -171,7 +171,9 @@ class ReceiptRedirectSafety(unittest.TestCase):
         with patch.object(
             self.worker.urllib.request, "build_opener", return_value=opener
         ) as build:
-            result = self.fixture.real_readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
+            result = self.fixture.real_readback_fetch(
+                _URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9
+            )
         self.assertEqual(result, b"expected")
         self.assertEqual(response.requested_bytes, 9)
         self.assertIsInstance(build.call_args.args[0], self.worker._SafeReceiptRedirect)
