@@ -44,10 +44,7 @@ class ReceiptRedirectSafety(unittest.TestCase):
         )
 
     def _header_names(self, request):
-        return {
-            name.lower()
-            for name, _ in request.header_items()
-        }
+        return {name.lower() for name, _ in request.header_items()}
 
     def test_cross_origin_hf_cdn_strips_all_credentials(self):
         redirected = self.worker._SafeReceiptRedirect().redirect_request(
@@ -164,14 +161,10 @@ class ReceiptRedirectSafety(unittest.TestCase):
         with patch.object(
             self.worker.urllib.request, "build_opener", return_value=opener
         ) as build:
-            result = self.worker._readback_fetch(
-                _URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9
-            )
+            result = self.worker._readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
         self.assertEqual(result, b"expected")
         self.assertEqual(response.requested_bytes, 9)
-        self.assertIsInstance(
-            build.call_args.args[0], self.worker._SafeReceiptRedirect
-        )
+        self.assertIsInstance(build.call_args.args[0], self.worker._SafeReceiptRedirect)
         request = opener.open.call_args.args[0]
         self.assertEqual(request.full_url, _URL)
         self.assertIn("authorization", self._header_names(request))
@@ -193,9 +186,7 @@ class ReceiptRedirectSafety(unittest.TestCase):
             self.worker.urllib.request, "build_opener", return_value=opener
         ):
             with self.assertRaises(self.worker.ReceiptError):
-                self.worker._readback_fetch(
-                    _URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9
-                )
+                self.worker._readback_fetch(_URL, "SYNTHETIC_NOT_A_CREDENTIAL", 9)
 
     def test_urllib_401_403_404_fail_without_retry_sleep(self):
         for status in (401, 403, 404):
