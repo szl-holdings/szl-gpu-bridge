@@ -7,7 +7,6 @@ chaperone loops, 2026-11-20 halt receipt) and the task-21 dream session.
 """
 
 import datetime as dt
-import hashlib
 import json
 import unittest
 
@@ -137,7 +136,10 @@ class IntentParseTests(unittest.TestCase):
         for raw, reason in (
             (b"\xff\xfe\x00", "INTENT_PARSE_FAILED"),
             (b"{", "INTENT_PARSE_FAILED"),
-            (b'{"schema": "szl.salad-admission-intent/v1", "op": NaN}', "INTENT_PARSE_FAILED"),
+            (
+                b'{"schema": "szl.salad-admission-intent/v1", "op": NaN}',
+                "INTENT_PARSE_FAILED",
+            ),
             (
                 b'{"schema": "szl.salad-admission-intent/v1", "op": "restart", '
                 b'"op": "stop", "intent_id": "x", "actor": "a", "lane_id": "l", '
@@ -165,7 +167,9 @@ class IntentParseTests(unittest.TestCase):
         ]
         for raw in bad:
             with self.subTest(raw):
-                self.assertEqual(admit(raw, registry())["reason"], "INTENT_VALUE_INVALID")
+                self.assertEqual(
+                    admit(raw, registry())["reason"], "INTENT_VALUE_INVALID"
+                )
 
 
 class ChainHeadTests(unittest.TestCase):
@@ -180,12 +184,16 @@ class ChainHeadTests(unittest.TestCase):
 
 class AuthorizationTests(unittest.TestCase):
     def test_unknown_lane_group_and_foreign_actor(self):
-        self.assertEqual(admit(intent(lane="nope-4b"), registry())["reason"], "LANE_UNKNOWN")
         self.assertEqual(
-            admit(intent(), registry(group="szl-train-other"))["reason"], "GROUP_MISMATCH"
+            admit(intent(lane="nope-4b"), registry())["reason"], "LANE_UNKNOWN"
         )
         self.assertEqual(
-            admit(intent(actor="stranger"), registry())["reason"], "ACTOR_NOT_AUTHORIZED"
+            admit(intent(), registry(group="szl-train-other"))["reason"],
+            "GROUP_MISMATCH",
+        )
+        self.assertEqual(
+            admit(intent(actor="stranger"), registry())["reason"],
+            "ACTOR_NOT_AUTHORIZED",
         )
 
     def test_state_op_table_denies(self):
@@ -247,7 +255,8 @@ class RestartAdmissionTests(unittest.TestCase):
 
     def test_missing_or_mismatched_witness_denies(self):
         self.assertEqual(
-            admit(intent(), registry(), witness_verdict=None)["reason"], "WITNESS_UNPROVIDED"
+            admit(intent(), registry(), witness_verdict=None)["reason"],
+            "WITNESS_UNPROVIDED",
         )
         self.assertEqual(
             admit(
@@ -272,7 +281,9 @@ class RestartAdmissionTests(unittest.TestCase):
         ):
             with self.subTest(gates_decision):
                 self.assertEqual(
-                    admit(intent(), registry(), gates_decision=gates_decision)["reason"],
+                    admit(intent(), registry(), gates_decision=gates_decision)[
+                        "reason"
+                    ],
                     "FLEET_GATE_NOT_PERMITTED",
                 )
 
@@ -287,9 +298,7 @@ class CreateStopParkTests(unittest.TestCase):
         out = admit(
             intent(op="create"),
             registry(desired="NEW"),
-            witness_verdict=witness(
-                reason="FRESH_NO_PRIOR_STEPS_UNATTESTED", replay=0
-            ),
+            witness_verdict=witness(reason="FRESH_NO_PRIOR_STEPS_UNATTESTED", replay=0),
         )
         self.assertEqual(out["decision"], "ADMIT")
         self.assertEqual(out["required_micro_usd"], 2_750_000)
@@ -301,15 +310,19 @@ class CreateStopParkTests(unittest.TestCase):
 
     def test_stop_and_park_need_only_lease(self):
         stop = admit(
-            intent(op="stop"), registry(desired="RUNNING"),
-            witness_verdict=None, gates_decision=None,
+            intent(op="stop"),
+            registry(desired="RUNNING"),
+            witness_verdict=None,
+            gates_decision=None,
         )
         self.assertEqual(stop["decision"], "ADMIT")
         self.assertEqual(stop["desired_state_after"], "STOPPED")
         self.assertIsNone(stop["required_micro_usd"])
         park = admit(
-            intent(op="park"), registry(desired="STOPPED"),
-            witness_verdict=None, gates_decision=None,
+            intent(op="park"),
+            registry(desired="STOPPED"),
+            witness_verdict=None,
+            gates_decision=None,
         )
         self.assertEqual(park["decision"], "ADMIT")
         self.assertEqual(park["desired_state_after"], "PARKED")
@@ -320,7 +333,8 @@ class ReceiptChainTests(unittest.TestCase):
         first = admit(intent(), registry())
         self.assertRegex(first["sha256"], r"^[0-9a-f]{64}$")
         second = admit(
-            intent(intent_id="intent-0002"), registry(),
+            intent(intent_id="intent-0002"),
+            registry(),
             prev_receipt_sha256=first["sha256"],
         )
         self.assertEqual(second["prev_sha256"], first["sha256"])
@@ -328,7 +342,9 @@ class ReceiptChainTests(unittest.TestCase):
         from tools.salad import controller_gates as gates
 
         self.assertTrue(gates.verify_chain(lines))
-        tamper = lines[0].replace('"required_micro_usd": 3150000', '"required_micro_usd": 3150001')
+        tamper = lines[0].replace(
+            '"required_micro_usd": 3150000', '"required_micro_usd": 3150001'
+        )
         self.assertFalse(gates.verify_chain([tamper, lines[1]]))
 
     def test_bad_chain_seed_fails_closed(self):
