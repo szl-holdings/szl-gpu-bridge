@@ -92,6 +92,24 @@ class RecipeRuntimeAdmissionTests(unittest.TestCase):
         unpinned = base.replace("pip install " + pins, "pip install", 1)
         self.assertIn("R5_PINSET", _fails("printf '%s' '" + pins + "'\n" + unpinned))
 
+    def test_whitespace_indented_echo_is_presentation_only(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails("  echo '" + pins + "'\n" + unpinned))
+
+    def test_chained_echo_is_presentation_only(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails("true && echo '" + pins + "'\n" + unpinned))
+
+    def test_piped_printf_is_presentation_only(self) -> None:
+        pins = " ".join(linter.PIN_SETS["MODERN"])
+        base = _command("MODERN", PINNED)
+        unpinned = base.replace("pip install " + pins, "pip install", 1)
+        self.assertIn("R5_PINSET", _fails("true | printf '" + pins + "'\n" + unpinned))
+
     def test_legacy_non_worker_use_is_not_newly_prohibited(self) -> None:
         self.assertNotIn(
             "R5_KNOWN_FATAL_TRL_WORKER_PAIR",
