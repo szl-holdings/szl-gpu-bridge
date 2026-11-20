@@ -12,7 +12,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DAEMON = ROOT / "laptop" / "daemon.ps1"
 POWERSHELL = shutil.which("powershell.exe") if os.name == "nt" else None
