@@ -154,6 +154,14 @@ def _validate_budget(budget):
     return budget
 
 
+def _budget_pinned(budget):
+    """Budget floor (RATIFY-B amendment): an all-zero lane budget admits
+    no paid operation (create, restart). The owner must pin at least one
+    nonzero verified allocation before paid work can be admitted; an
+    unpriced paid op is never treated as a zero-cost op."""
+    return any(budget[field] > 0 for field in BUDGET_FIELDS)
+
+
 def _required_micro_usd(budget, replay_steps):
     """Owner formula: remaining must cover start, replay, next checkpoint,
     finalize and reserve. Replay is charged per conditional replay step the
@@ -342,6 +350,18 @@ def admit(
             )
         required = _required_micro_usd(budget, replay_steps)
 
+    if (
+        required is not None
+        and intent['op'] in ('create', 'restart')
+        and not _budget_pinned(budget)
+    ):
+        return deny(
+            'BUDGET_FLOOR_UNPINNED',
+            intent,
+            replay_steps_conditional=replay_steps,
+            required_micro_usd=required,
+            remaining_micro_usd=budget["remaining"],
+        )
     if required is not None and budget["remaining"] < required:
         return deny(
             "BUDGET_SHORTFALL",
