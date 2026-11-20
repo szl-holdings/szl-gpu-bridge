@@ -292,6 +292,31 @@ class PeerDissentTests(unittest.TestCase):
         b = run(x)["input_sha256"]
         self.assertNotEqual(a, b)
 
+    def test_self_consistent_forged_hashes_are_not_authenticated(self):
+        # Kimi's adversarial challenge: a dishonest producer rewrites every
+        # digest consistently. This JSON-only witness MUST NOT claim authenticity.
+        x = fixture()
+        x["source_revision"] = "3" * 40
+        x["patch_sha256"] = "4" * 64
+        x["evaluation_suite_sha256"] = "5" * 64
+        x["counterexample_suite_sha256"] = "6" * 64
+        for i, row in enumerate(x["reviewers"]):
+            row["source_revision"] = x["source_revision"]
+            row["patch_sha256"] = x["patch_sha256"]
+            row["prompt_sha256"] = str(i + 7) * 64
+            row["response_sha256"] = str(i + 1) * 64
+        for i, row in enumerate(x["controls"]):
+            row["fixture_sha256"] = hashlib.sha256(
+                f"untrusted-forged-case-{i}".encode()
+            ).hexdigest()
+        outcome = run(x)
+        self.assertEqual(outcome["state"], "REVIEW_CANDIDATE_ONLY")
+        self.assertNotEqual(outcome["input_sha256"], run(fixture())["input_sha256"])
+        self.assertFalse(outcome["source_bytes_verified"])
+        self.assertFalse(outcome["reviewer_output_bytes_verified"])
+        self.assertFalse(outcome["signer_identity_verified"])
+        self.assertFalse(outcome["release_authorized"])
+
     def test_schema_and_result_never_infer_model_executed(self):
         r = run(fixture())
         self.assertFalse(r["peer_identity_verified"])
