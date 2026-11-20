@@ -114,9 +114,7 @@ def validate_registry(registry):
     if registry["schema"] != REGISTRY_SCHEMA:
         raise ValueError("REGISTRY_SCHEMA_MISMATCH")
     head = registry["last_intent_sha256"]
-    if head is not None and (
-        type(head) is not str or _SHA64.fullmatch(head) is None
-    ):
+    if head is not None and (type(head) is not str or _SHA64.fullmatch(head) is None):
         raise ValueError("REGISTRY_HEAD_INVALID")
     lanes = registry["lanes"]
     if type(lanes) is not dict or not lanes:
@@ -352,11 +350,11 @@ def admit(
 
     if (
         required is not None
-        and intent['op'] in ('create', 'restart')
-        and not _budget_pinned(budget)
+        and intent["op"] in ("create", "restart")
+        and (not _budget_pinned(budget) or required == 0)
     ):
         return deny(
-            'BUDGET_FLOOR_UNPINNED',
+            "BUDGET_FLOOR_UNPINNED",
             intent,
             replay_steps_conditional=replay_steps,
             required_micro_usd=required,

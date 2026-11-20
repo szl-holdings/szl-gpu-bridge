@@ -121,3 +121,44 @@ def test_zero_budget_stop_still_admits():
         lease_ok=True,
     )
     assert r["decision"] == "ADMIT"
+
+
+def test_remaining_only_unpriced_create_denied():
+    # Negative control: a positive remaining balance is not a priced operation.
+    result = admission.admit(
+        intent_bytes=_intent("create", "unpriced-create-1"),
+        registry=_registry(_budget(remaining=5000000), "NEW"),
+        now=NOW,
+        lease_ok=True,
+        witness_verdict=dict(WITNESS_FRESH),
+    )
+    assert result["decision"] == "DENY"
+    assert result["reason"] == "BUDGET_FLOOR_UNPINNED"
+    assert result["salad_mutation_authorized"] is False
+
+
+def test_remaining_only_unpriced_restart_denied():
+    result = admission.admit(
+        intent_bytes=_intent("restart", "unpriced-restart-1"),
+        registry=_registry(_budget(remaining=5000000), "STOPPED"),
+        now=NOW,
+        lease_ok=True,
+        witness_verdict=dict(WITNESS_RESTART),
+        gates_decision=dict(GATES_PERMITTED),
+    )
+    assert result["decision"] == "DENY"
+    assert result["reason"] == "BUDGET_FLOOR_UNPINNED"
+    assert result["salad_mutation_authorized"] is False
+
+
+def test_unused_replay_price_is_not_a_funded_create():
+    result = admission.admit(
+        intent_bytes=_intent("create", "unpriced-replay-only-1"),
+        registry=_registry(_budget(remaining=5000000, replay_step=100), "NEW"),
+        now=NOW,
+        lease_ok=True,
+        witness_verdict=dict(WITNESS_FRESH),
+    )
+    assert result["decision"] == "DENY"
+    assert result["reason"] == "BUDGET_FLOOR_UNPINNED"
+    assert result["salad_mutation_authorized"] is False
