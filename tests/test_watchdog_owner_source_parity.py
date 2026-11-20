@@ -60,7 +60,7 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
             "persist-credentials: false",
             "runs-on: [self-hosted, Windows, X64]",
             "Get-ScheduledTask -TaskName 'SZL-GPU-Bridge'",
-            "This machine is not bound to the existing SZL GPU bridge.",
+            "Existing owner prerequisites unavailable: both primary task and installed daemon are required.",
             "git rev-parse HEAD",
             "if ($proof.principal_recorded -ne $false)",
             "if ($proof.credential_values_recorded -ne $false)",
@@ -71,7 +71,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
     def test_primary_task_and_daemon_both_required_before_install(self) -> None:
         """Missing primary task cannot be compensated by a copied daemon file."""
         source = self.source
-        bind = source.index("- name: Bind execution to an existing SZL bridge owner node")
+        bind = source.index(
+            "- name: Bind execution to an existing SZL bridge owner node"
+        )
         guard = source.index("- name: Refuse stale owner daemon")
         install = source.index("- name: Install the exact local watchdog package")
         block = source[bind:guard]
@@ -92,7 +94,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
 
         binary = shutil.which("powershell.exe") or shutil.which("pwsh")
         if binary is None:
-            self.skipTest("PowerShell is unavailable; static source contract still runs")
+            self.skipTest(
+                "PowerShell is unavailable; static source contract still runs"
+            )
         block = self.source.split(
             "- name: Bind execution to an existing SZL bridge owner node", 1
         )[1].split("- name: Refuse stale owner daemon", 1)[0]
@@ -107,9 +111,15 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
             with self.subTest(task_present=task_present, daemon_present=daemon_present):
                 script = (
                     "$ErrorActionPreference = 'Stop';"
-                    + ("$task = [pscustomobject]@{};" if task_present else "$task = $null;")
+                    + (
+                        "$task = [pscustomobject]@{};"
+                        if task_present
+                        else "$task = $null;"
+                    )
                     + ("$daemon = $true;" if daemon_present else "$daemon = $false;")
-                    + "try { " + predicate + "; 'ACCEPTED' } catch { 'REFUSED' }"
+                    + "try { "
+                    + predicate
+                    + "; 'ACCEPTED' } catch { 'REFUSED' }"
                 )
                 outcome = subprocess.run(
                     [binary, "-NoProfile", "-NonInteractive", "-Command", script],
@@ -119,7 +129,9 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
                     timeout=20,
                 )
                 self.assertEqual(outcome.returncode, 0, outcome.stderr)
-                self.assertEqual(outcome.stdout.strip(), "ACCEPTED" if accepted else "REFUSED")
+                self.assertEqual(
+                    outcome.stdout.strip(), "ACCEPTED" if accepted else "REFUSED"
+                )
 
 
 if __name__ == "__main__":
