@@ -113,10 +113,12 @@ def snapshot(
     )
 
 
-def resolve_revision(repo: str) -> str:
+def resolve_revision(repo: str, *, read_only: bool = False) -> str:
     from huggingface_hub import HfApi
 
-    refs = HfApi().list_repo_refs(repo, repo_type="dataset")
+    refs = HfApi().list_repo_refs(
+        repo, repo_type="dataset", **({"token": False} if read_only else {})
+    )
     return next(b.target_commit for b in refs.branches if b.name == "main")
 
 
@@ -168,9 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     snap = args.workdir / "snapshot"
+    read_only = args.mode == "check"
     try:
-        revision = resolve_revision(args.repo)
-        snapshot(args.repo, revision, snap, read_only=args.mode == "check")
+        revision = resolve_revision(args.repo, read_only=read_only)
+        snapshot(args.repo, revision, snap, read_only=read_only)
     except Exception as exc:
         if args.mode != "check" or not is_rate_limited(exc):
             raise
