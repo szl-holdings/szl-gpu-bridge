@@ -81,7 +81,7 @@ def review_lock_contents(contents: object, *, python: str) -> dict:
         for name in ("numpy", "pyarrow"):
             if stripped.startswith(name) and (
                 len(stripped) == len(name)
-                or stripped[len(name)] in "<=>!~[ \\"
+                or stripped[len(name)] in "<=>!~["
             ):
                 package = name
                 break
