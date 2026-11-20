@@ -21,7 +21,7 @@ POWERSHELL = shutil.which("powershell.exe") if os.name == "nt" else None
 class DaemonFailureExitContractTests(unittest.TestCase):
     def test_unexpected_exception_exit_is_after_lock_disposal(self) -> None:
         source = DAEMON.read_text(encoding="utf-8")
-        catch = source.rfind("} catch {")
+        catch = source.rfind("} catch {\n  $DaemonFailureExit = 70")
         finally_block = source.rfind("} finally {")
         post_finally_exit = source.rfind(
             "if ($DaemonFailureExit -ne 0) { exit $DaemonFailureExit }"
@@ -44,7 +44,7 @@ class DaemonFailureExitContractTests(unittest.TestCase):
     @unittest.skipUnless(POWERSHELL, "Windows PowerShell is required")
     def test_only_extracted_catch_finally_in_isolated_fixture(self) -> None:
         source = DAEMON.read_text(encoding="utf-8")
-        tail = source[source.rfind("} catch {") :]
+        tail = source[source.rfind("} catch {\n  $DaemonFailureExit = 70") :]
         self.assertIn("if ($DaemonFailureExit -ne 0)", tail)
         self.assertIn("$LockHandle.Dispose()", tail)
         fixture = tail.replace(
@@ -86,7 +86,7 @@ class DaemonFailureExitContractTests(unittest.TestCase):
     @unittest.skipUnless(POWERSHELL, "Windows PowerShell is required")
     def test_log_failure_still_exits_70_after_finally(self) -> None:
         source = DAEMON.read_text(encoding="utf-8")
-        tail = source[source.rfind("} catch {") :]
+        tail = source[source.rfind("} catch {\n  $DaemonFailureExit = 70") :]
         self.assertIn("SZL_DAEMON_ERROR_LOG_UNAVAILABLE", tail)
         fixture = tail.replace(
             "$LockHandle.Dispose()",
