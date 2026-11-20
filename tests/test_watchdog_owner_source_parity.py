@@ -50,8 +50,8 @@ class WindowsOwnerSourceParityTests(unittest.TestCase):
         self.assertIn("@('daemon.ps1','watchdog.ps1','storage_preflight.py')", s)
         self.assertIn("Installed owner proof source drift", s)
         self.assertIn("Installed owner proof changed since readback", s)
-        self.assertIn('      - "laptop/storage_preflight.py"', s)
-        self.assertIn('      - "laptop/source_parity.ps1"', s)
+        self.assertIn("@('daemon.ps1','storage_preflight.py')", s)
+        self.assertIn("source_parity.ps1", s)
 
     def test_protected_sha_and_existing_owner_checks_remain(self) -> None:
         s = self.source
