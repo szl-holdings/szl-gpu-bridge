@@ -119,6 +119,8 @@ import argparse, datetime, hashlib, inspect, json, os, signal, sys, time
 from pathlib import Path
 import re
 import uuid
+import urllib.parse
+import urllib.request
 
 # Support the existing first-party script launch on A6000 hosts:
 # `python tools/salad/salad_worker.py` does not put the checkout root on
@@ -248,18 +250,99 @@ def transport_label(error: Exception) -> str:
         status = getattr(error, "code", None)
     return f"HTTP {status}" if type(status) is int else type(error).__name__
 
+class _SafeReceiptRedirect(urllib.request.HTTPRedirectHandler):
+    """Bounded HTTPS redirects; never transfer a Hub bearer to a CDN origin.
+
+    Redirects to unknown hosts or downgrade schemes are refused rather than
+    silently following them. Signed CDN URLs are capability URLs; bearer
+    credentials never accompany cross-origin requests.
+    """
+
+    max_redirections = 5
+    max_repeats = 2
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            before = urllib.parse.urlsplit(req.full_url)
+            after = urllib.parse.urlsplit(newurl)
+            host = (after.hostname or "").lower()
+            valid_host = (
+                host == "huggingface.co"
+                or host == "hf.co"
+                or host.endswith(".hf.co")
+                or host == "xetcdn.com"
+                or host.endswith(".xetcdn.com")
+            )
+            allowed = (
+                after.scheme == "https"
+                and after.port in (None, 443)
+                and after.username is None
+                and after.password is None
+                and not after.fragment
+                and bool(after.path)
+                and valid_host
+            )
+        except ValueError:
+            allowed = False
+        if not allowed:
+            raise ReceiptError("untrusted Hub receipt redirect destination")
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is None:
+            raise ReceiptError("Hub receipt redirect unavailable")
+        if (
+            before.scheme,
+            before.hostname,
+            before.port,
+        ) != (after.scheme, after.hostname, after.port):
+            for collection in (redirected.headers, redirected.unredirected_hdrs):
+                for key in tuple(collection):
+                    if key.lower() in (
+                        "authorization",
+                        "proxy-authorization",
+                        "cookie",
+                    ):
+                        del collection[key]
+        return redirected
+
+
 def _readback_fetch(url: str, token: str, max_bytes: int) -> bytes:
-    # v3.11 seam: the single network boundary of the receipt readback, kept
-    # module-level so contract tests can substitute it deterministically.
-    # A direct immutable-revision GET via stdlib; the attempted bytes are
-    # byte-compared against the response body.
-    import urllib.request
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=120) as response:
-        status = int(getattr(response, "status", 200) or 200)
-        if status != 200:
-            raise ReceiptError(f"receipt readback HTTP {status}")
+    """Read exact commit bytes with a host-bounded redirect and no bearer leak."""
+    if (
+        type(token) is not str
+        or not token
+        or type(max_bytes) is not int
+        or not 0 < max_bytes <= 1_000_000
+    ):
+        raise ReceiptError("receipt readback arguments invalid")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "huggingface.co"
+            or parsed.port not in (None, 443)
+            or parsed.username is not None
+            or parsed.password is not None
+            or bool(parsed.query)
+            or bool(parsed.fragment)
+            or re.fullmatch(
+                r"/(?:datasets/)?[A-Za-z0-9][A-Za-z0-9_.-]*/"
+                r"[A-Za-z0-9][A-Za-z0-9_.-]*/resolve/[0-9a-f]{40}/"
+                r"mesh/salad-[0-9a-f]{64}\.json",
+                parsed.path,
+            )
+            is None
+        ):
+            raise ReceiptError("receipt readback origin or path is not immutable")
+    except ValueError:
+        raise ReceiptError("receipt readback URL invalid") from None
+    request = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {token}"}
+    )
+    opener = urllib.request.build_opener(_SafeReceiptRedirect())
+    with opener.open(request, timeout=120) as response:
+        status = getattr(response, "status", None)
+        if type(status) is not int or status != 200:
+            raise ReceiptError("receipt readback did not return HTTP 200")
         return response.read(max_bytes)
 
 
@@ -278,6 +361,8 @@ def receipt_retry(operation, stage):
             raise
         except Exception as error:
             status = getattr(getattr(error, "response", None), "status_code", None)
+            if type(status) is not int:
+                status = getattr(error, "code", None)
             # Permission/not-found/invalid-input failures require reconciliation,
             # not retries with another repository or stronger credentials.
             permanent = type(status) is int and 400 <= status < 500 and status not in (408, 429)
@@ -353,8 +438,6 @@ class ReceiptChannel:
             prefix = "datasets/" if self.repo_type == "dataset" else ""
             url = f"https://huggingface.co/{prefix}{self.repo_id}/resolve/{revision}/{path}"
             observed = _readback_fetch(url, self.token, len(raw) + 1)
-            if observed != raw:
-                raise ReceiptError("receipt byte readback does not match the attempted bytes")
             if observed != raw:
                 raise ReceiptError("receipt byte readback does not match the attempted bytes")
 
