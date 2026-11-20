@@ -173,6 +173,16 @@ def verify(receipt_raw: bytes, markers_raw: bytes) -> dict:
         "loss_last",
     ):
         number(training[key], "TRAINING_NUMBER_INVALID")
+    # These are only worker-reported values, but a claimed successful
+    # adapter update cannot also report no trainable weights or no movement.
+    # A pass here is consistency only, never independently proved training.
+    require(
+        training["mean_delta"] >= 0
+        and training["max_delta"] > 0
+        and training["adapter_trainable_l1"] > 0
+        and training["mean_delta"] <= training["max_delta"],
+        "TRAIN_MOVEMENT_INCONSISTENT",
+    )
     require(0 <= training["eval_score"] <= 1, "EVAL_SCORE_INVALID")
     require(training["loss_first"] > 0 and training["loss_last"] >= 0, "LOSS_INVALID")
 
