@@ -31,6 +31,11 @@ from huggingface_hub import HfApi
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from rewards import abstention_reward
+from reward_admission import (
+    TRAINING_HOLD_EXIT_CODE,
+    TrainingAdmissionHold,
+    require_training_admission,
+)
 
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
 REQUIRED_COLUMNS = ("prompt", "answer", "answerable")
@@ -96,6 +101,14 @@ def load_reward_dataset(a, api: HfApi):
 
 
 def main() -> int:
+    # Permanent source-level quarantine for the reward-v1 training entrypoint.
+    # A separately reviewed PR must replace this with qualified v2 admission.
+    try:
+        require_training_admission()
+    except TrainingAdmissionHold as exc:
+        print(f"FAIL-CLOSED: {exc}", file=sys.stderr)
+        return TRAINING_HOLD_EXIT_CODE
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--dataset", required=True,
