@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""salad_worker.py — the resumable burst-training worker (v3.10, 2026-11-18).
+"""salad_worker.py — the resumable burst-training worker (v3.11, 2026-11-20).
+
+v3.11 replaces the receipt readback hf_hub_download call with a direct
+immutable-revision HTTPS GET through stdlib urllib: node-resolved
+huggingface_hub 2.4.0 breaks inside its httpx2 streaming decoder
+(TypeError: process() takes no keyword arguments, hubprobe-k23
+2026-11-20) regardless of force_download. The byte readback guarantee
+and the fail-closed posture are unchanged.
 
 How NVIDIA et al. run training on spot-style fleets (Salad, Lambda on-demand,
 k8s spot pools):
@@ -236,6 +243,8 @@ def hub_revision(commit) -> str:
 def transport_label(error: Exception) -> str:
     # SDK exception strings can contain request headers or signed URLs.
     status = getattr(getattr(error, "response", None), "status_code", None)
+    if type(status) is not int:
+        status = getattr(error, "code", None)
     return f"HTTP {status}" if type(status) is int else type(error).__name__
 
 
@@ -321,12 +330,22 @@ class ReceiptChannel:
         revision = hub_revision(commit)
 
         def readback():
-            local = hf_hub_download(
-                repo_id=self.repo_id, repo_type=self.repo_type, filename=path,
-                revision=revision, token=self.token, force_download=True,
-            )
-            with open(local, "rb") as stream:
-                observed = stream.read(len(raw) + 1)
+            # v3.11: hf_hub_download on the node-resolved hub 2.4.0 stack dies
+            # with TypeError "process() takes no keyword arguments" inside its
+            # httpx2 response decoder (hubprobe-k23, 2026-11-20), route-
+            # independent (force_download or not). Readback is now a direct,
+            # immutable-revision HTTPS GET through stdlib: same byte
+            # guarantee, always network-fresh, retry semantics unchanged.
+            import urllib.request
+            prefix = "datasets/" if self.repo_type == "dataset" else ""
+            url = f"https://huggingface.co/{prefix}{self.repo_id}/resolve/{revision}/{path}"
+            req = urllib.request.Request(
+                url, headers={"Authorization": f"Bearer {self.token}"} if self.token else {})
+            with urllib.request.urlopen(req, timeout=120) as response:
+                status = int(getattr(response, "status", 200) or 200)
+                if status != 200:
+                    raise ReceiptError(f"receipt readback HTTP {status}")
+                observed = response.read(len(raw) + 1)
             if observed != raw:
                 raise ReceiptError("receipt byte readback does not match the attempted bytes")
 
