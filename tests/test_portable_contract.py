@@ -2,6 +2,7 @@
 
 import base64
 from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -224,6 +225,14 @@ class PortableContractTests(unittest.TestCase):
         b.spec["workload"]["runId"] = b.manifest["runId"] = j["jobId"]
         b.replace_job(j, "jobspec.v2")
         self.check(b.args(), "EXISTING_CONTRACT_VERIFIED", "OFFLINE_EVIDENCE_ONLY")
+
+        # The unselected dataset is valid for legacy v2 (40..64 hex) but
+        # not for the portable v1 SHA-1 profile. Keep the selected model pinned.
+        wider = deepcopy(j)
+        wider["dataset"]["revision"] = "e" * 64
+        b.replace_job(wider, "jobspec.v2")
+        self.check(b.args(), "HOLD", "UNPINNED_JOB_ASSET")
+
         j["placement"] = b.spec["placement"]
         b.replace_job(j, "jobspec.v2")
         self.check(b.args(), "HOLD", "JOBSPEC_BINDING")
@@ -272,8 +281,104 @@ class PortableContractTests(unittest.TestCase):
         }
         b.replace_job(intent, "massed-launch.v1")
         self.check(b.args(), "PROPOSAL_REQUIRED_CAPPED", "NEW_PAID_NEVER_AUTHORIZED")
+        for field, value in [
+            ("intent_id", "other-run"),
+            ("lane_id", "other-lane"),
+            ("prev_intent_sha256", "a" * 63),
+            ("hard_deadline_s", 59),
+            ("hard_deadline_s", 21_601),
+        ]:
+            with self.subTest(field=field, value=value):
+                bad = deepcopy(b)
+                if field == "hard_deadline_s":
+                    # Every other deadline/quote agrees, including the short one.
+                    bad.spec["budget"]["wallSeconds"] = value
+                    bad.evidence["costCeilings"]["wallSeconds"] = value
+                    bad.spec["controls"]["stopBy"] = NOW + value
+                    bad.spec["budget"]["validThrough"] = NOW + value
+                    bad.evidence["validThrough"] = NOW + value
+                bad.replace_job(intent | {field: value}, "massed-launch.v1")
+                result = self.check(
+                    bad.args(), "PROPOSAL_REQUIRED_CAPPED", "LAUNCH_INTENT_BINDING"
+                )
+                self.assertIsNone(result["proposal"])
         p["allocation"] = b.evidence["allocation"] = "existing-approved"
         self.check(b.args(), "PROPOSAL_REQUIRED_CAPPED", "LAUNCH_INTENT_BINDING")
+
+    def test_job_identity_time_window_and_requested_vram(self):
+        def iso(timestamp):
+            return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+        for field, value, reason in [
+            ("jobId", "job-0002-other", "JOBSPEC_BINDING"),
+            ("createdAt", iso(NOW + 1), "JOB_TIME_WINDOW"),
+            ("expiresAt", iso(NOW + 14_400 - 1), "JOB_TIME_WINDOW"),
+            ("minFreeVramGb", 8, "JOB_GATE_MISMATCH"),  # 8192 MiB > 8000 requested
+        ]:
+            with self.subTest(field=field):
+                b = Bundle()
+                job = json.loads(b.job)
+                target = job["gates"] if field == "minFreeVramGb" else job
+                target[field] = value
+                b.replace_job(job, "jobspec.v1")
+                self.check(b.args(), "HOLD", reason)
+
+    def test_independently_pinned_placement_evidence(self):
+        for section, field, value, reason in [
+            (None, "validFrom", NOW + 1, "STALE_PLACEMENT_EVIDENCE"),
+            ("workload", "attempt", 2, "PLACEMENT_EVIDENCE_MISMATCH"),
+            ("source", "commit", "b" * 40, "PLACEMENT_EVIDENCE_MISMATCH"),
+            ("asset", "revision", "f" * 40, "PLACEMENT_EVIDENCE_MISMATCH"),
+            ("costCeilings", "wallSeconds", 14_399, "COST_EVIDENCE_MISMATCH"),
+        ]:
+            with self.subTest(section=section, field=field):
+                b = Bundle()
+                record = b.evidence if section is None else b.evidence[section]
+                record[field] = value
+                self.check(b.args(), "HOLD", reason)
+        b = Bundle()
+        b.evidence["devices"].append(deepcopy(b.evidence["devices"][0]))
+        self.check(b.args(), "HOLD", "DEVICE_EVIDENCE")
+
+    def test_budget_lifetime_and_positive_new_paid_compute(self):
+        b = Bundle()
+        b.spec["budget"]["validThrough"] = b.evidence["validThrough"] + 1
+        self.check(b.args(), "HOLD", "COST_EVIDENCE_MISMATCH")
+
+        b = Bundle()
+        late = NOW + b.spec["budget"]["wallSeconds"] + 1
+        b.spec["budget"]["validThrough"] = b.evidence["validThrough"] = late
+        b.spec["controls"]["stopBy"] = late
+        self.check(b.args(), "HOLD", "BUDGET_NOT_CAPPED")
+
+        b = Bundle(mode="new-paid")
+        b.spec["budget"]["compute"] = b.evidence["costCeilings"]["compute"] = 0
+        result = self.check(b.args(), "PROPOSAL_REQUIRED_CAPPED", "BUDGET_NOT_CAPPED")
+        self.assertIsNone(result["proposal"])
+
+    def test_checkpoint_types_paths_and_duplicate_readback(self):
+        b = Bundle()
+        b.manifest["attempt"] = True  # bool compares equal to reviewed attempt 1
+        self.check(b.args(), "HOLD", "INVALID_CHECKPOINT")
+
+        b = Bundle()
+        path = "config.json."
+        b.manifest["shards"][1]["path"] = b.evidence["storage"]["expectedPaths"][1] = (
+            path
+        )
+        b.chunks[1] = (path, [b"{}"])
+        self.check(b.args(), "HOLD", "INVALID_SHARD_PATH")
+
+        b = Bundle()
+        # One real byte: deleting the type check must not be masked by size/hash.
+        b.manifest["shards"][1].update(bytes=True, sha256=sha(b"x"))
+        b.manifest["totalBytes"] = 5
+        b.chunks[1] = ("config.json", [b"x"])
+        self.check(b.args(), "HOLD", "INVALID_SHARD_RECORD")
+
+        b = Bundle()
+        b.chunks.append(deepcopy(b.chunks[0]))  # complete inventory, plus one repeat
+        self.check(b.args(), "HOLD", "READBACK_INVENTORY")
 
     def test_required_fields_and_pins(self):
         for section, key, value in [
