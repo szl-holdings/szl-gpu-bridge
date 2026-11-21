@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Portable workload review sidecar, not an executable JobSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "workload", "source", "asset", "placement", "placementReceiptSha256", "checkpoint", "budget", "controls"],
+  "properties": {
+    "schema": {"const": "szl.portable-workload/v1"},
+    "placementReceiptSha256": {"$ref": "#/$defs/hash"},
+    "workload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "sha256", "runId", "attempt"],
+      "properties": {
+        "kind": {"enum": ["jobspec.v1", "jobspec.v2", "massed-launch.v1"]},
+        "sha256": {"$ref": "#/$defs/hash"}, "runId": {"$ref": "#/$defs/id"},
+        "attempt": {"$ref": "#/$defs/positive"}
+      }
+    },
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["githubRepo", "commit"],
+      "properties": {"githubRepo": {"$ref": "#/$defs/repo"}, "commit": {"$ref": "#/$defs/commit"}}
+    },
+    "asset": {
+      "type": "object", "additionalProperties": false, "required": ["repoType", "repoId", "revision"],
+      "properties": {"repoType": {"enum": ["model", "dataset", "space"]}, "repoId": {"$ref": "#/$defs/repo"}, "revision": {"$ref": "#/$defs/commit"}}
+    },
+    "placement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["allocation", "sites", "resourceId", "sku", "region", "deviceId", "minVramMiB", "toolchainSha256", "collective", "poolVram"],
+      "properties": {
+        "allocation": {"enum": ["existing-approved", "new-paid"]},
+        "sites": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"enum": ["hq", "mac", "massed", "salad", "hpc-slurm"]}},
+        "resourceId": {"$ref": "#/$defs/id"}, "sku": {"$ref": "#/$defs/id"}, "region": {"$ref": "#/$defs/id"},
+        "deviceId": {"$ref": "#/$defs/id"}, "minVramMiB": {"$ref": "#/$defs/positive"},
+        "toolchainSha256": {"$ref": "#/$defs/hash"}, "collective": {"const": "none"}, "poolVram": {"const": false}
+      }
+    },
+    "checkpoint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["storeId", "versionId", "manifestSha256", "recoveryPolicy"],
+      "properties": {"storeId": {"$ref": "#/$defs/id"}, "versionId": {"$ref": "#/$defs/id"}, "manifestSha256": {"$ref": "#/$defs/hash"}, "recoveryPolicy": {"const": "verify-before-resume"}}
+    },
+    "budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["currency", "maxMicroUsd", "wallSeconds", "validThrough", "compute", "storage", "egress", "contingency"],
+      "properties": {
+        "currency": {"const": "USD"}, "maxMicroUsd": {"$ref": "#/$defs/nonnegative"},
+        "wallSeconds": {"$ref": "#/$defs/positive"}, "validThrough": {"$ref": "#/$defs/positive"},
+        "compute": {"$ref": "#/$defs/nonnegative"}, "storage": {"$ref": "#/$defs/nonnegative"},
+        "egress": {"$ref": "#/$defs/nonnegative"}, "contingency": {"$ref": "#/$defs/nonnegative"}
+      }
+    },
+    "controls": {
+      "type": "object", "additionalProperties": false,
+      "required": ["idempotencyKey", "cancelHookId", "cancelOwner", "stopBy"],
+      "properties": {"idempotencyKey": {"$ref": "#/$defs/id"}, "cancelHookId": {"$ref": "#/$defs/id"}, "cancelOwner": {"$ref": "#/$defs/id"}, "stopBy": {"$ref": "#/$defs/positive"}}
+    }
+  },
+  "$defs": {
+    "positive": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "nonnegative": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "id": {"type": "string", "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"},
+    "repo": {"type": "string", "maxLength": 192, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*(?![\\s\\S])"},
+    "hash": {"type": "string", "minLength": 64, "maxLength": 64, "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "minLength": 40, "maxLength": 40, "pattern": "^[0-9a-f]{40}$"}
+  }
+}
