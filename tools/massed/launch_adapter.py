@@ -16,21 +16,31 @@ Provider-spy proven properties (tests/test_massed_launch_adapter.py):
   the lane; callers cannot assert it (Kimi: forged lease denied).
 * The price snapshot comes from the injected price reader WITH a max
   age; stale or missing snapshots deny via PRICE_DRIFT_OR_UNMEASURED.
-* An ADMIT is bound to the intent sha256 AND the registry chain head:
-  replays and post-admit mutations deny (single-use ticket).
+* An ADMIT is single-use: bound to the intent sha256 AND the registry
+  chain head; replays and post-admit mutations deny; a chain-head
+  rollback attack still hits INTENT_ALREADY_SPENT (defense in depth).
 * Budget reservation is ATOMIC under the adapter lock: two concurrent
   launches whose combined worst case exceeds a cap serialize to at
   most one ADMIT and one provider call.
-* Provider failure rolls the reservation back; the lane state is left
-  exactly as before the attempt.
-* Role is owner-bound in the registry lane, never caller-selected.
+* AMBIGUOUS provider failures PARK, never roll back (Kimi round-9: a
+  timeout may land AFTER the provider accepted the launch, and a
+  blanket rollback would permit a duplicate paid create). The
+  reservation and the spent marker are KEPT, the intent parks as
+  UNKNOWN, and reconcile() resolves it: PROVIDER-CONFIRMED ACCEPTED
+  finalizes the reservation; PROVIDER-CONFIRMED REJECTED (certain
+  non-acceptance) rolls everything back and allows one retry;
+  anything unproven stays parked forever (fail closed).
+* Only an owner-gated reconciliation call can move a parked intent.
 
-Known remaining boundaries, honestly NOT enforced here (queued hardening
-from both reviews): storage_pin is required but not yet folded into the
-worst case; hard deadlines are recorded (state deadlines, adapter.overdue)
-but the termination watchdog and provider reconciliation are owner-gated
-ops; the default state store is single-process only (the store contract
-requires deployers to back it with an atomic, durable store).
+Role is owner-bound in the registry lane, never caller-selected.
+
+Known remaining boundaries, honestly NOT enforced here (pre-canary
+queue from the reviews): the in-memory store proves single-process
+atomicity ONLY - a production durable store must survive independent
+processes, crash/restart and enforce a uniqueness constraint on spent
+intent hashes; storage_pin is required but not yet folded into the
+worst case; hard deadlines are recorded (adapter.overdue) but the
+termination watchdog and provider reconciliation are owner-gated ops.
 """
 
 from __future__ import annotations
@@ -42,7 +52,8 @@ from datetime import datetime, timedelta
 
 from tools.massed import admission
 
-LAUNCH_SCHEMA = "szl.mass-LAUNCH/v1"
+LAUNCH_SCHEMA = "szl.mass -LAUNCH/v1"
+RECONCILE_OUTCOMES = ("ACCEPTED", "REJECTED")
 MAX_SNAPSHOT_AGE_S = 300
 
 
@@ -68,6 +79,10 @@ def _intent_json(intent_bytes):
         return json.loads(intent_bytes.decode("utf-8"))
     except Exception:
         return {}
+
+
+def _doc_bytes(doc):
+    return json.dumps(doc).encode()
 
 
 def intent_deadline_s(intent_bytes):
@@ -150,6 +165,7 @@ class MassedLaunchAdapter:
             if not isinstance(now, datetime) or now.tzinfo is None:
                 return self._adapter_deny(None, "CLOCK_UNAVAILABLE", intent_bytes)
             state = self._store.load()
+            state.setdefault("unknown_intents", {})
             registry = state["registry"]
             lane_id = _intent_json(intent_bytes).get("lane_id")
             lease_ok = bool(self._lease_verifier(lane_id))
@@ -205,21 +221,125 @@ class MassedLaunchAdapter:
                         intent_id=receipt["intent_id"],
                     )
             except Exception:
-                rollback = self._store.load()
-                rl = rollback["registry"]["lanes"][receipt["lane_id"]]
-                rl["accounts"] = prev_lane["accounts"]
-                rl["desired_state"] = prev_lane["desired_state"]
-                rollback["registry"]["last_intent_sha256"] = prev_head
-                rollback["spent_intents"].pop(intent_sha, None)
-                rollback["deadlines"].pop(receipt["intent_id"], None)
-                self._store.save(rollback)
+                # Kimi round-9 pre-canary fix: the exception may be a
+                # timeout AFTER the provider accepted the launch. A
+                # blanket rollback would permit a duplicate paid create.
+                # PARK instead: keep reservation + spent marker, record
+                # everything reconcile() needs to resolve either way.
+                state["unknown_intents"][intent_sha] = {
+                    "intent_id": receipt["intent_id"],
+                    "op": op,
+                    "lane_id": receipt["lane_id"],
+                    "worst_case_micro_usd": worst,
+                    "prev_head": prev_head,
+                    "prev_lane": prev_lane,
+                }
+                self._store.save(state)
                 record = self._adapter_deny(
-                    now, "PROVIDER_LAUNCH_FAILED_ROLLED_BACK", intent_bytes
+                    now, "PROVIDER_LAUNCH_UNKNOWN_PENDING_RECONCILIATION", intent_bytes
+                )
+                record.update(
+                    op=op,
+                    provider_touched=True,
+                    massed_mutation_authorized=True,
+                    worst_case_micro_usd=worst,
+                    reservation_kept=True,
                 )
                 return record
             receipt["provider_touched"] = True
             receipt["provider_result"] = provider_result
             return receipt
+
+    def reconcile(self, intent_id, outcome, provider_result=None):
+        """Owner-gated resolution of a parked UNKNOWN intent.
+
+        outcome "ACCEPTED": the provider CONFIRMED the instance exists.
+        The reservation finalizes and stays committed; the intent
+        remains spent (no duplicate create is ever possible).
+        outcome "REJECTED": the provider CONFIRMED certain non-acceptance
+        BEFORE creating anything. The reservation, chain head, spent
+        marker and deadline roll back completely and the same intent
+        may be retried.
+        Any other outcome, or an intent that is not parked, denies and
+        the intent stays parked (fail closed).
+        """
+        probe = {"intent_id": intent_id, "op": "reconcile"}
+        with self._lock:
+            now = self._now()
+            state = self._store.load()
+            entry = None
+            intent_sha = None
+            for sha, parked in state.get("unknown_intents", {}).items():
+                if parked["intent_id"] == intent_id:
+                    entry = parked
+                    intent_sha = sha
+                    break
+            if entry is None:
+                return self._adapter_deny(now, "INTENT_NOT_UNKNOWN", _doc_bytes(probe))
+            if outcome not in RECONCILE_OUTCOMES:
+                self._store.save(state)
+                record = self._adapter_deny(
+                    now, "RECONCILE_OUTCOME_INVALID", _doc_bytes(probe)
+                )
+                record["reservation_kept"] = True
+                return record
+            if outcome == "ACCEPTED":
+                del state["unknown_intents"][intent_sha]
+                self._store.save(state)
+                record = {
+                    "schema": LAUNCH_SCHEMA,
+                    "decision": "ADMIT",
+                    "reason": "PROVIDER_ACCEPTED_RECONCILED",
+                    "intent_id": intent_id,
+                    "lane_id": entry["lane_id"],
+                    "op": entry["op"],
+                    "lease_verified": True,
+                    "severity": "INFO",
+                    "worst_case_micro_usd": entry["worst_case_micro_usd"],
+                    "massed_mutation_authorized": True,
+                    "provider_touched": True,
+                    "reservation_kept": True,
+                    "provider_result": provider_result,
+                    "observed_utc": admission.gates.utc_text(now)
+                    if isinstance(now, datetime) and now.tzinfo
+                    else None,
+                }
+                return record
+            # REJECTED: provider confirmed certain non-acceptance.
+            lane = state["registry"]["lanes"][entry["lane_id"]]
+            prev_lane = entry["prev_lane"]
+            worst = entry["worst_case_micro_usd"]
+            accounts = lane["accounts"]
+            accounts["wave_planned_uusd"] = max(
+                0, accounts["wave_planned_uusd"] - worst
+            )
+            accounts["campaign_committed_uusd"] = max(
+                0, accounts["campaign_committed_uusd"] - worst
+            )
+            lane["desired_state"] = prev_lane["desired_state"]
+            state["registry"]["last_intent_sha256"] = entry["prev_head"]
+            state["spent_intents"].pop(intent_sha, None)
+            state["deadlines"].pop(intent_id, None)
+            del state["unknown_intents"][intent_sha]
+            self._store.save(state)
+            record = {
+                "schema": LAUNCH_SCHEMA,
+                "decision": "DENY",
+                "reason": "PROVIDER_REJECTED_ROLLED_BACK",
+                "intent_id": intent_id,
+                "lane_id": entry["lane_id"],
+                "op": entry["op"],
+                "lease_verified": True,
+                "severity": "INFO",
+                "worst_case_micro_usd": worst,
+                "massed_mutation_authorized": False,
+                "provider_touched": True,
+                "reservation_kept": False,
+                "observed_utc": admission.gates.utc_text(now)
+                if isinstance(now, datetime) and now.tzinfo
+                else None,
+            }
+            return record
 
     def overdue(self, now=None):
         """Hard deadlines recorded by this adapter that are past due.

@@ -5,6 +5,10 @@ astra_w8_reply.txt): prove, using mocked provider calls, that no
 paid create can occur without a freshly verified, owner-authorized,
 one-time admission and an atomic budget reservation. Every unsafe
 path must leave the provider spy untouched. No network, no keys.
+
+Kimi round-9 additions: ambiguous provider failures PARK (never
+blanket-rollback) and only an owner-gated reconcile() with a
+provider-confirmed outcome can resolve a parked intent.
 """
 
 import json
@@ -18,6 +22,7 @@ NOW = datetime(2026, 11, 20, 23, 10, tzinfo=timezone.utc)
 MISSING = object()
 PRICE = 570_000
 WORST_3H = 1_710_000
+PARKED = "PROVIDER_LAUNCH_UNKNOWN_PENDING_RECONCILIATION"
 
 CAPS = {
     "canary_cap": 2_000_000,
@@ -111,6 +116,7 @@ def _adapter(
         "registry": registry if registry is not None else _registry(),
         "receipt_head": None,
         "spent_intents": {},
+        "unknown_intents": {},
         "deadlines": {},
     }
     observed = NOW if observed is None else observed
@@ -160,10 +166,8 @@ def test_forged_owner_lease_cannot_reach_provider():
     assert receipt["provider_touched"] is False
     assert spy.launch_calls == []
     state = _store(a).load()
-    assert (
-        state["registry"]["lanes"]["massed-canary-1"]["accounts"]["wave_planned_uusd"]
-        == 0
-    )
+    lane = state["registry"]["lanes"]["massed-canary-1"]
+    assert lane["accounts"]["wave_planned_uusd"] == 0
 
 
 def test_stale_or_missing_price_snapshot_denies_without_provider_call():
@@ -175,7 +179,6 @@ def test_stale_or_missing_price_snapshot_denies_without_provider_call():
         receipt = a.launch(_intent())
         assert receipt["decision"] == "DENY", snapshot
         assert receipt["reason"] == "PRICE_DRIFT_OR_UNMEASURED"
-
         assert spy.launch_calls == []
 
 
@@ -225,7 +228,7 @@ def test_mutated_intent_after_admit_denies():
 
 def test_concurrent_launches_serialize_to_at_most_one_admit():
     """Kimi concurrency spec: two racing launches whose combined worst
-    case exceeds the lane allocation => at most one ADMIT, exactly one
+    case exceeds the lane allocation -> at most one ADMIT, exactly one
     provider call, and the account moves by exactly one worst case."""
     results = []
     barrier = threading.Barrier(2)
@@ -253,13 +256,41 @@ def test_concurrent_launches_serialize_to_at_most_one_admit():
     assert len(state["spent_intents"]) == 1
 
 
-def test_provider_failure_rolls_back_reservation():
+def test_provider_failure_parks_as_unknown_and_never_rolls_back_blindly():
+    """Kimi round-9 pre-canary fix: a provider exception may be a timeout
+    AFTER acceptance; a blanket rollback would permit a duplicate paid
+    create. The reservation and the spent marker are KEPT and the intent
+    parks as UNKNOWN pending owner-gated reconciliation."""
     spy = ProviderSpy(fail_launch=True)
     a = _adapter(provider=spy, fail_launch=True)
     receipt = a.launch(_intent())
     assert receipt["decision"] == "DENY"
-    assert receipt["reason"] == "PROVIDER_LAUNCH_FAILED_ROLLED_BACK"
+    assert receipt["reason"] == PARKED
+    assert receipt["reservation_kept"] is True
     assert spy.launch_calls
+    state = _store(a).load()
+    lane = state["registry"]["lanes"]["massed-canary-1"]
+    assert lane["accounts"]["wave_planned_uusd"] == WORST_3H
+    assert lane["desired_state"] == "RUNNING"
+    assert len(state["spent_intents"]) == 1
+    assert len(state["unknown_intents"]) == 1
+    # a blind retry of the same intent can NEVER double-create:
+    # it denies on the advanced chain head (INTENT_NOT_CHAIN_HEAD)
+    # or, under a registry rollback attack, on INTENT_ALREADY_SPENT
+    retry = a.launch(_intent())
+    assert retry["decision"] == "DENY"
+    assert retry["reason"] in ("INTENT_NOT_CHAIN_HEAD", "INTENT_ALREADY_SPENT")
+    assert len(spy.launch_calls) == 1
+
+
+def test_reconcile_rejected_confirmed_non_acceptance_rolls_back():
+    spy = ProviderSpy(fail_launch=True)
+    a = _adapter(provider=spy, fail_launch=True)
+    assert a.launch(_intent())["reason"] == PARKED
+    fixed = a.reconcile("intent-1", "REJECTED")
+    assert fixed["decision"] == "DENY"
+    assert fixed["reason"] == "PROVIDER_REJECTED_ROLLED_BACK"
+    assert fixed["reservation_kept"] is False
     state = _store(a).load()
     lane = state["registry"]["lanes"]["massed-canary-1"]
     assert lane["accounts"]["wave_planned_uusd"] == 0
@@ -267,11 +298,45 @@ def test_provider_failure_rolls_back_reservation():
     assert lane["desired_state"] == "PENDING_LAUNCH"
     assert state["registry"]["last_intent_sha256"] is None
     assert state["spent_intents"] == {}
-    # retry of the same intent is possible after a rolled-back failure
+    assert state["unknown_intents"] == {}
+    # confirmed non-acceptance opens the retry path
     spy.fail_launch = False
-    retry = a.launch(_intent())
-    assert retry["decision"] == "ADMIT"
+    again = a.launch(_intent())
+    assert again["decision"] == "ADMIT"
     assert len(spy.launch_calls) == 2
+
+
+def test_reconcile_accepted_finalizes_reservation_intent_stays_spent():
+    spy = ProviderSpy(fail_launch=True)
+    a = _adapter(provider=spy, fail_launch=True)
+    assert a.launch(_intent())["reason"] == PARKED
+    ok = a.reconcile("intent-1", "ACCEPTED", provider_result="instance-1")
+    assert ok["decision"] == "ADMIT"
+    assert ok["reason"] == "PROVIDER_ACCEPTED_RECONCILED"
+    assert ok["provider_result"] == "instance-1"
+    state = _store(a).load()
+    lane = state["registry"]["lanes"]["massed-canary-1"]
+    assert lane["accounts"]["wave_planned_uusd"] == WORST_3H
+    assert state["unknown_intents"] == {}
+    assert len(state["spent_intents"]) == 1
+    # the intent stays spent: no duplicate create possible
+    replay = a.launch(_intent())
+    assert replay["decision"] == "DENY"
+    assert replay["reason"] in ("INTENT_NOT_CHAIN_HEAD", "INTENT_ALREADY_SPENT")
+    assert len(spy.launch_calls) == 1
+
+
+def test_reconcile_requires_parked_intent_and_known_outcome():
+    spy = ProviderSpy(fail_launch=True)
+    a = _adapter(provider=spy, fail_launch=True)
+    assert a.launch(_intent())["reason"] == PARKED
+    bad = a.reconcile("intent-1", "MAYBE")
+    assert bad["decision"] == "DENY"
+    assert bad["reason"] == "RECONCILE_OUTCOME_INVALID"
+    assert len(_store(a).load()["unknown_intents"]) == 1
+    missing = a.reconcile("intent-nope", "ACCEPTED")
+    assert missing["decision"] == "DENY"
+    assert missing["reason"] == "INTENT_NOT_UNKNOWN"
 
 
 def test_terminate_route_admits_without_price_or_reservation():
