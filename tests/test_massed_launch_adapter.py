@@ -13,9 +13,8 @@ provider-confirmed outcome can resolve a parked intent.
 
 import json
 import threading
+import unittest
 from datetime import datetime, timedelta, timezone
-
-import pytest
 
 from tools.massed import admission
 from tools.massed.launch_adapter import InMemoryStateStore, MassedLaunchAdapter
@@ -412,8 +411,12 @@ def test_operation_mismatch_denies_before_verification():
     assert verified == spy.launch_calls == spy.terminate_calls == []
 
 
-@pytest.mark.parametrize("value", [(False, "expired"), "False", 1])
-def test_truthy_non_boolean_lease_denies(value):
+def test_truthy_non_boolean_lease_denies():
+    for value in ((False, "expired"), "False", 1):
+        _check_truthy_non_boolean_lease_denies(value)
+
+
+def _check_truthy_non_boolean_lease_denies(value):
     spy = ProviderSpy()
     assert _adapter(provider=spy, lease_ok=value).launch(_intent())["reason"] == (
         "OWNER_LEASE_UNVERIFIED"
@@ -493,9 +496,13 @@ def test_adapters_racing_on_same_revision_grant_dispatch_once():
     assert lane["accounts"]["wave_planned_uusd"] == WORST_3H
 
 
-@pytest.mark.parametrize("max_age", [301, float("inf"), float("nan"), -1, True])
-def test_snapshot_age_limit_is_bounded(max_age):
-    with pytest.raises(ValueError):
+def test_snapshot_age_limit_is_bounded():
+    for max_age in (301, float("inf"), float("nan"), -1, True):
+        _check_snapshot_age_limit_is_bounded(max_age)
+
+
+def _check_snapshot_age_limit_is_bounded(max_age):
+    with unittest.TestCase().assertRaises(ValueError):
         _adapter(max_snapshot_age_s=max_age)
 
 
@@ -523,8 +530,12 @@ def test_snapshot_and_lease_rechecked_after_grant_commit():
     assert not spy.launch_calls
 
 
-@pytest.mark.parametrize("after_contact", [False, True])
-def test_unfinalized_dispatch_is_recoverable_by_new_adapter(after_contact):
+def test_unfinalized_dispatch_is_recoverable_by_new_adapter():
+    for after_contact in (False, True):
+        _check_unfinalized_dispatch_is_recoverable_by_new_adapter(after_contact)
+
+
+def _check_unfinalized_dispatch_is_recoverable_by_new_adapter(after_contact):
     class InterruptedProvider(ProviderSpy):
         def launch(self, **kw):
             super().launch(**kw)
@@ -539,7 +550,7 @@ def test_unfinalized_dispatch_is_recoverable_by_new_adapter(after_contact):
         raise SystemExit
 
     adapter = _adapter(provider=spy, lease_verifier=lease)
-    with pytest.raises(SystemExit):
+    with unittest.TestCase().assertRaises(SystemExit):
         adapter.launch(_intent())
     resumed = _adapter(
         provider=spy, store=_store(adapter), status_verifier=_verified_status
