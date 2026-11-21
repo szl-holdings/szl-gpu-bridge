@@ -142,11 +142,17 @@ def probe(
             raise OSError("STORAGE_ROOT_NOT_DIRECTORY")
         for i in range(samples):
             snapshot = usage(root)
+            # Preserve provider-native exact bytes. int() would silently turn
+            # bool/float/numeric strings into apparent disk measurements,
+            # bypassing classify()'s strict integer type validation.
+            total, free, used = snapshot.total, snapshot.free, snapshot.used
+            if not all(_finite_nonnegative_int(x) for x in (total, free, used)):
+                raise ValueError("INVALID_CAPACITY_READING")
             read = Reading(
                 observed_utc=clock(),
-                total_bytes=int(snapshot.total),
-                free_bytes=int(snapshot.free),
-                used_bytes=int(snapshot.used),
+                total_bytes=total,
+                free_bytes=free,
+                used_bytes=used,
             )
             observations.append(read)
             if i < samples - 1:
