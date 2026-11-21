@@ -127,7 +127,9 @@ def _adapter(
     }
     observed = NOW if observed is None else observed
     price = (PRICE, observed) if price is MISSING else price
-    now_fn = options.pop('now_fn', (lambda: now) if now is not MISSING else (lambda: NOW))
+    now_fn = options.pop(
+        "now_fn", (lambda: now) if now is not MISSING else (lambda: NOW)
+    )
     return MassedLaunchAdapter(
         provider=provider
         if provider is not None
@@ -298,7 +300,9 @@ def _verified_status(attempt, outcome, evidence):
 
 def _reconcile(adapter, attempt, outcome):
     return adapter.reconcile(
-        attempt["intent_id"], outcome, (attempt["attempt_id"], outcome),
+        attempt["intent_id"],
+        outcome,
+        (attempt["attempt_id"], outcome),
         attempt_id=attempt["attempt_id"],
     )
 
@@ -401,7 +405,9 @@ def test_operation_mismatch_denies_before_verification():
     spy = ProviderSpy()
     verified = []
     adapter = _adapter(provider=spy, lease_verifier=verified.append)
-    assert adapter.launch(_intent(op="terminate"))["reason"] == "INTENT_OPERATION_MISMATCH"
+    assert (
+        adapter.launch(_intent(op="terminate"))["reason"] == "INTENT_OPERATION_MISMATCH"
+    )
     assert adapter.terminate(_intent())["reason"] == "INTENT_OPERATION_MISMATCH"
     assert verified == spy.launch_calls == spy.terminate_calls == []
 
@@ -419,13 +425,20 @@ def test_unverified_or_unbound_reconciliation_leaves_attempt_parked():
     adapter = _adapter(fail_launch=True, status_verifier=_verified_status)
     attempt = adapter.launch(_intent())
     before = _store(adapter).read()
-    assert adapter.reconcile("intent-1", "REJECTED")["reason"] == "RECONCILE_ATTEMPT_UNBOUND"
+    assert (
+        adapter.reconcile("intent-1", "REJECTED")["reason"]
+        == "RECONCILE_ATTEMPT_UNBOUND"
+    )
     forged = adapter.reconcile(
-        "intent-1", "REJECTED", ("another-attempt", "REJECTED"),
+        "intent-1",
+        "REJECTED",
+        ("another-attempt", "REJECTED"),
         attempt_id=attempt["attempt_id"],
     )
     assert forged["reason"] == "RECONCILE_EVIDENCE_UNVERIFIED"
-    unauthorized = _adapter(store=_store(adapter), lease_ok=False, status_verifier=_verified_status)
+    unauthorized = _adapter(
+        store=_store(adapter), lease_ok=False, status_verifier=_verified_status
+    )
     denied = _reconcile(unauthorized, attempt, "REJECTED")
     assert denied["reason"] == "OWNER_LEASE_UNVERIFIED"
     assert denied["lease_verified"] is False
@@ -435,7 +448,9 @@ def test_unverified_or_unbound_reconciliation_leaves_attempt_parked():
 def test_rejection_preserves_descendant_termination_and_head():
     adapter = _adapter(fail_launch=True, status_verifier=_verified_status)
     attempt = adapter.launch(_intent())
-    terminate = _intent(op="terminate", intent_id="intent-2", prev=admission.intent_sha256(_intent()))
+    terminate = _intent(
+        op="terminate", intent_id="intent-2", prev=admission.intent_sha256(_intent())
+    )
     assert adapter.terminate(terminate)["decision"] == "ADMIT"
     assert _reconcile(adapter, attempt, "REJECTED")["reservation_kept"] is False
     state = _store(adapter).load()
@@ -460,7 +475,9 @@ def test_adapters_racing_on_same_revision_grant_dispatch_once():
     adapters = [_adapter(provider=spy, store=store) for _ in range(2)]
     results = []
     workers = [
-        threading.Thread(target=lambda a: results.append(a.launch(_intent())), args=(adapter,))
+        threading.Thread(
+            target=lambda a: results.append(a.launch(_intent())), args=(adapter,)
+        )
         for adapter in adapters
     ]
     for worker in workers:
@@ -468,7 +485,8 @@ def test_adapters_racing_on_same_revision_grant_dispatch_once():
     for worker in workers:
         worker.join(timeout=10)
     assert sorted(receipt["reason"] for receipt in results) == [
-        "ADMITTED_SINGLE_LAUNCHER_ONLY", "DISPATCH_GRANT_NOT_COMMITTED",
+        "ADMITTED_SINGLE_LAUNCHER_ONLY",
+        "DISPATCH_GRANT_NOT_COMMITTED",
     ]
     assert len(spy.launch_calls) == 1
     lane = store.load()["registry"]["lanes"]["massed-canary-1"]
@@ -492,7 +510,9 @@ def test_snapshot_and_lease_rechecked_after_grant_commit():
     spy = ProviderSpy()
     ticks = iter((NOW, NOW + timedelta(seconds=1)))
     adapter = _adapter(
-        provider=spy, observed=NOW - timedelta(seconds=300), now_fn=lambda: next(ticks),
+        provider=spy,
+        observed=NOW - timedelta(seconds=300),
+        now_fn=lambda: next(ticks),
     )
     denied = adapter.launch(_intent())
     assert denied["reason"] == "PRICE_DRIFT_OR_UNMEASURED"
@@ -521,7 +541,9 @@ def test_unfinalized_dispatch_is_recoverable_by_new_adapter(after_contact):
     adapter = _adapter(provider=spy, lease_verifier=lease)
     with pytest.raises(SystemExit):
         adapter.launch(_intent())
-    resumed = _adapter(provider=spy, store=_store(adapter), status_verifier=_verified_status)
+    resumed = _adapter(
+        provider=spy, store=_store(adapter), status_verifier=_verified_status
+    )
     parked = next(iter(_store(resumed).load()["unknown_intents"].values()))
     assert resumed.launch(_intent())["decision"] == "DENY"
     assert len(spy.launch_calls) == int(after_contact)
@@ -535,11 +557,15 @@ def test_confirmed_retry_is_attempt_bound_and_capped_across_adapters():
     adapter = _adapter(provider=spy, status_verifier=_verified_status)
     first = adapter.launch(_intent())
     assert _reconcile(adapter, first, "REJECTED")["reservation_kept"] is False
-    resumed = _adapter(provider=spy, store=_store(adapter), status_verifier=_verified_status)
+    resumed = _adapter(
+        provider=spy, store=_store(adapter), status_verifier=_verified_status
+    )
     second = resumed.launch(_intent())
     assert second["reason"] == PARKED
     assert second["attempt_id"] != first["attempt_id"]
-    assert _reconcile(resumed, first, "REJECTED")["reason"] == "RECONCILE_ATTEMPT_UNBOUND"
+    assert (
+        _reconcile(resumed, first, "REJECTED")["reason"] == "RECONCILE_ATTEMPT_UNBOUND"
+    )
     assert _reconcile(resumed, second, "REJECTED")["reservation_kept"] is False
     assert resumed.launch(_intent())["decision"] == "DENY"
     assert len(spy.launch_calls) == 2
