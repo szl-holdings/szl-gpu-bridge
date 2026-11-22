@@ -45,17 +45,18 @@ a{color:var(--neon);text-decoration:none}
 <div class="wrap">
   <header>
     <h1>⟁ <b>ETERNAL AUDITOR</b> · SZL HOLDINGS OFFICER</h1>
-    <span class="pill ok" id="livepill">LIVE</span>
+    <span class="pill bad" id="livepill">SIGNING UNKNOWN — HOLD</span>
   </header>
 
   <div class="hero">
     <div class="orb-box">
       <canvas id="orb"></canvas>
-      <div class="orb-label"><b>QHIPU KAMAYUQ</b><br/>the keeper of records — always auditing</div>
+      <div class="orb-label"><b>QHIPU KAMAYUQ</b><br/>the keeper of records — signing must be verified</div>
     </div>
     <div class="status">
-      <h2>LIVE STATUS</h2>
+      <h2>SERVICE STATUS — UNVERIFIED</h2>
       <div class="kv"><span>service</span><b>eternal-auditor</b></div>
+      <div class="kv"><span>receipt signing</span><b id="signing" class="bad">UNKNOWN — HOLD</b></div>
       <div class="kv"><span>cycle</span><b id="cycle">—</b></div>
       <div class="kv"><span>chain state</span><b id="chain">—</b></div>
       <div class="kv"><span>prev receipt sha256</span><b id="prev">—</b></div>
@@ -293,22 +294,49 @@ refreshHistory();
 setInterval(refreshHistory, 60000);
 
 
-(async()=>{
-  try{
-    const L=await j('/api/live');
-    el('cycle').textContent=L.cycle;
-    const chain = document.createElement('span');
-    chain.className = L.chain_state === 'CONTINUOUS' ? 'ok' : 'warn';
-    chain.textContent = field(L.chain_state);
-    el('chain').replaceChildren(chain);
-    el('prev').textContent=(L.prev_receipt_sha256||'GENESIS').slice(0,32)+'…';
-    pulseOrb();
-  }catch(e){el('livepill').className='pill';el('livepill').textContent='API UNREACHABLE — fail closed';}
-
-
-  // pulse the orb every 60s as cycles pass
-  setInterval(async()=>{try{const L=await j('/api/live');el('cycle').textContent=L.cycle;pulseOrb();}catch(e){}},60000);
-})();
+// Missing signing-state evidence is HOLD, including older deployments.
+// A configured key is not an independently verified signing root.
+let lastObservedCycle = null;
+function renderLiveStatus(L) {
+  const state = L && typeof L.signing_state === 'string'
+    ? L.signing_state : 'UNKNOWN';
+  const configured = state === 'CONFIGURED_UNVERIFIED';
+  const pill = el('livepill');
+  pill.className = configured ? 'pill warn' : 'pill bad';
+  pill.textContent = configured
+    ? 'SIGNING CONFIGURED — UNVERIFIED'
+    : state === 'HOLD_UNAVAILABLE'
+      ? 'SIGNING HOLD — NO NEW RECEIPTS'
+      : 'SIGNING UNKNOWN — HOLD';
+  const signing = el('signing');
+  signing.className = configured ? 'warn' : 'bad';
+  signing.textContent = configured || state === 'HOLD_UNAVAILABLE' ? state : 'UNKNOWN';
+  const cycle = L && Number.isSafeInteger(L.cycle) && L.cycle >= 0
+    ? L.cycle : null;
+  el('cycle').textContent = cycle === null ? '—' : String(cycle);
+  const chain = document.createElement('span');
+  chain.className = 'warn'; // runtime chain self-report is not attestation
+  chain.textContent = L ? field(L.chain_state) : 'UNAVAILABLE';
+  el('chain').replaceChildren(chain);
+  const prev = L && typeof L.prev_receipt_sha256 === 'string'
+    && /^[a-f0-9]{64}$/i.test(L.prev_receipt_sha256)
+    ? L.prev_receipt_sha256.slice(0, 32) + '…' : 'UNVERIFIED';
+  el('prev').textContent = prev;
+  // Polling alone must never pulse: observe a NEW cycle with signer configured.
+  if (configured && lastObservedCycle !== null
+      && cycle !== null && cycle > lastObservedCycle) pulseOrb();
+  if (!configured) pulse = 0;
+  lastObservedCycle = configured ? cycle : null;
+}
+async function refreshLiveStatus() {
+  try {
+    renderLiveStatus(await j('/api/live'));
+  } catch (_) {
+    renderLiveStatus(null); // failed API or malformed response stays HOLD
+  }
+}
+refreshLiveStatus();
+setInterval(refreshLiveStatus, 60000);
 </script>
 </body>
 </html>
