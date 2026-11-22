@@ -206,6 +206,53 @@ class RefreshTests(unittest.TestCase):
                 token=False,
             )
 
+    def test_missing_published_index_falls_back_to_full_comparison(self):
+        class EntryNotFoundError(Exception):
+            pass
+
+        missing = EntryNotFoundError("synthetic missing index at pinned revision")
+        hub = SimpleNamespace(
+            HfApi=Mock(), hf_hub_download=Mock(side_effect=missing)
+        )
+        with patch.dict(sys.modules, {
+            "huggingface_hub": hub,
+            "huggingface_hub.hf_api": SimpleNamespace(RepoFile=type("RepoFile", (), {})),
+            "huggingface_hub.errors": SimpleNamespace(EntryNotFoundError=EntryNotFoundError),
+        }):
+            self.assertIsNone(
+                R.provably_stale_json_paths(R.DEFAULT_REPO, "b" * 40, 1)
+            )
+        hub.hf_hub_download.assert_called_once()
+        hub.HfApi.assert_not_called()
+
+    def test_absent_index_full_check_emits_stale_not_unavailable(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "github-output"
+            report_file = root / "report.md"
+
+            def synthetic_snapshot(repo, revision, dest, *, read_only):
+                self.assertTrue(read_only)
+                (dest / "new").mkdir(parents=True)
+                (dest / "new" / "receipt.json").write_text(
+                    '{"kind":"synthetic-fixture"}', encoding="utf-8"
+                )
+
+            with (
+                patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
+                patch.object(R, "resolve_revision", return_value="b" * 40),
+                patch.object(R, "provably_stale_json_paths", return_value=None),
+                patch.object(R, "snapshot", side_effect=synthetic_snapshot),
+                patch.object(R, "publish") as publish,
+            ):
+                self.assertEqual(R.main([
+                    "--workdir", temp, "--report", str(report_file),
+                    "--max-added", "0",
+                ]), 1)
+            self.assertIn("check_status=STALE", output.read_text())
+            self.assertIn("Stale: **yes**", report_file.read_text())
+            publish.assert_not_called()
+
     def test_inconclusive_metadata_must_not_mark_fresh(self):
         class RepoFile:
             def __init__(self, path):

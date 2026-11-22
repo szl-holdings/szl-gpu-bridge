@@ -123,15 +123,24 @@ def provably_stale_json_paths(repo: str, revision: str, max_added: int) -> int |
     from huggingface_hub import HfApi, hf_hub_download
     from huggingface_hub.hf_api import RepoFile
 
-    indexed = Path(
-        hf_hub_download(
-            repo_id=repo,
-            repo_type="dataset",
-            filename=builder.INDEX_RELPATH,
-            revision=revision,
-            token=False,
+    try:
+        indexed = Path(
+            hf_hub_download(
+                repo_id=repo,
+                repo_type="dataset",
+                filename=builder.INDEX_RELPATH,
+                revision=revision,
+                token=False,
+            )
         )
-    )
+    except Exception as exc:
+        from huggingface_hub.errors import EntryNotFoundError
+
+        if isinstance(exc, EntryNotFoundError):
+            # Missing published index: the full pinned comparison treats it as
+            # zero old rows and reports STALE, rather than losing the alert.
+            return None
+        raise
     old_paths: set[str] = set()
     for line in indexed.read_text(encoding="utf-8").splitlines():
         if line.strip():
@@ -173,10 +182,12 @@ def provable_staleness_report(revision: str, missing: int, max_added: int) -> st
             f"- At least {missing} unindexed .json files (threshold {max_added})",
             "- Finding: **STALE**, from a pinned index and pinned file tree.",
             "",
-            "This is a lower bound, not a full rebuild. File bodies, JSONL rows, "
-            "changed/removed rows, hash status, and signatures were NOT checked. "
-            "A complete rebuild and owner-approved publication remain required. "
-            "No Hub publication was performed.",
+            " ".join((
+                "This is a lower bound, not a full rebuild. File bodies, JSONL rows,",
+                "changed/removed rows, hash status, and signatures were NOT checked.",
+                "A complete rebuild and owner-approved publication remain required.",
+                "No Hub publication was performed.",
+            )),
         ]
     )
 
