@@ -5,15 +5,14 @@ import json
 import os
 import sys
 import tempfile
-import unittest
+from unittest import TestCase, main, mock
 from pathlib import Path
-from unittest import mock
 
 APP = Path(__file__).resolve().parents[1] / "hf-spaces/eternal-auditor/app.py"
 RETIRED_PUBLIC_FALLBACK = "szl-auditor-v2-default"
 
 
-class SigningKeyGateTests(unittest.TestCase):
+class SigningKeyGateTests(TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -93,5 +92,29 @@ class SigningKeyGateTests(unittest.TestCase):
         self.assertEqual(json.loads(self.state.read_text())["cycle"], 1)
 
 
+class AuditorConsoleStatusTests(TestCase):
+    """Reject unqualified public LIVE claims when signing is unavailable."""
+
+    def setUp(self):
+        self.html = (
+            Path(__file__).resolve().parents[1]
+            / "hf-spaces/eternal-auditor/static/index.html"
+        ).read_text(encoding="utf-8")
+
+    def test_signer_hold_is_visible_by_default(self):
+        self.assertIn('id="livepill">SIGNING UNKNOWN — HOLD', self.html)
+        self.assertNotIn('id="livepill">LIVE', self.html)
+        self.assertIn("state === 'HOLD_UNAVAILABLE'", self.html)
+        self.assertIn("renderLiveStatus(null)", self.html)
+        self.assertIn("chain.className = 'warn'", self.html)
+
+    def test_cycle_pulse_requires_configured_signer_and_new_cycle(self):
+        self.assertIn("state === 'CONFIGURED_UNVERIFIED'", self.html)
+        self.assertIn("'SIGNING CONFIGURED — UNVERIFIED'", self.html)
+        self.assertIn("cycle > lastObservedCycle", self.html)
+        self.assertIn("if (!configured) pulse = 0;", self.html)
+        self.assertNotIn("setInterval(async()=>{try{const L=", self.html)
+
+
 if __name__ == "__main__":
-    unittest.main()
+    main()
