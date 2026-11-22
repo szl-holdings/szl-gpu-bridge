@@ -180,7 +180,9 @@ class RefreshTests(unittest.TestCase):
                 ]
             )
             download = Mock(return_value=str(index))
-            hub = SimpleNamespace(HfApi=Mock(return_value=api), hf_hub_download=download)
+            hub = SimpleNamespace(
+                HfApi=Mock(return_value=api), hf_hub_download=download
+            )
             hf_api = SimpleNamespace(RepoFile=RepoFile)
             with patch.dict(
                 sys.modules,
@@ -241,14 +243,10 @@ class RefreshTests(unittest.TestCase):
                 patch.object(R, "snapshot") as snapshot,
                 patch.object(R, "publish") as publish,
             ):
-                self.assertEqual(
-                    R.main(["--workdir", temp, "--max-added", "50"]), 1
-                )
+                self.assertEqual(R.main(["--workdir", temp, "--max-added", "50"]), 1)
             snapshot.assert_not_called()
             publish.assert_not_called()
-            self.assertEqual(
-                output.read_text().splitlines()[0], "check_status=STALE"
-            )
+            self.assertEqual(output.read_text().splitlines()[0], "check_status=STALE")
             self.assertFalse((Path(temp) / "new-index.jsonl").exists())
 
     def test_complete_stale_check_is_nonzero_not_cosmetic_green(self):
@@ -258,7 +256,8 @@ class RefreshTests(unittest.TestCase):
                 patch.object(R, "provably_stale_json_paths", return_value=None),
                 patch.object(R, "snapshot"),
                 patch.object(
-                    R.builder, "build_rows",
+                    R.builder,
+                    "build_rows",
                     return_value=[
                         R.builder.row_for(
                             "new/a.json", {"kind": "test"}, b'{"kind":"test"}', None
@@ -267,9 +266,7 @@ class RefreshTests(unittest.TestCase):
                 ),
                 patch.object(R, "publish") as publish,
             ):
-                self.assertEqual(
-                    R.main(["--workdir", temp, "--max-added", "0"]), 1
-                )
+                self.assertEqual(R.main(["--workdir", temp, "--max-added", "0"]), 1)
             publish.assert_not_called()
 
     def test_other_failures_and_publish_429_still_raise(self):
