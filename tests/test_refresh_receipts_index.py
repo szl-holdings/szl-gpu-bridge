@@ -82,6 +82,7 @@ class RefreshTests(unittest.TestCase):
                 patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
                 patch.object(R, "resolve_revision", return_value="a" * 40) as resolve,
                 patch.object(R, "snapshot") as snapshot,
+                patch.object(R, "provably_stale_json_paths", return_value=None),
                 patch.object(R, "publish") as publish,
             ):
                 self.assertEqual(
@@ -110,6 +111,7 @@ class RefreshTests(unittest.TestCase):
                     patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
                     patch.object(R, "resolve_revision", return_value="a" * 40),
                     patch.object(R, "snapshot"),
+                    patch.object(R, "provably_stale_json_paths", return_value=None),
                     patch.object(R, stage, side_effect=wrapper),
                     patch.object(R.builder, "build_rows") as build,
                     patch.object(R, "publish") as publish,
@@ -137,6 +139,7 @@ class RefreshTests(unittest.TestCase):
                 patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
                 patch.object(R, "resolve_revision", return_value=revision),
                 patch.object(R, "snapshot", side_effect=[error, wrapper]) as snapshot,
+                patch.object(R, "provably_stale_json_paths", return_value=None),
                 patch.object(R, "publish") as publish,
             ):
                 for _ in range(2):
@@ -149,6 +152,124 @@ class RefreshTests(unittest.TestCase):
                 self.assertTrue(call.kwargs["read_only"])
             self.assertEqual(output.read_text(), "check_status=CHECK_UNAVAILABLE\n" * 2)
             self.assertFalse((root / "new-index.jsonl").exists())
+            publish.assert_not_called()
+
+    def test_metadata_preflight_proves_only_unindexed_json_paths(self):
+        class RepoFile:
+            def __init__(self, path):
+                self.path = path
+
+        class RepoFolder:
+            def __init__(self, path):
+                self.path = path
+
+        with TemporaryDirectory() as temp:
+            index = Path(temp) / "index.jsonl"
+            index.write_text('{"path":"old/a.json"}\n', encoding="utf-8")
+            api = Mock()
+            api.list_repo_tree.return_value = iter(
+                [
+                    RepoFolder("skip.json"),
+                    RepoFile("old/a.json"),
+                    RepoFile("data/receipts-index.jsonl"),
+                    RepoFile(".cache/private.json"),
+                    RepoFile("new/empty.jsonl"),
+                    RepoFile("new/b.json"),
+                    RepoFile("new/c.json"),
+                    RepoFile("new/d.json"),  # early stop after threshold+1
+                ]
+            )
+            download = Mock(return_value=str(index))
+            hub = SimpleNamespace(HfApi=Mock(return_value=api), hf_hub_download=download)
+            hf_api = SimpleNamespace(RepoFile=RepoFile)
+            with patch.dict(
+                sys.modules,
+                {"huggingface_hub": hub, "huggingface_hub.hf_api": hf_api},
+            ):
+                self.assertEqual(
+                    R.provably_stale_json_paths(R.DEFAULT_REPO, "b" * 40, 1), 2
+                )
+            download.assert_called_once_with(
+                repo_id=R.DEFAULT_REPO,
+                repo_type="dataset",
+                filename=R.builder.INDEX_RELPATH,
+                revision="b" * 40,
+                token=False,
+            )
+            api.list_repo_tree.assert_called_once_with(
+                repo_id=R.DEFAULT_REPO,
+                repo_type="dataset",
+                revision="b" * 40,
+                recursive=True,
+                token=False,
+            )
+
+    def test_inconclusive_metadata_must_not_mark_fresh(self):
+        class RepoFile:
+            def __init__(self, path):
+                self.path = path
+
+        with TemporaryDirectory() as temp:
+            index = Path(temp) / "index.jsonl"
+            index.write_text('{"path":"old/a.json"}\n', encoding="utf-8")
+            api = Mock()
+            api.list_repo_tree.return_value = iter(
+                [RepoFile("new/empty.jsonl"), RepoFile("new/b.json")]
+            )
+            hub = SimpleNamespace(
+                HfApi=Mock(return_value=api),
+                hf_hub_download=Mock(return_value=str(index)),
+            )
+            with patch.dict(
+                sys.modules,
+                {
+                    "huggingface_hub": hub,
+                    "huggingface_hub.hf_api": SimpleNamespace(RepoFile=RepoFile),
+                },
+            ):
+                self.assertIsNone(
+                    R.provably_stale_json_paths(R.DEFAULT_REPO, "b" * 40, 1)
+                )
+
+    def test_proven_stale_check_never_snapshots_or_publishes(self):
+        with TemporaryDirectory() as temp:
+            output = Path(temp) / "github-output"
+            with (
+                patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}),
+                patch.object(R, "resolve_revision", return_value="b" * 40),
+                patch.object(R, "provably_stale_json_paths", return_value=51),
+                patch.object(R, "snapshot") as snapshot,
+                patch.object(R, "publish") as publish,
+            ):
+                self.assertEqual(
+                    R.main(["--workdir", temp, "--max-added", "50"]), 1
+                )
+            snapshot.assert_not_called()
+            publish.assert_not_called()
+            self.assertEqual(
+                output.read_text().splitlines()[0], "check_status=STALE"
+            )
+            self.assertFalse((Path(temp) / "new-index.jsonl").exists())
+
+    def test_complete_stale_check_is_nonzero_not_cosmetic_green(self):
+        with TemporaryDirectory() as temp:
+            with (
+                patch.object(R, "resolve_revision", return_value="b" * 40),
+                patch.object(R, "provably_stale_json_paths", return_value=None),
+                patch.object(R, "snapshot"),
+                patch.object(
+                    R.builder, "build_rows",
+                    return_value=[
+                        R.builder.row_for(
+                            "new/a.json", {"kind": "test"}, b'{"kind":"test"}', None
+                        )
+                    ],
+                ),
+                patch.object(R, "publish") as publish,
+            ):
+                self.assertEqual(
+                    R.main(["--workdir", temp, "--max-added", "0"]), 1
+                )
             publish.assert_not_called()
 
     def test_other_failures_and_publish_429_still_raise(self):
