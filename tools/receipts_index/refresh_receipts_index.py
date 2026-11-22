@@ -113,6 +113,79 @@ def snapshot(
     )
 
 
+
+def provably_stale_json_paths(
+    repo: str, revision: str, max_added: int
+) -> int | None:
+    """Prove staleness cheaply, or decline to make a freshness determination.
+
+    The pinned index and a paginated, metadata-only Hub tree can prove that
+    >max_added new .json *files* exist: each produces at least one index row,
+    including invalid JSON. JSONL files may be empty, so they cannot support
+    the same inference. This NEVER returns FRESH; inconclusive results must
+    undergo the full byte-for-byte snapshot comparison.
+    """
+    from huggingface_hub import HfApi, hf_hub_download
+    from huggingface_hub.hf_api import RepoFile
+
+    indexed = Path(
+        hf_hub_download(
+            repo_id=repo,
+            repo_type="dataset",
+            filename=builder.INDEX_RELPATH,
+            revision=revision,
+            token=False,
+        )
+    )
+    old_paths: set[str] = set()
+    for line in indexed.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+                raise ValueError("Published receipts index has a non-string path")
+            old_paths.add(row["path"])
+
+    missing = 0
+    for entry in HfApi().list_repo_tree(
+        repo_id=repo,
+        repo_type="dataset",
+        revision=revision,
+        recursive=True,
+        token=False,
+    ):
+        if not isinstance(entry, RepoFile):
+            continue
+        rel = Path(entry.path)
+        if (
+            entry.path == builder.INDEX_RELPATH
+            or rel.suffix != ".json"
+            or any(part.startswith(".") for part in rel.parts)
+        ):
+            continue
+        if entry.path not in old_paths:
+            missing += 1
+            if missing > max_added:
+                return missing
+    return None
+
+
+def provable_staleness_report(revision: str, missing: int, max_added: int) -> str:
+    return "\n".join(
+        [
+            "## Receipts index is stale (path-only proof)",
+            "",
+            f"- Dataset revision checked: `{revision}`",
+            f"- At least {missing} unindexed .json files (threshold {max_added})",
+            "- Finding: **STALE**, from a pinned index and pinned file tree.",
+            "",
+            "This is a lower bound, not a full rebuild. File bodies, JSONL rows, "
+            "changed/removed rows, hash status, and signatures were NOT checked. "
+            "A complete rebuild and owner-approved publication remain required. "
+            "No Hub publication was performed.",
+        ]
+    )
+
+
 def resolve_revision(repo: str, *, read_only: bool = False) -> str:
     from huggingface_hub import HfApi
 
@@ -173,6 +246,19 @@ def main(argv: list[str] | None = None) -> int:
     read_only = args.mode == "check"
     try:
         revision = resolve_revision(args.repo, read_only=read_only)
+        if read_only:
+            missing = provably_stale_json_paths(
+                args.repo, revision, args.max_added
+            )
+            if missing is not None:
+                write_report(
+                    provable_staleness_report(revision, missing, args.max_added),
+                    args.report,
+                    check_status="STALE",
+                    stale="true",
+                    revision=revision,
+                )
+                return 1  # An actionable stale index is not a green check.
         snapshot(args.repo, revision, snap, read_only=read_only)
     except Exception as exc:
         if args.mode != "check" or not is_rate_limited(exc):
@@ -208,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
         stale="true" if stale else "false",
         revision=revision,
     )
+
+    if read_only and stale:
+        return 1
 
     if args.mode == "publish":
         blockers = publish_blockers(report, rows)
