@@ -48,9 +48,9 @@ class SourceCopyTruthTests(unittest.TestCase):
 
     def test_khipu_browser_hash_is_not_claim_truth(self):
         """Untrusted free-text input must not become a measured evidence claim."""
-        html = (
-            ROOT / "hf-spaces/khipu-playground/snapshot/index.html"
-        ).read_text(encoding="utf-8")
+        html = (ROOT / "hf-spaces/khipu-playground/snapshot/index.html").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('tier:"SELF_ASSERTED"', html)
         self.assertIn("SELF_ASSERTED (bytes hashed; claim unverified)", html)
         self.assertIn("claim truth, signer authority", html)
@@ -60,9 +60,9 @@ class SourceCopyTruthTests(unittest.TestCase):
 
     def test_khipu_source_candidate_not_claimed_deployed(self):
         """A reviewed GitHub snapshot edit is not an immutable Hub revision."""
-        readme = (
-            ROOT / "hf-spaces/khipu-playground/README.md"
-        ).read_text(encoding="utf-8")
+        readme = (ROOT / "hf-spaces/khipu-playground/README.md").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("source-only correction candidate", readme)
         self.assertIn("not deployment evidence", readme)
 
