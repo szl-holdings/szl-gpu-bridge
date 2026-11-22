@@ -1,4 +1,5 @@
 """Source-only fail-closed auditor signing regressions; no live keys or network."""
+
 import importlib.util
 import json
 import os
@@ -20,16 +21,26 @@ class SigningKeyGateTests(unittest.TestCase):
 
     def load(self, secret):
         with (
-            mock.patch.dict(os.environ, {
-                "AUDITOR_STATE": str(self.state),
-                "AUDITOR_SECRET": secret,
-                "HF_TOKEN": "",
-            }),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "AUDITOR_STATE": str(self.state),
+                    "AUDITOR_SECRET": secret,
+                    "HF_TOKEN": "",
+                },
+            ),
             mock.patch.dict(sys.modules, {"fastapi": None, "huggingface_hub": None}),
-            mock.patch("threading.Thread.start", side_effect=AssertionError("worker forbidden")),
-            mock.patch("urllib.request.urlopen", side_effect=AssertionError("network forbidden")),
+            mock.patch(
+                "threading.Thread.start", side_effect=AssertionError("worker forbidden")
+            ),
+            mock.patch(
+                "urllib.request.urlopen",
+                side_effect=AssertionError("network forbidden"),
+            ),
         ):
-            spec = importlib.util.spec_from_file_location("auditor_key_gate_fixture", APP)
+            spec = importlib.util.spec_from_file_location(
+                "auditor_key_gate_fixture", APP
+            )
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         return module
@@ -42,7 +53,9 @@ class SigningKeyGateTests(unittest.TestCase):
             app.run_cycle([], app.SECRET)
         with self.assertRaises(ValueError):
             app.sign("a" * 64, app.SECRET)
-        self.assertFalse(app.verify_receipt({"kind": "szl.auditor-receipt/v2"}, app.SECRET))
+        self.assertFalse(
+            app.verify_receipt({"kind": "szl.auditor-receipt/v2"}, app.SECRET)
+        )
         self.assertEqual(app.state, before)
         self.assertFalse(self.state.exists())
 
@@ -59,7 +72,9 @@ class SigningKeyGateTests(unittest.TestCase):
         app = self.load("")
         before = dict(app.state)
         with (
-            mock.patch.object(app, "audit_cycle", side_effect=AssertionError("no poll")),
+            mock.patch.object(
+                app, "audit_cycle", side_effect=AssertionError("no poll")
+            ),
             mock.patch.object(app.time, "sleep", side_effect=StopIteration),
             mock.patch("builtins.print"),
         ):
