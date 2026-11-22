@@ -46,6 +46,26 @@ class SourceCopyTruthTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(phrase, (ROOT / path).read_text(encoding="utf-8"))
 
+    def test_khipu_browser_hash_is_not_claim_truth(self):
+        """Untrusted free-text input must not become a measured evidence claim."""
+        html = (
+            ROOT / "hf-spaces/khipu-playground/snapshot/index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('tier:"SELF_ASSERTED"', html)
+        self.assertIn("SELF_ASSERTED (bytes hashed; claim unverified)", html)
+        self.assertIn("claim truth, signer authority", html)
+        self.assertNotIn('tier:"MEASURED"', html)
+        self.assertNotIn("MEASURED (you just measured it)", html)
+        self.assertNotIn("3/6 on the abstention", html)
+
+    def test_khipu_source_candidate_not_claimed_deployed(self):
+        """A reviewed GitHub snapshot edit is not an immutable Hub revision."""
+        readme = (
+            ROOT / "hf-spaces/khipu-playground/README.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("source-only correction candidate", readme)
+        self.assertIn("not deployment evidence", readme)
+
     def test_static_snapshot_mirrors_identical(self):
         for slug in ("frontier-showcase", "szl-energy-hologram"):
             with self.subTest(slug=slug):
