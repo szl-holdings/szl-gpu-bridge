@@ -97,9 +97,7 @@ def markdown_report(report: dict, revision: str, stale: bool, max_added: int) ->
     )
 
 
-def snapshot(
-    repo: str, revision: str, dest: Path, *, read_only: bool = False
-) -> None:
+def snapshot(repo: str, revision: str, dest: Path, *, read_only: bool = False) -> None:
     from huggingface_hub import snapshot_download
 
     snapshot_download(
@@ -113,10 +111,7 @@ def snapshot(
     )
 
 
-
-def provably_stale_json_paths(
-    repo: str, revision: str, max_added: int
-) -> int | None:
+def provably_stale_json_paths(repo: str, revision: str, max_added: int) -> int | None:
     """Prove staleness cheaply, or decline to make a freshness determination.
 
     The pinned index and a paginated, metadata-only Hub tree can prove that
@@ -247,9 +242,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         revision = resolve_revision(args.repo, read_only=read_only)
         if read_only:
-            missing = provably_stale_json_paths(
-                args.repo, revision, args.max_added
-            )
+            missing = provably_stale_json_paths(args.repo, revision, args.max_added)
             if missing is not None:
                 write_report(
                     provable_staleness_report(revision, missing, args.max_added),
