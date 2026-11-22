@@ -189,9 +189,7 @@ class DoctorTests(Base):
         failed = LostStartResponse()
         ledger = fc.Ledger(self.contract["state_dir"], "doctor")
         with self.assertRaisesRegex(RuntimeError, "SYNTHETIC_START_RESULT_UNKNOWN"):
-            fc.doctor_cycle(
-                self.contract, failed, FakeHub(), ledger, apply=True
-            )
+            fc.doctor_cycle(self.contract, failed, FakeHub(), ledger, apply=True)
         self.assertEqual(
             failed.mutations(), [("POST", "/szl-train-example/start", None)]
         )
@@ -212,9 +210,7 @@ class DoctorTests(Base):
             ledger, "save", side_effect=OSError("SYNTHETIC_LEDGER_WRITE_FAILURE")
         ):
             with self.assertRaisesRegex(OSError, "SYNTHETIC_LEDGER_WRITE_FAILURE"):
-                fc.doctor_cycle(
-                    self.contract, salad, FakeHub(), ledger, apply=True
-                )
+                fc.doctor_cycle(self.contract, salad, FakeHub(), ledger, apply=True)
         self.assertEqual(salad.mutations(), [])
 
     def test_apply_without_lease_does_not_mutate(self):
