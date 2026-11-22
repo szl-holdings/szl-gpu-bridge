@@ -211,17 +211,20 @@ class RefreshTests(unittest.TestCase):
             pass
 
         missing = EntryNotFoundError("synthetic missing index at pinned revision")
-        hub = SimpleNamespace(
-            HfApi=Mock(), hf_hub_download=Mock(side_effect=missing)
-        )
-        with patch.dict(sys.modules, {
-            "huggingface_hub": hub,
-            "huggingface_hub.hf_api": SimpleNamespace(RepoFile=type("RepoFile", (), {})),
-            "huggingface_hub.errors": SimpleNamespace(EntryNotFoundError=EntryNotFoundError),
-        }):
-            self.assertIsNone(
-                R.provably_stale_json_paths(R.DEFAULT_REPO, "b" * 40, 1)
-            )
+        hub = SimpleNamespace(HfApi=Mock(), hf_hub_download=Mock(side_effect=missing))
+        with patch.dict(
+            sys.modules,
+            {
+                "huggingface_hub": hub,
+                "huggingface_hub.hf_api": SimpleNamespace(
+                    RepoFile=type("RepoFile", (), {})
+                ),
+                "huggingface_hub.errors": SimpleNamespace(
+                    EntryNotFoundError=EntryNotFoundError
+                ),
+            },
+        ):
+            self.assertIsNone(R.provably_stale_json_paths(R.DEFAULT_REPO, "b" * 40, 1))
         hub.hf_hub_download.assert_called_once()
         hub.HfApi.assert_not_called()
 
@@ -245,10 +248,19 @@ class RefreshTests(unittest.TestCase):
                 patch.object(R, "snapshot", side_effect=synthetic_snapshot),
                 patch.object(R, "publish") as publish,
             ):
-                self.assertEqual(R.main([
-                    "--workdir", temp, "--report", str(report_file),
-                    "--max-added", "0",
-                ]), 1)
+                self.assertEqual(
+                    R.main(
+                        [
+                            "--workdir",
+                            temp,
+                            "--report",
+                            str(report_file),
+                            "--max-added",
+                            "0",
+                        ]
+                    ),
+                    1,
+                )
             self.assertIn("check_status=STALE", output.read_text())
             self.assertIn("Stale: **yes**", report_file.read_text())
             publish.assert_not_called()

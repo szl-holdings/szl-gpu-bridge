@@ -182,12 +182,14 @@ def provable_staleness_report(revision: str, missing: int, max_added: int) -> st
             f"- At least {missing} unindexed .json files (threshold {max_added})",
             "- Finding: **STALE**, from a pinned index and pinned file tree.",
             "",
-            " ".join((
-                "This is a lower bound, not a full rebuild. File bodies, JSONL rows,",
-                "changed/removed rows, hash status, and signatures were NOT checked.",
-                "A complete rebuild and owner-approved publication remain required.",
-                "No Hub publication was performed.",
-            )),
+            " ".join(
+                (
+                    "This is a lower bound, not a full rebuild. File bodies, JSONL rows,",
+                    "changed/removed rows, hash status, and signatures were NOT checked.",
+                    "A complete rebuild and owner-approved publication remain required.",
+                    "No Hub publication was performed.",
+                )
+            ),
         ]
     )
 
