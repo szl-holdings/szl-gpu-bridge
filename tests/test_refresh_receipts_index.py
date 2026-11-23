@@ -377,7 +377,6 @@ class RefreshTests(unittest.TestCase):
         self.assertIn("Stale: **yes**", md)
         self.assertIn("never writes to the Hub", md)
 
-
     def test_publish_binds_single_file_to_snapshot_parent(self):
         operation = Mock()
         api = Mock()
@@ -406,6 +405,7 @@ class RefreshTests(unittest.TestCase):
                     "owner/dataset", Path("index.jsonl"), "a" * 40, report(), "b" * 40
                 )
         self.assertEqual(api.create_commit.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
