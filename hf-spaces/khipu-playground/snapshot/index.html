@@ -27,11 +27,11 @@ a{color:var(--neon);text-decoration:none}
 <body>
 <div class="wrap">
 <h1><b>KHIPU</b> — the receipt playground</h1>
-<p class="sub">The most-downloaded SZL model family is named for the receipts layer. This playground demonstrates browser-local hashing and link structure. It does not independently certify historical Khipu artifacts, publisher identity, signing roots or off-browser chain continuity. Type anything, tie it to the chain, watch the proof appear.</p>
+<p class="sub">The most-downloaded SZL model family is named for the receipts layer. This playground demonstrates browser-local hashing and link structure. It does not independently certify historical Khipu artifacts, publisher identity, signing roots or off-browser chain continuity. Type anything and see the browser-local digests; hashing does not establish truth or authorship.</p>
 
 <div class="card">
 <h2>1. Your claim</h2>
-<textarea id="claim" placeholder="Type any claim, decision, or record - e.g. 'The model scored 3/6 on the abstention battery at 2026-11-12T03:00Z'">The model scored 3/6 on the abstention battery, measured on the estate's own A6000.</textarea>
+<textarea id="claim" placeholder="Enter an unverified example statement; hashing does not check its truth">Example: I wrote this note in the browser.</textarea>
 <button onclick="tie()">TIE IT TO THE CHAIN</button>
 <p class="hint">Everything below is computed locally, in your browser, from the text above. Change one character and re-run: every digest changes. That is tamper-evidence.</p>
 </div>
@@ -44,14 +44,14 @@ a{color:var(--neon);text-decoration:none}
 <div class="kv"><span>prev (chain head)</span><b id="prev">GENESIS</b></div>
 <div class="kv"><span>chain digest (sha256 of prev+body)</span><b id="chain">-</b></div>
 <div class="kv"><span>timestamp (UTC)</span><b id="ts">-</b></div>
-<div class="kv"><span>truth tier</span><b>MEASURED (you just measured it)</b></div>
+<div class="kv"><span>claim status</span><b>SELF_ASSERTED (bytes hashed; claim unverified)</b></div>
 <pre id="json"></pre>
 </div>
 </div>
 
 <div class="card">
 <h2>3. Why this matters</h2>
-<p class="sub" style="margin-bottom:0">A claim without a receipt is an assertion. A claim with a receipt is evidence. The SZL estate runs on the second kind: selected receipts and measurements may be inspected where published; complete estate coverage, signatures and offline verification require separate source-bound evidence. The models are the interesting part; the proof is the product.</p>
+<p class="sub" style="margin-bottom:0">A claim without a receipt is an assertion. This demo receipt only records locally hashed bytes; it does not verify whether the claim is true. The SZL estate runs on the second kind: selected receipts and measurements may be inspected where published; complete estate coverage, signatures and offline verification require separate source-bound evidence. The models are the interesting part; the proof is the product.</p>
 </div>
 
 <footer>
@@ -80,7 +80,7 @@ async function tie(){
   document.getElementById("prev").textContent = PREV === "GENESIS" ? "GENESIS (start your own chain)" : PREV.slice(0,24)+"…";
   document.getElementById("chain").textContent = chain;
   document.getElementById("ts").textContent = ts;
-  const rec = {schema:"szl.khipu/v1", claim, ts, body_sha256: sha, prev: PREV, chain_digest: chain, tier:"MEASURED", note:"playground receipt - computed client-side; the estate chain uses the same primitive with server-side signing"};
+  const rec = {schema:"szl.khipu/v1", claim, ts, body_sha256: sha, prev: PREV, chain_digest: chain, tier:"SELF_ASSERTED", note:"browser-local byte digest only; claim truth, signer authority and external chain continuity are unverified"};
   document.getElementById("json").textContent = JSON.stringify(rec, null, 2);
   document.getElementById("out").style.display = "block";
   PREV = chain;

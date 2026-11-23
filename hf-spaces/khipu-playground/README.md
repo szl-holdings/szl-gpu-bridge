@@ -1,5 +1,7 @@
-# Space snapshot: SZLHOLDINGS/khipu-playground
+# Space source snapshot: SZLHOLDINGS/khipu-playground
 
-Verbatim snapshot of the Hugging Face Space 'SZLHOLDINGS/khipu-playground' taken 2026-11-15 (pass 9d estate audit) so the deployed Space has a hardcoded GitHub source, per estate doctrine. The live Space remains the runtime; this directory is the source-of-record. Files under snapshot/ are captured byte-for-byte via huggingface_hub.snapshot_download.
+This directory originated as a snapshot of the Hugging Face Space on 2026-11-15 (pass 9d estate audit). The initial files were captured via `huggingface_hub.snapshot_download`.
 
-Files: .gitattributes, Dockerfile, README.md, index.html
+The `snapshot/index.html` on this GitHub branch is a **source-only correction candidate**: browser-computed digests are labeled SELF_ASSERTED rather than MEASURED, and the unverified example model score is removed. The edited file is **not deployment evidence**, not a claim of byte parity with any immutable Hub revision, and not authority to publish. The live Space remains a separate runtime target until the governed publisher completes an admitted release and a fresh Hub/runtime readback.
+
+Initial snapshot inventory: .gitattributes, Dockerfile, README.md, index.html
