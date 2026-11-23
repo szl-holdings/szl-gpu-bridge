@@ -210,6 +210,8 @@ def publish(repo: str, index_path: Path, revision: str, report: dict, source_sha
     return HfApi().create_commit(
         repo,
         repo_type="dataset",
+        revision="main",
+        parent_commit=revision,
         operations=[CommitOperationAdd(builder.INDEX_RELPATH, str(index_path))],
         commit_message=title,
         commit_description=body,
