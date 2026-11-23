@@ -378,5 +378,34 @@ class RefreshTests(unittest.TestCase):
         self.assertIn("never writes to the Hub", md)
 
 
+    def test_publish_binds_single_file_to_snapshot_parent(self):
+        operation = Mock()
+        api = Mock()
+        hub = SimpleNamespace(
+            CommitOperationAdd=operation, HfApi=Mock(return_value=api)
+        )
+        index = Path("prepared-index.jsonl")
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            result = R.publish("owner/dataset", index, "a" * 40, report(), "b" * 40)
+        self.assertIs(result, api.create_commit.return_value)
+        operation.assert_called_once_with(R.builder.INDEX_RELPATH, str(index))
+        self.assertEqual(api.create_commit.call_count, 1)
+        kwargs = api.create_commit.call_args.kwargs
+        self.assertEqual(kwargs["repo_type"], "dataset")
+        self.assertEqual(kwargs["revision"], "main")
+        self.assertEqual(kwargs["parent_commit"], "a" * 40)
+        self.assertEqual(kwargs["operations"], [operation.return_value])
+
+    def test_publish_does_not_retry_a_moved_parent(self):
+        api = Mock()
+        api.create_commit.side_effect = RuntimeError("snapshot parent moved")
+        hub = SimpleNamespace(CommitOperationAdd=Mock(), HfApi=Mock(return_value=api))
+        with patch.dict(sys.modules, {"huggingface_hub": hub}):
+            with self.assertRaisesRegex(RuntimeError, "snapshot parent"):
+                R.publish(
+                    "owner/dataset", Path("index.jsonl"), "a" * 40, report(), "b" * 40
+                )
+        self.assertEqual(api.create_commit.call_count, 1)
+
 if __name__ == "__main__":
     unittest.main()
