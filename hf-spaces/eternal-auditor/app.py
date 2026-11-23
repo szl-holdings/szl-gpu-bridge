@@ -30,7 +30,25 @@ DS = "SZLHOLDINGS/frontier-54-runs"
 ROLE = "eternal-auditor"
 CYCLE = 3600  # hourly
 STATE = Path(os.environ.get("AUDITOR_STATE", "/data/audit-state.json"))
-SECRET = os.environ.get("AUDITOR_SECRET", "szl-auditor-v2-default")
+# The old embedded fallback was public and can never authenticate an author.
+# Keep only its SHA-256 fingerprint so even an explicitly supplied legacy
+# fallback is refused. This check does not establish key entropy or trust.
+_RETIRED_PUBLIC_KEY_SHA256 = (
+    "d472e3bfa6b93a7018e1e83180a80f733fde8578838f022f82812b40af3bcace"
+)
+SECRET = os.environ.get("AUDITOR_SECRET", "")
+
+
+def signing_key_configured(secret):
+    """Only a nonblank, non-retired configured key may sign receipts."""
+    return (
+        isinstance(secret, str)
+        and bool(secret.strip())
+        and not hmac.compare_digest(
+            hashlib.sha256(secret.encode()).hexdigest(), _RETIRED_PUBLIC_KEY_SHA256
+        )
+    )
+
 
 
 def canonical(obj): return json.dumps(obj, sort_keys=True, separators=(",", ":"))
@@ -40,6 +58,8 @@ def sha256_hex(s): return hashlib.sha256(s.encode()).hexdigest()
 
 
 def sign(body_sha, secret):
+    if not signing_key_configured(secret):
+        raise ValueError("auditor signing key unavailable or retired")
     return hmac.new(secret.encode(), body_sha.encode(), hashlib.sha256).hexdigest()
 
 
@@ -47,7 +67,7 @@ def verify_receipt(receipt, secret):
     """Fail-closed verification of a full receipt: canonical body re-hash,
     full-length constant-time signature compare, kind check. Bare bool —
     no partial credit (Law 8)."""
-    if not isinstance(receipt, dict):
+    if not signing_key_configured(secret) or not isinstance(receipt, dict):
         return False
     body = {k: v for k, v in receipt.items()
             if k not in ("body_sha256", "signature", "signature_length")}
@@ -67,6 +87,8 @@ def verify_receipt(receipt, secret):
 # ---- Backward-compatible interface (the tests + SDK contract) ----
 def run_cycle(findings, secret):
     """Full signatures, chained to the persisted prev, saved state."""
+    if not signing_key_configured(secret):
+        raise ValueError("auditor signing key unavailable or retired")
     global state
     state["cycle"] = state.get("cycle", 0) + 1
     restarted = state.get("chain_state") == "GENESIS" and state["cycle"] > 1
@@ -152,6 +174,12 @@ def audit_cycle():
 def loop():
     global state
     while True:
+        if not signing_key_configured(SECRET):
+            # Do not audit, mint a receipt, mutate state, or upload without a
+            # valid configured key. An operator must supply trusted signing.
+            print("auditor signing HOLD: key unavailable or retired", flush=True)
+            time.sleep(CYCLE)
+            continue
         state["cycle"] = state.get("cycle", 0) + 1
         restarted = state.get("chain_state") == "GENESIS" and state["cycle"] > 1
         tc = time.time()
@@ -189,7 +217,9 @@ if _HAS_FASTAPI:
     @app.get("/healthz")
     def healthz():
         return {"ok": True, "service": ROLE, "cycle": state["cycle"],
-                "chain_state": state.get("chain_state")}
+                "chain_state": state.get("chain_state"),
+                "signing_state": ("CONFIGURED_UNVERIFIED" if signing_key_configured(SECRET)
+                                  else "HOLD_UNAVAILABLE")}
 
 
 if _HAS_FASTAPI:
@@ -205,6 +235,8 @@ if _HAS_FASTAPI:
                 "chain_state": state.get("chain_state"),
                 "prev_receipt_sha256": state.get("prev"),
                 "history_count": len(state.get("history", [])),
+                "signing_state": ("CONFIGURED_UNVERIFIED" if signing_key_configured(SECRET)
+                                  else "HOLD_UNAVAILABLE"),
                 "cycle_seconds": CYCLE}
 
     @app.get("/api/history")
