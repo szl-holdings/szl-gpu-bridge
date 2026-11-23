@@ -351,6 +351,11 @@ def doctor_cycle(contract, salad, hub, ledger, *, apply):
         )
         if result["decision"] == "RESTART_PERMITTED":
             if apply:
+                # Persist the consumed attempt and cooldown before the first
+                # non-idempotent provider effect. A crash after POST may leave
+                # the outcome unknown; an immediate replay must fail closed.
+                # A failed local state write must prevent the provider call.
+                ledger.save(state)
                 exit_code, status, body = salad.call("POST", "/" + group + "/start")
                 result["action"] = {
                     "request": "POST start",

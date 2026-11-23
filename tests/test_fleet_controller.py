@@ -176,6 +176,43 @@ class DoctorTests(Base):
         self.assertTrue(readback["provider_write_acknowledged"])
         self.assertFalse(readback["trainer_process_verified"])
 
+    def test_crash_after_start_cannot_erase_restart_attempt(self):
+        # Synthetic exception AFTER the irreversible POST may have reached Salad.
+        # A new controller process must not immediately replay the same start.
+        class LostStartResponse(FakeSalad):
+            def call(self, method, path, body=None, content_type="application/json"):
+                if method == "POST" and path.endswith("/start"):
+                    self.calls.append((method, path, body))
+                    raise RuntimeError("SYNTHETIC_START_RESULT_UNKNOWN")
+                return super().call(method, path, body, content_type)
+
+        failed = LostStartResponse()
+        ledger = fc.Ledger(self.contract["state_dir"], "doctor")
+        with self.assertRaisesRegex(RuntimeError, "SYNTHETIC_START_RESULT_UNKNOWN"):
+            fc.doctor_cycle(self.contract, failed, FakeHub(), ledger, apply=True)
+        self.assertEqual(
+            failed.mutations(), [("POST", "/szl-train-example/start", None)]
+        )
+        saved = ledger.load()["lanes"]["szl-train-example"]
+        self.assertEqual(saved["attempts"], 1)
+        self.assertIsNotNone(saved["last_restart_utc"])
+
+        replay = FakeSalad()
+        receipts = self.run_doctor(replay, apply=True)
+        self.assertEqual(replay.mutations(), [])
+        self.assertEqual(receipts[0]["decision"], "HOLD_RESTART_COOLDOWN")
+
+    def test_restart_denied_when_attempt_state_cannot_be_persisted(self):
+        # A full or unavailable local ledger must not permit an untracked POST.
+        salad = FakeSalad()
+        ledger = fc.Ledger(self.contract["state_dir"], "doctor")
+        with patch.object(
+            ledger, "save", side_effect=OSError("SYNTHETIC_LEDGER_WRITE_FAILURE")
+        ):
+            with self.assertRaisesRegex(OSError, "SYNTHETIC_LEDGER_WRITE_FAILURE"):
+                fc.doctor_cycle(self.contract, salad, FakeHub(), ledger, apply=True)
+        self.assertEqual(salad.mutations(), [])
+
     def test_apply_without_lease_does_not_mutate(self):
         Path(self.contract["owner_lease_file"]).write_text("{}")
         salad = FakeSalad()
