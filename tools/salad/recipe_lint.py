@@ -51,6 +51,34 @@ PIN_SETS = {
 IMAGE_ALLOWLIST_PREFIXES = ("pytorch:",)  # off-pin images (e.g. 2.14.1-cuda12.6) burned lanes
 
 
+def _pin_source_without_presentation_lines(command: str) -> str:
+    """Ignore obvious comments and terminal output when collecting pin evidence.
+
+    A version mentioned only by a shell comment or a display-only
+    echo/printf command is not evidence of an installed dependency.
+    This is deliberately narrow: dynamic shell programs, heredocs,
+    nested invocations, and actual runtime resolution still require
+    independent proof. Never use a static PASS as training admission.
+    """
+    evidence = []
+    for line in command.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#") or re.match(
+            r"^(?:echo|printf)(?:\s|$)", stripped
+        ):
+            continue
+        # An output-only command chained after a real command does not
+        # establish that any printed version was installed. Keep the
+        # preceding command but never count the echo/printf suffix.
+        display_after_separator = re.search(
+            r"(?:&&|\|\||;|\|)\s*(?:echo|printf)(?:\s|$)", line
+        )
+        if display_after_separator:
+            line = line[: display_after_separator.start()]
+        evidence.append(line)
+    return "\n".join(evidence)
+
+
 def lint(name: str, command: str, image: str, env: dict | None,
          pinset: str | None) -> list[dict]:
     findings: list[dict] = []
@@ -94,17 +122,85 @@ def lint(name: str, command: str, image: str, env: dict | None,
              "command fetches files but no hf_hub_download marker found; "
              "confirm fetch path or add KIT_FETCH_OK/FAIL markers")
 
-    # R5 pin-set completeness (off-pin create class)
+    # R5 pin-set presence is descriptive, not executed-install proof.
+    # Drop presentation-only lines so a commented example or echo of
+    # the entire pin set cannot be mistaken for an installed pin set.
+    source_for_pins = _pin_source_without_presentation_lines(command)
+    # Detect contradictions among the explicitly tracked package versions.
+    # This is a conservative text check, not an interpretation of shell
+    # execution order, pip resolver output, or the installed environment.
+    # Normalize PEP 503-style package spellings so an underscore/hyphen
+    # variant cannot disguise a conflicting pin.
+    tracked_packages = {
+        re.sub(r"[-_.]+", "-", pin.split("==", 1)[0]).lower()
+        for pins in PIN_SETS.values()
+        for pin in pins
+    }
+    version_declarations: dict[str, set[str]] = {}
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]*)=="
+        r"([0-9]+(?:[.][0-9A-Za-z]+)*(?:[+_-][0-9A-Za-z.]+)?)",
+        source_for_pins,
+    ):
+        name = re.sub(r"[-_.]+", "-", match.group(1)).lower()
+        if name in tracked_packages:
+            version_declarations.setdefault(name, set()).add(match.group(2))
+    conflicting = sorted(
+        name for name, versions in version_declarations.items()
+        if len(versions) > 1
+    )
+    if conflicting:
+        fail(
+            "R5_CONFLICTING_PACKAGE_PINS",
+            "conflicting exact version declarations for tracked packages: "
+            + ", ".join(conflicting)
+            + "; source text does not establish the effective installed version",
+        )
+
     matched_sets = []
     for set_name, pins in PIN_SETS.items():
-        if all(p in command for p in pins):
+        if all(p in source_for_pins for p in pins):
             matched_sets.append(set_name)
     if not matched_sets:
-        missing = {s: [p for p in pins if p not in command] for s, pins in PIN_SETS.items()}
+        missing = {
+            name: [pin for pin in pins if pin not in source_for_pins]
+            for name, pins in PIN_SETS.items()
+        }
         fail("R5_PINSET", "no allowlisted pin-set fully present in command; "
              f"missing per set: {json.dumps(missing)}")
     elif pinset and pinset not in matched_sets:
         fail("R5_PINSET", f"declared pinset {pinset} not satisfied (found {matched_sets})")
+
+    # The reviewed live worker explicitly refuses the TRL 0.15-0.19
+    # two-field SFTConfig alias overlap (max_length/max_seq_length).
+    # The historical LEGACY pin-set is therefore insufficient to admit
+    # a command that executes salad_worker.py. Prevent the known 20-second
+    # fail/restart/bill cycle *before* any provider create/scale request.
+    if "salad_worker.py" in command and "trl==0.17.0" in command:
+        fail(
+            "R5_KNOWN_FATAL_TRL_WORKER_PAIR",
+            "salad_worker.py with trl==0.17.0 is a measured fail-closed "
+            "SFTConfig alias-overlap boot loop; use independently verified "
+            "runtime pins and a revision-pinned worker before launch",
+        )
+
+    # A previously green lint must not authorize an arbitrarily changed
+    # GitHub main worker at the next paid boot. This checks the known public
+    # GitHub raw/blob URL forms, without making a network request.
+    moving_worker_urls = (
+        "raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/main/",
+        "raw.githubusercontent.com/szl-holdings/szl-gpu-bridge/refs/heads/main/",
+        "github.com/szl-holdings/szl-gpu-bridge/blob/main/",
+        "github.com/szl-holdings/szl-gpu-bridge/raw/main/",
+    )
+    if "salad_worker.py" in command and any(
+        url in command.lower() for url in moving_worker_urls
+    ):
+        fail(
+            "R5_MOVING_WORKER_REVISION",
+            "moving main worker fetch in a paid Salad command; pin the "
+            "worker to an independently verified immutable commit before launch",
+        )
 
     # R6 resilience block (boot fragility class)
     for marker, rule, hint in (
