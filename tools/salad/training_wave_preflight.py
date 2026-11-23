@@ -153,6 +153,11 @@ def _id(text):
     return isinstance(text, str) and MODEL_ID.fullmatch(text) is not None
 
 
+def _owned_output_id(text):
+    """Require canonical SZLHOLDINGS training targets; not proof of Hub rights."""
+    return type(text) is str and text.startswith("SZLHOLDINGS/") and _id(text)
+
+
 def _int(text, lo, hi):
     return type(text) is int and lo <= text <= hi
 
@@ -201,7 +206,7 @@ def _validate(plan):
 def _row(row):
     _fields(row, ROW_FIELDS)
     if not (
-        _id(row["model_id"])
+        _owned_output_id(row["model_id"])
         and _label(row["lane_id"])
         and type(row["intent"]) is str
         and row["intent"] in INTENTS
@@ -236,7 +241,7 @@ def _row(row):
         _raise("GPU_PLAN_INVALID")
     if not _int(row["checkpoint_interval_steps"], 1, 100_000):
         _raise("CHECKPOINT_PLAN_INVALID")
-    if not _id(row["checkpoint_target"]):
+    if not _owned_output_id(row["checkpoint_target"]):
         _raise("CHECKPOINT_PLAN_INVALID")
     return row
 
