@@ -379,7 +379,7 @@ class BenchRunnerTests(Base):
             fc,
             "lease_check",
             side_effect=[
-                (True, "OWNER_LEASE_VERIFIED"),
+                (True, "LOCAL_LEASE_INTEGRITY_OK"),
                 (False, "OWNER_LEASE_DIGEST_MISMATCH"),
             ],
         ):

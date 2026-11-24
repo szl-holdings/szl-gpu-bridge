@@ -39,8 +39,32 @@ SALAD_BASE = "https://api.salad.com/api/public/organizations/alloyscape/projects
 MAX_BODY = 1_000_000
 # Outcomes that can change without a new receipt (lease granted, provider settles).
 RETRY_DECISIONS = frozenset(
-    {"HOLD_PROVIDER_UNRECONCILED", "HALT_ACCESS_STOP", "ALERT_PARK_NEEDS_OWNER_LEASE"}
+    {
+        "HOLD_PROVIDER_UNRECONCILED",
+        "ALERT_PARK_NEEDS_OWNER_LEASE",
+        "HOLD_RECEIPT_UNVERIFIED",
+        # Kept pending so the receipt is re-assessed after the owner clears the halt.
+        "HALT_ACCESS_STOP",
+    }
 )
+# doctor and bench can both mutate provider groups; they share one lock.
+ACTION_COMMANDS = frozenset({"doctor", "bench"})
+ACCESS_STOP_MARKER = "ACCESS_STOP.json"
+QUALIFICATION_RETRY_S = 3600
+
+
+class AccessStop(Exception):
+    """HTTP 401/403/429 observed: stop this credential lane; no retry, no fallback."""
+
+
+def access_stop_seen(value):
+    if type(value) is dict:
+        if value.get("access_stop_required") is True:
+            return True
+        return any(access_stop_seen(v) for v in value.values())
+    if type(value) is list:
+        return any(access_stop_seen(v) for v in value)
+    return False
 
 
 def now_utc():
@@ -202,7 +226,8 @@ class Ledger:
         self.command = command
 
     def lock(self):
-        handle = open(self.dir / (self.command + ".lock"), "a+b")
+        name = "provider-actions" if self.command in ACTION_COMMANDS else self.command
+        handle = open(self.dir / (name + ".lock"), "a+b")
         try:
             if os.name == "nt":
                 import msvcrt
@@ -217,6 +242,11 @@ class Ledger:
             handle.close()
             raise SystemExit("ANOTHER_CONTROLLER_HOLDS_LOCK " + self.command)
         self._lock_handle = handle
+
+    def unlock(self):
+        if self._lock_handle is not None:
+            self._lock_handle.close()
+            self._lock_handle = None
 
     def load(self):
         try:
@@ -250,6 +280,13 @@ def load_contract(path):
     contract = strict_object(Path(path).read_bytes())
     if contract.get("schema") != CONTRACT_SCHEMA:
         raise SystemExit("CONTRACT_SCHEMA_INVALID")
+    adopted = [lane.get("group") for lane in contract.get("adopted", [])]
+    bench = (contract.get("bench") or {}).get("group")
+    if len(adopted) != len(set(adopted)):
+        raise SystemExit("CONTRACT_DUPLICATE_ADOPTED_GROUP")
+    if bench is not None and bench in adopted:
+        # One group must never be both restarted (doctor) and parked (bench).
+        raise SystemExit("CONTRACT_GROUP_IN_TWO_ACTION_MODES")
     return contract
 
 
@@ -302,6 +339,7 @@ def doctor_cycle(contract, salad, hub, ledger, *, apply):
     state = ledger.load()
     lanes = state.setdefault("lanes", {})
     quals = state.setdefault("qualified_revisions", {})
+    held = state.setdefault("qualification_holds", {})
     now = now_utc()
     for lane in contract.get("adopted", []):
         group = lane["group"]
@@ -327,10 +365,24 @@ def doctor_cycle(contract, salad, hub, ledger, *, apply):
         qualification = None
         revision = (training.get("snapshot") or {}).get("revision")
         if training.get("state") == "TERMINAL_METADATA_PRESENT" and revision:
-            qualification = quals.get(revision) or observe_candidate(
-                hub.api, hub.fetch, candidate
-            )
-            quals[revision] = qualification
+            qualification = quals.get(revision)
+            last = held.get(revision) or {}
+            last_at = gates.parse_utc(last.get("at"))
+            if qualification is None and (
+                last_at is None
+                or (now - last_at).total_seconds() >= QUALIFICATION_RETRY_S
+            ):
+                qualification = observe_candidate(hub.api, hub.fetch, candidate)
+                if qualification.get("status") == "ARTIFACT_VERIFIED":
+                    quals[revision] = qualification
+                    held.pop(revision, None)
+                else:
+                    held[revision] = {
+                        "at": gates.utc_text(now),
+                        "result": qualification,
+                    }
+            elif qualification is None:
+                qualification = last.get("result")
         lease_ok, lease_reason = lease_check(contract, group, now)
         result = gates.decide_adopted_lane(
             contract=lane,
@@ -392,6 +444,10 @@ def doctor_cycle(contract, salad, hub, ledger, *, apply):
             )
         seen[group] = key
         ledger.save(state)
+        if result["decision"] == "HALT_ACCESS_STOP" or access_stop_seen(
+            result.get("action")
+        ):
+            raise AccessStop("doctor")
 
 
 def checkpoint_cycle(contract, hub, ledger):
@@ -425,6 +481,8 @@ def checkpoint_cycle(contract, hub, ledger):
                 )
             last[name] = list(key)
         ledger.save(state)
+        if record["label"] == "HALT_ACCESS_STOP":
+            raise AccessStop("checkpoints")
 
 
 def stop_settled_for_zero_patch(provider, expected_replicas):
@@ -624,6 +682,8 @@ def bench_cycle(contract, salad, hub, ledger, *, apply):
         pending.pop(name, None)
         handled.append([name, revision])
     ledger.save(state)
+    if decision == "HALT_ACCESS_STOP" or access_stop_seen(record.get("action")):
+        raise AccessStop("bench")
 
 
 def main(argv=None):
@@ -641,6 +701,17 @@ def main(argv=None):
     contract = load_contract(args.contract)
     ledger = Ledger(contract["state_dir"], args.command)
     ledger.lock()
+    try:
+        return _run(args, contract, ledger)
+    finally:
+        ledger.unlock()
+
+
+def _run(args, contract, ledger):
+    marker = ledger.dir / ACCESS_STOP_MARKER
+    if marker.exists():
+        # The owner must investigate the credential and delete this marker.
+        raise SystemExit("ACCESS_STOP_MARKER_PRESENT " + str(marker))
     hub = Hub(read_secret(contract["hf_token_file"]))
     salad = (
         Salad(read_secret(contract["salad_key_file"]))
@@ -655,6 +726,25 @@ def main(argv=None):
                 checkpoint_cycle(contract, hub, ledger)
             else:
                 bench_cycle(contract, salad, hub, ledger, apply=args.apply)
+        except AccessStop as stop:
+            atomic_status(
+                marker,
+                {
+                    "kind": str(stop),
+                    "observed_utc": gates.utc_text(now_utc()),
+                    "reason": "HTTP_401_403_OR_429_OBSERVED",
+                    "clear": "owner deletes this file after resolving the credential",
+                },
+            )
+            emit(
+                ledger,
+                {
+                    "kind": args.command,
+                    "decision": "HALT_ACCESS_STOP",
+                    "reason": "CONTROLLER_STOPPED_NO_RETRY",
+                },
+            )
+            return 3
         except Exception as exc:
             emit(
                 ledger,

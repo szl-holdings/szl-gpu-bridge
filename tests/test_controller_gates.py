@@ -78,7 +78,7 @@ class LeaseTests(unittest.TestCase):
     def test_verified(self):
         self.assertEqual(
             g.verify_owner_lease(CONTRACT, LEASE, "szl-train-example", NOW),
-            (True, "OWNER_LEASE_VERIFIED"),
+            (True, "LOCAL_LEASE_INTEGRITY_OK"),
         )
 
     def test_any_drift_revokes(self):
