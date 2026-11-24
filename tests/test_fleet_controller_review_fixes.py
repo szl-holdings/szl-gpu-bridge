@@ -10,7 +10,7 @@ import datetime as dt
 import json
 from pathlib import Path
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 from test_artifact_qualification import fixture
 from test_controller_gates import RECEIPT, SPEC
