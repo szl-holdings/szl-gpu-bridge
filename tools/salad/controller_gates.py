@@ -69,10 +69,12 @@ def parse_utc(value):
 
 
 def verify_owner_lease(contract, lease_bytes, group, now):
-    """The controller may mutate ``group`` only under the exact lease the owner pinned.
+    """Local integrity of the owner-written lease file for ``group``; NOT authority.
 
     The contract stores sha256(lease file) and a generation. Editing the lease, bumping
-    the generation, or omitting the group revokes authority without touching the code.
+    the generation, or omitting the group revokes it without touching the code. Both
+    files are co-editable on the same host, so a passing check proves neither who wrote
+    them nor exclusive ownership across machines (no signer, no fencing token).
     """
     if type(lease_bytes) is not bytes or not 0 < len(lease_bytes) <= 65536:
         return False, "OWNER_LEASE_UNREADABLE"
@@ -102,7 +104,7 @@ def verify_owner_lease(contract, lease_bytes, group, now):
     groups = lease.get("groups")
     if type(groups) is not list or group not in groups:
         return False, "GROUP_NOT_LEASED"
-    return True, "OWNER_LEASE_VERIFIED"
+    return True, "LOCAL_LEASE_INTEGRITY_OK"
 
 
 # ------------------------------------------------------------- adopted lanes
@@ -286,9 +288,24 @@ def select_heldout_receipt(names, *, prefix, cutoff_utc):
     return best[1] if best else None
 
 
+def bench_pins_valid(contract):
+    return (
+        type(contract) is dict
+        and valid_repo(contract.get("adapter_repo"))
+        and type(contract.get("base")) is str
+        and bool(contract["base"].strip())
+        and type(contract.get("base_revision")) is str
+        and bool(_SHA40.fullmatch(contract["base_revision"]))
+        and parse_utc(contract.get("cutoff_utc")) is not None
+    )
+
+
 def assess_heldout_receipt(record, contract):
     """Mechanical gate over a byte-verified receipt. MEASURE, not a model verdict."""
     gate = {"bound": False}
+    if not bench_pins_valid(contract):
+        # Omitted pins must never act as wildcards (None == None).
+        return "GATE_FAIL_CONTRACT_PINS_MISSING", gate
     if type(record) is not dict:
         return "GATE_FAIL_RECEIPT_INVALID", gate
     started = parse_utc(record.get("started_utc"))
@@ -299,8 +316,7 @@ def assess_heldout_receipt(record, contract):
         "base": record.get("base") == contract.get("base"),
         "base_revision": type(record.get("base_revision")) is str
         and bool(_SHA40.fullmatch(record["base_revision"]))
-        and record["base_revision"]
-        == contract.get("base_revision", record["base_revision"]),
+        and record["base_revision"] == contract["base_revision"],
         "started_after_cutoff": started is not None
         and cutoff is not None
         and started >= cutoff,
@@ -352,9 +368,10 @@ def decide_bench_park(*, receipt_verified, verdict, lease_ok, provider):
         return "HALT_ACCESS_STOP"
     if receipt_verified is not True:
         return "HOLD_RECEIPT_UNVERIFIED"
-    if (
-        verdict == "GATE_FAIL_RECEIPT_NOT_BOUND_TO_THIS_RUN"
-        or verdict == "GATE_FAIL_RECEIPT_INVALID"
+    if verdict in (
+        "GATE_FAIL_RECEIPT_NOT_BOUND_TO_THIS_RUN",
+        "GATE_FAIL_RECEIPT_INVALID",
+        "GATE_FAIL_CONTRACT_PINS_MISSING",
     ):
         return "HOLD_RECEIPT_NOT_BOUND"
     if type(provider) is not dict or provider.get("group_state_reconciled") is not True:

@@ -29,7 +29,7 @@ Cutover is a separate, owner-approved step (below).
 | Broken-control arm read from `broken_control`/`broken_arm`, keys the receipt never writes | Reads `broken_control_arm` and requires a non-empty `broken_control_failed_rules` plus `battery_admissible` |
 | Receipt chosen by filename on a moving branch, never bound to the run | Pinned dataset revision, byte verification against LFS/blob hash, and binding on schema, adapter repo, base, base revision and start ≥ cutoff |
 | Bench stopped and scaled down on any receipt, no readback | `PARK_PERMITTED` needs a verified, bound receipt, a reconciled provider and an owner lease; it is followed by a requested-zero witness readback |
-| Two controllers could act at once | OS file lock per (state dir, command) |
+| Two controllers could act at once | One OS file lock shared by `doctor` and `bench` (the commands that can mutate), per state dir; the contract rejects a group listed in both, or listed twice. **Same-host only**: there is no cross-host fencing |
 | Plain local log | Hash-chained JSONL receipts (`verify_chain`). Tamper-evident, **UNSIGNED** |
 
 ## Contract (`szl.fleet-controller-contract/v1`)
@@ -65,7 +65,11 @@ Cutover is a separate, owner-approved step (below).
 real target, base and base revision; this PR does not guess them.
 
 Lease file: `{"generation": 1, "groups": ["…"], "expires_utc": "YYYY-MM-DDTHH:MM:SSZ"}`.
-Authority is revoked by editing it, letting it expire, removing a group or bumping the
+A passing check is reported as `LOCAL_LEASE_INTEGRITY_OK`: the lease bytes match the
+digest pinned in the contract. Both files can be edited on the same host, so this is
+**not** authenticated owner authority and **not** proof of exclusive ownership across
+machines (there is no signer and no fencing token). `--apply` relies on the owner keeping
+these files and this host under their sole control. The lease is revoked by editing it, letting it expire, removing a group or bumping the
 generation. A Flagship54 **training** group must never be leased here: its Gate-1
 service remains that lane's only shutdown owner
 ([completion guard](flagship54-completion-guard.md)).
@@ -96,4 +100,14 @@ Without `--apply`, `RESTART_PERMITTED` and `PARK_PERMITTED` are recorded as
   quality and promotion remain separate gates.
 - Receipts are hash-chained and **UNSIGNED**. Hub publication is verified by readback,
   not by signature.
-- HTTP 401/403/429 halts with `access_stop_required`; there is no fallback credential.
+- HTTP 401/403/429 stops the run immediately: no further lanes, cycles or retries.
+  The runner writes `ACCESS_STOP.json` in the state directory, exits with code 3, and
+  refuses to start again until the owner resolves the credential and deletes that file.
+  There is no fallback credential.
+- Bench binding requires `adapter_repo`, `base`, a 40-hex `base_revision` and
+  `cutoff_utc` in the contract. A missing or malformed pin binds nothing
+  (`GATE_FAIL_CONTRACT_PINS_MISSING`).
+- Only `ARTIFACT_VERIFIED` qualifications are cached. A `HOLD` is re-qualified at most
+  once per hour for the same revision.
+- After `--apply`, an ambiguous stop or park stays behind the `stop_intents` barrier until
+  the owner adjudicates it. It is never retried automatically.
