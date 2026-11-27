@@ -304,6 +304,24 @@ def _normalize_sft_config_kwargs(
             )
         values["packing_strategy"] = mapped
 
+    if "warmup_ratio" in values and "warmup_ratio" not in parameters:
+        # Transformers 5 retired ``warmup_ratio``; ``warmup_steps`` takes a
+        # float in [0, 1) as the same ratio.  Bind it explicitly or refuse.
+        ratio = values.pop("warmup_ratio")
+        if "warmup_steps" not in parameters:
+            raise RuntimeError(
+                "SFTConfig exposes neither warmup_ratio nor warmup_steps"
+            )
+        if (
+            isinstance(ratio, bool)
+            or not isinstance(ratio, (int, float))
+            or not 0 <= ratio < 1
+        ):
+            raise RuntimeError(f"SFTConfig warmup ratio is invalid: {ratio!r}")
+        if "warmup_steps" in values and values["warmup_steps"] != ratio:
+            raise RuntimeError("SFTConfig warmup_ratio and warmup_steps disagree")
+        values["warmup_steps"] = float(ratio)
+
     supplied_lengths = [name for name in _SFT_SEQUENCE_LENGTH_FIELDS if name in values]
     if supplied_lengths:
         sequence_fields = _explicit_fields(parameters, _SFT_SEQUENCE_LENGTH_FIELDS)
@@ -340,16 +358,6 @@ def _normalize_sft_config_kwargs(
             inspect.Parameter.VAR_POSITIONAL,
         )
     }
-    # TRL 1.17 dropped warmup_ratio. Zero is that constructor's default, so
-    # omitting it does not change the schedule. Any other ratio still fails
-    # closed rather than being rewritten into warmup_steps.
-    if "warmup_ratio" in values and "warmup_ratio" not in explicit:
-        ratio = values["warmup_ratio"]
-        if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or ratio != 0:
-            raise RuntimeError(
-                "SFTConfig values contain unsupported fields: ['warmup_ratio']"
-            )
-        values.pop("warmup_ratio")
     unsupported = sorted(set(values) - explicit - {supplied_alias})
     if unsupported:
         raise RuntimeError(
