@@ -20,6 +20,10 @@ ATTEMPT_13_PATH = ROOT / "jobspecs" / "nemo-v3-20260731-attempt-13-reviewed.json
 
 class _Cuda:
     @staticmethod
+    def is_available() -> bool:
+        return True
+
+    @staticmethod
     def is_bf16_supported() -> bool:
         return True
 
@@ -67,7 +71,6 @@ def _recording_config(*, strategy_name: str | None, both: bool = False):
         "packing_strategy",
         "assistant_only_loss",
         "max_length",
-        "max_seq_length",
     ]
     if strategy_name is not None:
         names.append(strategy_name)
@@ -156,9 +159,115 @@ class NemoV3SftConfigCompatibilityTests(unittest.TestCase):
         self.assertEqual(values["optim"], recipe["optimizer"])
         self.assertEqual(values["seed"], recipe["seed"])
         self.assertEqual(values["max_length"], recipe["maxSeqLength"])
-        self.assertEqual(values["max_seq_length"], recipe["maxSeqLength"])
+        self.assertNotIn("max_seq_length", values)
+        self.assertEqual(values["packing_strategy"], "bfd")
         self.assertTrue(values["bf16"])
         self.assertFalse(values["fp16"])
+
+    def _with_sequence_fields(self, config_type, names: list[str]):
+        parameters = [
+            parameter
+            for parameter in inspect.signature(config_type).parameters.values()
+            if parameter.kind is not inspect.Parameter.VAR_KEYWORD
+            and parameter.name not in {"max_length", "max_seq_length"}
+        ]
+        parameters.extend(
+            inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY) for name in names
+        )
+        parameters.append(inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD))
+        config_type.__signature__ = inspect.Signature(parameters)
+        return config_type
+
+    def test_legacy_signature_receives_only_max_seq_length(self) -> None:
+        config_type = self._with_sequence_fields(
+            _recording_config(strategy_name="evaluation_strategy"),
+            ["max_seq_length"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            config = frontier_job._build_sft_config(
+                config_type, _recipe(), _Torch(), pathlib.Path(directory)
+            )
+        self.assertEqual(config.values["max_seq_length"], 768)
+        self.assertNotIn("max_length", config.values)
+        self.assertEqual(config.values["evaluation_strategy"], "epoch")
+        self.assertNotIn("eval_strategy", config.values)
+
+    def test_ambiguous_sequence_length_signature_fails_before_constructor(
+        self,
+    ) -> None:
+        config_type = self._with_sequence_fields(
+            _recording_config(strategy_name="eval_strategy"),
+            ["max_length", "max_seq_length"],
+        )
+        with self.assertRaisesRegex(RuntimeError, "sequence length"):
+            frontier_job._build_sft_config(
+                config_type, _recipe(), _Torch(), pathlib.Path("output")
+            )
+        self.assertEqual(config_type.calls, [])
+
+    def test_cpu_precision_does_not_force_fp16(self) -> None:
+        class _Cpu:
+            @staticmethod
+            def is_available() -> bool:
+                return False
+
+            @staticmethod
+            def is_bf16_supported() -> bool:
+                return False
+
+        class _CpuTorch:
+            cuda = _Cpu()
+
+        config_type = _recording_config(strategy_name="eval_strategy")
+        with tempfile.TemporaryDirectory() as directory:
+            config = frontier_job._build_sft_config(
+                config_type, _recipe(), _CpuTorch(), pathlib.Path(directory)
+            )
+        self.assertFalse(config.values["bf16"])
+        self.assertFalse(config.values["fp16"])
+
+    def test_unsloth_var_kwargs_does_not_forward_tokenizer(self) -> None:
+        class RecordingTrainer:
+            calls: list[dict[str, object]] = []
+
+            def __init__(self, **kwargs: object) -> None:
+                type(self).calls.append(kwargs)
+
+        names = [
+            "model",
+            "processing_class",
+            "train_dataset",
+            "eval_dataset",
+            "callbacks",
+            "args",
+        ]
+        RecordingTrainer.__signature__ = inspect.Signature(
+            [inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY) for name in names]
+            + [inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD)]
+        )
+        frontier_job._build_sft_trainer(
+            RecordingTrainer,
+            model="model",
+            tokenizer="tokenizer",
+            train_dataset="train",
+            eval_dataset="eval",
+            callbacks=[],
+            config="config",
+        )
+        self.assertEqual(
+            RecordingTrainer.calls,
+            [
+                {
+                    "model": "model",
+                    "processing_class": "tokenizer",
+                    "train_dataset": "train",
+                    "eval_dataset": "eval",
+                    "callbacks": [],
+                    "args": "config",
+                }
+            ],
+        )
+        self.assertNotIn("tokenizer", RecordingTrainer.calls[0])
 
     def test_attempt_13_science_license_and_input_hashes_are_unchanged(self) -> None:
         spec = json.loads(ATTEMPT_13_PATH.read_text(encoding="utf-8"))
@@ -229,9 +338,9 @@ class NemoV3SftConfigCompatibilityTests(unittest.TestCase):
         self.assertEqual(config.optim, "paged_adamw_8bit")
         self.assertEqual(config.seed, 3407)
         self.assertEqual(config.max_length, 768)
-        self.assertEqual(config.max_seq_length, 768)
+        self.assertFalse(hasattr(config, "max_seq_length"))
+        self.assertEqual(config.packing_strategy, "bfd")
         self.assertFalse(config.packing)
-        self.assertEqual(config.packing_strategy, "ffd")
         self.assertTrue(config.assistant_only_loss)
 
 

@@ -31,6 +31,7 @@ from frontier_job import (
     _build_sft_config,
     _build_sft_trainer,
     _gradient_checkpointing,
+    _mixed_precision_flags,
     _verify_hub_license,
     blocked,
     deliver_receipt,
@@ -345,6 +346,27 @@ def _result_receipt(
             else "TERMINAL_FAILURE_NO_AUTOMATIC_RETRY"
         ),
     }
+
+
+def _unsloth_load_kwargs(torch_module: Any, *, load_in_4bit: bool) -> dict[str, Any]:
+    """Dtype and 4-bit flag passed to Unsloth ``from_pretrained``.
+
+    The compute dtype follows the training precision.  4-bit weights with a
+    float32 CPU dry-run are refused: bitsandbytes NF4 is a CUDA path, and a
+    silent float16 compute dtype against a bf16 base is the mismatch that
+    leaves frozen modules on a meta device.
+    """
+
+    bf16, fp16 = _mixed_precision_flags(torch_module)
+    if load_in_4bit and not (bf16 or fp16):
+        raise RuntimeError("4-bit quantization requires a CUDA mixed-precision dtype")
+    if bf16:
+        dtype = torch_module.bfloat16
+    elif fp16:
+        dtype = torch_module.float16
+    else:
+        dtype = torch_module.float32
+    return {"dtype": dtype, "load_in_4bit": bool(load_in_4bit)}
 
 
 def _require_remote_code_isolation(spec: dict[str, Any]) -> None:
@@ -796,12 +818,14 @@ def main(spec_path: str) -> int:
             blocked(spec, "gate:cuda", "CUDA is unavailable")
         torch.cuda.reset_peak_memory_stats()
         tokenizer_snapshot = _verified_offline_tokenizer_snapshot(spec)
+        load_kwargs = _unsloth_load_kwargs(torch, load_in_4bit=True)
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=spec["base"]["repoId"],
             tokenizer_name=str(tokenizer_snapshot),
             revision=spec["base"]["revision"],
             max_seq_length=recipe["maxSeqLength"],
-            load_in_4bit=True,
+            dtype=load_kwargs["dtype"],
+            load_in_4bit=load_kwargs["load_in_4bit"],
             trust_remote_code=spec["base"]["trustRemoteCode"],
         )
         _require_loaded_tokenizer(
