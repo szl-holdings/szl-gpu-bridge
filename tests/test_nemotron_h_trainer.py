@@ -20,6 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "laptop"))
 
 import nemotron_h  # noqa: E402
+import runjob_nemo_v3  # noqa: E402
 
 NANO_4B = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
 NANO_4B_REV = "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f"
@@ -186,10 +187,6 @@ class NemotronHPolicy(unittest.TestCase):
 
 class RunnerGates(unittest.TestCase):
     def setUp(self) -> None:
-        try:
-            import runjob_nemo_v3
-        except ImportError as exc:  # pragma: no cover - CI installs the runner deps
-            self.skipTest(f"runner dependencies are missing: {exc}")
         self.runner = runjob_nemo_v3
 
     def test_pre_load_gate(self) -> None:
