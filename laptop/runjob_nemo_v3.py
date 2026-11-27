@@ -45,6 +45,7 @@ from frontier_runtime import (
     sha256_file,
     stack_fingerprint,
 )
+import nemotron_h
 from nemo_v3_contract import (
     NEMO_V3_PAYLOAD_TYPE,
     expected_engine_key_id,
@@ -624,7 +625,11 @@ def _materialize_nemo_lm_head_for_trainer(
 
 
 def _prepare_nemo_assistant_labels(
-    dataset: Any, tokenizer: Any, *, max_length: int
+    dataset: Any,
+    tokenizer: Any,
+    *,
+    max_length: int,
+    reasoning: dict[str, Any] | None = None,
 ) -> Any:
     if (
         not isinstance(max_length, int)
@@ -647,12 +652,31 @@ def _prepare_nemo_assistant_labels(
         if roles != ["system", "user", "assistant"]:
             raise RuntimeError("assistant-label row must be system, user, assistant")
 
-        context_ids = tokenizer.apply_chat_template(
-            messages[:-1], tokenize=True, add_generation_prompt=False
-        )
-        full_ids = tokenizer.apply_chat_template(
-            messages, tokenize=True, add_generation_prompt=False
-        )
+        if reasoning is None:
+            context_ids = tokenizer.apply_chat_template(
+                messages[:-1], tokenize=True, add_generation_prompt=False
+            )
+            full_ids = tokenizer.apply_chat_template(
+                messages, tokenize=True, add_generation_prompt=False
+            )
+        else:
+            context_ids = nemotron_h.apply_reasoning(
+                tokenizer,
+                messages[:-1],
+                reasoning,
+                tokenize=True,
+                add_generation_prompt=False,
+            )
+            full_ids = nemotron_h.apply_reasoning(
+                tokenizer,
+                messages,
+                reasoning,
+                tokenize=True,
+                add_generation_prompt=False,
+            )
+            context_ids = _token_id_list(context_ids)
+            full_ids = _token_id_list(full_ids)
+
         for name, values in (("context", context_ids), ("full", full_ids)):
             if (
                 not isinstance(values, list)
@@ -694,6 +718,84 @@ def _prepare_nemo_assistant_labels(
     ):
         raise RuntimeError("assistant-label dataset preparation is incomplete")
     return prepared
+
+
+def _token_id_list(values: Any) -> Any:
+    """Flat ids from ``apply_chat_template(tokenize=True)``.
+
+    Transformers 5 returns a ``BatchEncoding``; older releases a list.
+    """
+
+    if isinstance(values, list):
+        return values
+    getter = getattr(values, "get", None)
+    ids = getter("input_ids") if callable(getter) else None
+    return ids if ids is not None else values
+
+
+def _nemotron_pre_load_gate(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """Pinned Nemotron-H base checks that run before any model load."""
+
+    base = spec["base"]
+    entry = nemotron_h.nemotron_base(base["repoId"], base["revision"])
+    if entry is None:
+        return None
+    if base["licenseId"] != entry["license_id"]:
+        raise RuntimeError(
+            f"base.licenseId {base['licenseId']!r} is not {entry['license_id']!r}"
+        )
+    if entry["notice"] not in base["licenseAcknowledgement"]:
+        raise RuntimeError("base.licenseAcknowledgement does not carry the NOTICE")
+    if base["trustRemoteCode"]:
+        raise RuntimeError("Nemotron-H uses the native transformers class")
+    return entry
+
+
+def _nemotron_guardrails(
+    spec: dict[str, Any], entry: dict[str, Any], tokenizer: Any
+) -> dict[str, Any]:
+    acknowledgement = spec["base"]["licenseAcknowledgement"]
+    return nemotron_h.require_nemotron_guardrails(
+        entry,
+        tokenizer,
+        {
+            "nvidia_guardrails": "kept",
+            "license_id": spec["base"]["licenseId"],
+            "notice": entry["notice"] if entry["notice"] in acknowledgement else "",
+            "system_prompt": "preserve",
+        },
+    )
+
+
+def _nemotron_signed_targets(
+    model: Any, signed: list[str], *, load_in_4bit: bool
+) -> dict[str, Any]:
+    """The signed recipe targets must equal the targets read from the graph."""
+
+    targets, evidence = nemotron_h.lora_target_modules(model)
+    if set(signed) != set(targets) or len(signed) != len(targets):
+        raise RuntimeError(
+            f"signed targetModules {sorted(signed)} do not match the Nemotron-H "
+            f"graph targets {sorted(targets)}"
+        )
+    if load_in_4bit and evidence["fused_mamba_kernel"]:
+        raise RuntimeError(
+            "4-bit load with the fused Mamba-2 kernel would feed packed weights "
+            "to the kernel"
+        )
+    return {**evidence, "lora_targets": targets}
+
+
+def _nemotron_gradient_probe(model: Any, dataset: Any) -> dict[str, int]:
+    import torch
+
+    row = dataset[0]
+    device = next(model.parameters()).device
+    batch = {
+        name: torch.tensor([row[name]], device=device)
+        for name in ("input_ids", "attention_mask", "labels")
+    }
+    return nemotron_h.require_lora_gradients(model, batch)
 
 
 def _complete_terminal_evaluation_failure(
@@ -804,8 +906,14 @@ def main(spec_path: str) -> int:
             spec, "gate:base-license", f"pinned base license verification failed: {exc}"
         )
 
+    try:
+        nemotron = _nemotron_pre_load_gate(spec)
+    except RuntimeError as exc:
+        blocked(spec, "gate:nemotron-h", str(exc))
+
     started = time.monotonic()
     recipe = spec["recipe"]
+    nemotron_evidence: dict[str, Any] | None = None
     try:
         import torch
         import unsloth
@@ -833,6 +941,21 @@ def main(spec_path: str) -> int:
             PreTrainedTokenizerBase,
             tokenizer_snapshot,
         )
+        if nemotron is not None:
+            nemotron_evidence = {
+                "guardrails": _nemotron_guardrails(spec, nemotron, tokenizer),
+                **_nemotron_signed_targets(
+                    model,
+                    recipe["targetModules"],
+                    load_in_4bit=load_kwargs["load_in_4bit"],
+                ),
+                # Signed Nemo v3 rows carry no reasoning traces, so the
+                # reasoning toggle is passed explicitly off.
+                "reasoning": {
+                    "control": nemotron["reasoning_control"],
+                    "enable_thinking": False,
+                },
+            }
         _require_nemo_model_materialization(
             model, recipe["targetModules"], phase="before adapter construction"
         )
@@ -858,6 +981,9 @@ def main(spec_path: str) -> int:
             Dataset.from_list(train_rows),
             tokenizer,
             max_length=recipe["maxSeqLength"],
+            reasoning=None
+            if nemotron_evidence is None
+            else nemotron_evidence["reasoning"],
         )
         split = full_train.train_test_split(
             test_size=min(0.15, max(1 / len(full_train), 0.05)), seed=recipe["seed"]
@@ -904,6 +1030,10 @@ def main(spec_path: str) -> int:
         _require_nemo_model_materialization(
             model, recipe["targetModules"], phase="before trainer construction"
         )
+        if nemotron_evidence is not None:
+            nemotron_evidence["gradient_probe"] = _nemotron_gradient_probe(
+                model, split["train"]
+            )
         trainer = _build_sft_trainer(
             SFTTrainer,
             model=model,
@@ -927,6 +1057,10 @@ def main(spec_path: str) -> int:
         adapter_dir = release_root / "adapter"
         model.save_pretrained(str(adapter_dir))
         tokenizer.save_pretrained(str(adapter_dir))
+        if nemotron is not None:
+            nemotron_evidence["notice_path"] = nemotron_h.write_nvidia_notice(
+                adapter_dir, nemotron
+            )
         adapter_files = artifact_manifest(adapter_dir)
         if not any(
             item["path"] == "adapter_model.safetensors" for item in adapter_files
@@ -989,6 +1123,7 @@ def main(spec_path: str) -> int:
             "adapter_files": adapter_files,
             "stack": stack_fingerprint(),
             "base_license": base_license,
+            "nemotron_h": nemotron_evidence,
             "gpu_initial": initial_gpu,
             "gpu_final": final_gpu,
             "elapsed_seconds": round(time.monotonic() - started, 3),

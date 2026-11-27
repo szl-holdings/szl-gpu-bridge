@@ -273,3 +273,262 @@ def run_cpu_dry_run(
         "lm_head_device": materialized.device.type,
         "gpu_job_launched": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# Nemotron-H (hybrid Mamba-2 + attention) CPU dry-run on the same boundary.
+# ---------------------------------------------------------------------------
+
+NEMOTRON_TEST_TEMPLATE = (
+    "{%- set enable_thinking = enable_thinking if enable_thinking is defined "
+    "else True -%}"
+    "{% for message in messages %}"
+    "{% if message['role'] == 'assistant' %}assistant "
+    "{% if enable_thinking %}think {% else %}nothink {% endif %}"
+    "{% generation %}{{ message['content'] }}{{ eos_token }}{% endgeneration %}"
+    "{% else %}{{ message['role'] }} {{ message['content'] }}{{ eos_token }}"
+    "{% endif %}"
+    "{% endfor %}"
+    "{% if add_generation_prompt %}assistant "
+    "{% if enable_thinking %}think {% else %}nothink {% endif %}{% endif %}"
+)
+NANO_4B = "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
+NANO_4B_REVISION = "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f"
+
+
+def _tiny_nemotron_h(vocab_size: int):
+    """Random-init native NemotronH with Mamba, MLP and attention mixers."""
+
+    from transformers import NemotronHConfig, NemotronHForCausalLM
+
+    config = NemotronHConfig(
+        vocab_size=vocab_size,
+        hidden_size=32,
+        layers_block_type=["mamba", "mlp", "attention", "mlp"],
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=8,
+        intermediate_size=64,
+        ssm_state_size=8,
+        mamba_num_heads=4,
+        mamba_head_dim=16,
+        n_groups=1,
+        chunk_size=8,
+        expand=2,
+        conv_kernel=4,
+        max_position_embeddings=128,
+        pad_token_id=0,
+        bos_token_id=2,
+        eos_token_id=1,
+        tie_word_embeddings=False,
+    )
+    return NemotronHForCausalLM(config)
+
+
+def _nemotron_tokenizer(tokenizer_dir: str | None):
+    import nemotron_h
+
+    entry = nemotron_h.nemotron_base(NANO_4B, NANO_4B_REVISION)
+    if tokenizer_dir:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, local_files_only=True)
+        return tokenizer, entry, "pinned-nano-4b-tokenizer"
+    tokenizer = _tiny_tokenizer()
+    tokenizer.chat_template = NEMOTRON_TEST_TEMPLATE
+    fixture = {
+        **entry,
+        "chat_template_sha256": nemotron_h.chat_template_sha256(tokenizer),
+    }
+    return tokenizer, fixture, "tiny-fixture-tokenizer"
+
+
+def _nemotron_spec(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "base": {
+            "repoId": NANO_4B,
+            "revision": NANO_4B_REVISION,
+            "licenseId": entry["license_id"],
+            "licenseAcknowledgement": (
+                "Base weights are used under the NVIDIA Nemotron Open Model "
+                f"License. {entry['notice']}"
+            ),
+            "trustRemoteCode": False,
+        }
+    }
+
+
+def _refusal(fn: Callable[[], Any]) -> str:
+    try:
+        fn()
+    except RuntimeError as exc:
+        return str(exc)
+    raise RuntimeError("a stripped guardrail or mismatched target was accepted")
+
+
+def run_nemotron_cpu_dry_run(tokenizer_dir: str | None = None) -> dict[str, Any]:
+    """Tiny Nemotron-H through the Nemo v3 label, target and trainer path."""
+
+    import importlib.util
+
+    import nemotron_h
+    import torch
+    from datasets import Dataset
+    from peft import LoraConfig, get_peft_model
+    from runjob_nemo_v3 import (
+        _nemotron_gradient_probe,
+        _nemotron_guardrails,
+        _nemotron_pre_load_gate,
+        _nemotron_signed_targets,
+    )
+    from trl import SFTConfig, SFTTrainer
+
+    tokenizer, entry, source = _nemotron_tokenizer(tokenizer_dir)
+    spec = _nemotron_spec(entry)
+    if _nemotron_pre_load_gate(spec)["revision"] != NANO_4B_REVISION:
+        raise RuntimeError("pre-load gate did not bind the pinned revision")
+    refusals = {
+        "wrong_license": _refusal(
+            lambda: _nemotron_pre_load_gate(
+                {"base": {**spec["base"], "licenseId": "apache-2.0"}}
+            )
+        ),
+        "notice_stripped": _refusal(
+            lambda: _nemotron_pre_load_gate(
+                {
+                    "base": {
+                        **spec["base"],
+                        "licenseAcknowledgement": "Used under an NVIDIA licence.",
+                    }
+                }
+            )
+        ),
+        "wrong_revision": _refusal(
+            lambda: _nemotron_pre_load_gate(
+                {"base": {**spec["base"], "revision": "f" * 40}}
+            )
+        ),
+        "replaced_template": _refusal(
+            lambda: _nemotron_guardrails(
+                spec, {**entry, "chat_template_sha256": "0" * 64}, tokenizer
+            )
+        ),
+    }
+    guard = _nemotron_guardrails(spec, entry, tokenizer)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = _tiny_nemotron_h(max(len(tokenizer), 32))
+    signed = ["in_proj", "q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"]
+    refusals["dense_targets_on_hybrid"] = _refusal(
+        lambda: _nemotron_signed_targets(
+            model,
+            [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
+            load_in_4bit=False,
+        )
+    )
+    evidence = _nemotron_signed_targets(model, signed, load_in_4bit=False)
+    reasoning = {
+        "control": entry["reasoning_control"],
+        "enable_thinking": False,
+    }
+    prompt = [{"role": "user", "content": "user question"}]
+    on = nemotron_h.render_chat_text(
+        tokenizer,
+        prompt,
+        reasoning={**reasoning, "enable_thinking": True},
+        add_generation_prompt=True,
+    )
+    off = nemotron_h.render_chat_text(
+        tokenizer, prompt, reasoning=reasoning, add_generation_prompt=True
+    )
+    if on == off:
+        raise RuntimeError("enable_thinking did not change the rendered prompt")
+
+    model = get_peft_model(
+        model,
+        LoraConfig(
+            r=8,
+            lora_alpha=16,
+            lora_dropout=0.0,
+            bias="none",
+            target_modules=evidence["lora_targets"],
+            task_type="CAUSAL_LM",
+        ),
+    )
+    prepared = _prepare_nemo_assistant_labels(
+        Dataset.from_list(_rows()), tokenizer, max_length=64, reasoning=reasoning
+    )
+    split = prepared.train_test_split(test_size=0.5, seed=7)
+    probe = _nemotron_gradient_probe(model, split["train"])
+    before = {
+        n: p.detach().clone() for n, p in model.named_parameters() if "lora_B" in n
+    }
+    with tempfile.TemporaryDirectory() as directory:
+        config = _build_sft_config(
+            SFTConfig, _recipe(64), torch, pathlib.Path(directory)
+        )
+        trainer = _build_sft_trainer(
+            SFTTrainer,
+            model=model,
+            tokenizer=tokenizer,
+            train_dataset=split["train"],
+            eval_dataset=split["test"],
+            callbacks=[],
+            config=config,
+        )
+        trained = trainer.train()
+        adapter = pathlib.Path(directory) / "adapter"
+        model.save_pretrained(str(adapter))
+        notice = pathlib.Path(nemotron_h.write_nvidia_notice(adapter, entry))
+        notice_text = notice.read_text(encoding="utf-8")
+        saved = sorted(p.name for p in adapter.iterdir())
+    updated = sorted(
+        {
+            n.split(".lora_B")[0].rsplit(".", 1)[-1]
+            for n, p in model.named_parameters()
+            if n in before and not torch.equal(before[n], p.detach())
+        }
+    )
+    loss = float(trained.training_loss)
+    if not math.isfinite(loss):
+        raise RuntimeError("Nemotron-H CPU dry-run loss is not finite")
+    if set(updated) != set(evidence["lora_targets"]):
+        raise RuntimeError(f"LoRA targets did not all train: {updated}")
+    return {
+        "global_steps": int(trainer.state.global_step),
+        "training_loss": loss,
+        "lora_targets": evidence["lora_targets"],
+        "lora_targets_updated": updated,
+        "layout": evidence["layout"],
+        "fused_mamba_kernel": evidence["fused_mamba_kernel"],
+        "mamba_ssm_installed": importlib.util.find_spec("mamba_ssm") is not None,
+        "mamba_path": "torch reference (CPU)",
+        "gradient_probe": probe,
+        "guardrails": guard,
+        "refusals": refusals,
+        "prompt_tail_thinking_on": on[-24:],
+        "prompt_tail_thinking_off": off[-24:],
+        "tokenizer_source": source,
+        "notice_in_artifacts": entry["notice"] in notice_text,
+        "saved_files": saved,
+        "gpu_job_launched": False,
+    }
+
+
+if __name__ == "__main__":
+    import json
+    import os
+    import sys
+
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    result = run_nemotron_cpu_dry_run(os.environ.get("SZL_NEMOTRON_TOKENIZER_DIR"))
+    print(json.dumps(result, indent=2, default=str))
