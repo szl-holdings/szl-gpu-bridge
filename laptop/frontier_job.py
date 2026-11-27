@@ -13,6 +13,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -220,6 +221,13 @@ def _gradient_checkpointing(value: str) -> str | bool:
 
 
 def _filtered_kwargs(callable_obj: Any, values: dict[str, Any]) -> dict[str, Any]:
+    """Drop unknown names only when the signature has no ``**kwargs``.
+
+    Unsloth's patched trainers keep ``**kwargs`` and forward them.  This helper
+    then returns every supplied name, including retired aliases.  SFT construction
+    uses :func:`_normalize_sft_trainer_kwargs` instead.
+    """
+
     parameters = inspect.signature(callable_obj).parameters
     if any(
         parameter.kind is inspect.Parameter.VAR_KEYWORD
@@ -229,20 +237,56 @@ def _filtered_kwargs(callable_obj: Any, values: dict[str, Any]) -> dict[str, Any
     return {key: value for key, value in values.items() if key in parameters}
 
 
+def _mixed_precision_flags(torch_module: Any) -> tuple[bool, bool]:
+    """Return ``(bf16, fp16)`` for the device that will run the trainer.
+
+    A machine without CUDA stays in full precision.  Treating
+    ``is_bf16_supported() == False`` as ``fp16=True`` made CPU construction
+    request half precision, and requesting bf16 with no bf16 device is rejected
+    by Transformers before the first step.
+    """
+
+    cuda = getattr(torch_module, "cuda", None)
+    is_available = getattr(cuda, "is_available", None)
+    available = bool(callable(is_available) and is_available())
+    is_bf16 = getattr(cuda, "is_bf16_supported", None)
+    bf16 = bool(available and callable(is_bf16) and is_bf16())
+    return bf16, bool(available and not bf16)
+
+
 _SFT_CONFIG_STRATEGY_ALIASES = ("eval_strategy", "evaluation_strategy")
+_SFT_SEQUENCE_LENGTH_FIELDS = ("max_length", "max_seq_length")
+_TRAINER_PROCESSOR_FIELDS = ("processing_class", "tokenizer")
+# TRL 0.23.1 accepts ``bfd`` (best-fit decreasing) and ``wrapped``.  Signed
+# recipes still say ``ffd``; that name is the pre-0.23 first-fit label and is
+# rejected by ``pack_dataset`` once packing is on.
+_PACKING_STRATEGY_FOR_TRL_023 = {"ffd": "bfd", "bfd": "bfd", "wrapped": "wrapped"}
+
+
+def _explicit_fields(
+    parameters: Mapping[str, inspect.Parameter], names: tuple[str, ...]
+) -> list[str]:
+    return [
+        name
+        for name in names
+        if name in parameters
+        and parameters[name].kind is not inspect.Parameter.VAR_KEYWORD
+    ]
 
 
 def _normalize_sft_config_kwargs(
     callable_obj: Any, values: dict[str, Any]
 ) -> dict[str, Any]:
-    """Bind the one evaluation-strategy value to an explicit SFTConfig field.
+    """Bind trainer settings to explicit SFTConfig fields.
 
     Unsloth's patched TRL constructor exposes ``eval_strategy`` plus ``**kwargs``.
     Treating ``**kwargs`` as proof that the retired ``evaluation_strategy`` alias
-    is supported caused attempt 13 to fail before training.  This boundary is
-    intentionally stricter than the generic trainer compatibility helper: every
-    supplied setting must be explicit in the observed constructor signature, and
-    exactly one strategy alias must exist on each side.
+    is supported caused attempt 13 to fail before training.  The same shape
+    rejects ``max_seq_length`` on TRL 0.23.1, which exposes only ``max_length``.
+    Every supplied setting must be an explicit parameter.  Sequence-length
+    aliases may both be supplied when they carry the same integer; exactly one
+    of them must be explicit on the signature.  Evaluation-strategy aliases stay
+    strictly one-to-one so a second alias cannot ride along in ``**kwargs``.
     """
 
     try:
@@ -250,12 +294,31 @@ def _normalize_sft_config_kwargs(
     except (TypeError, ValueError) as exc:
         raise RuntimeError("SFTConfig signature is not inspectable") from exc
 
-    signature_aliases = [
-        name
-        for name in _SFT_CONFIG_STRATEGY_ALIASES
-        if name in parameters
-        and parameters[name].kind is not inspect.Parameter.VAR_KEYWORD
-    ]
+    values = dict(values)
+    if "packing_strategy" in values:
+        raw_strategy = values["packing_strategy"]
+        mapped = _PACKING_STRATEGY_FOR_TRL_023.get(raw_strategy)
+        if mapped is None:
+            raise RuntimeError(
+                f"SFTConfig packing strategy is unsupported: {raw_strategy}"
+            )
+        values["packing_strategy"] = mapped
+
+    supplied_lengths = [name for name in _SFT_SEQUENCE_LENGTH_FIELDS if name in values]
+    if supplied_lengths:
+        sequence_fields = _explicit_fields(parameters, _SFT_SEQUENCE_LENGTH_FIELDS)
+        if len(sequence_fields) != 1:
+            raise RuntimeError(
+                "SFTConfig signature must expose exactly one sequence length field"
+            )
+        if len({values[name] for name in supplied_lengths}) != 1:
+            raise RuntimeError("SFTConfig sequence length aliases disagree")
+        length = values[supplied_lengths[0]]
+        for name in supplied_lengths:
+            values.pop(name, None)
+        values[sequence_fields[0]] = length
+
+    signature_aliases = _explicit_fields(parameters, _SFT_CONFIG_STRATEGY_ALIASES)
     if len(signature_aliases) != 1:
         raise RuntimeError(
             "SFTConfig signature must expose exactly one evaluation strategy field"
@@ -268,7 +331,16 @@ def _normalize_sft_config_kwargs(
         )
 
     supplied_alias = supplied_aliases[0]
-    unsupported = sorted(set(values) - set(parameters) - {supplied_alias})
+    explicit = {
+        name
+        for name, parameter in parameters.items()
+        if parameter.kind
+        not in (
+            inspect.Parameter.VAR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+        )
+    }
+    unsupported = sorted(set(values) - explicit - {supplied_alias})
     if unsupported:
         raise RuntimeError(
             f"SFTConfig values contain unsupported fields: {unsupported}"
@@ -282,6 +354,7 @@ def _normalize_sft_config_kwargs(
 def _build_sft_config(
     SFTConfig: Any, recipe: dict[str, Any], torch: Any, output_dir: pathlib.Path
 ):
+    bf16, fp16 = _mixed_precision_flags(torch)
     values = {
         "per_device_train_batch_size": recipe["batchSize"],
         "gradient_accumulation_steps": recipe["gradAccum"],
@@ -294,8 +367,8 @@ def _build_sft_config(
         "save_strategy": "epoch",
         "evaluation_strategy": "epoch",
         "report_to": [],
-        "bf16": bool(torch.cuda.is_bf16_supported()),
-        "fp16": not bool(torch.cuda.is_bf16_supported()),
+        "bf16": bf16,
+        "fp16": fp16,
         "warmup_ratio": recipe["warmupRatio"],
         "weight_decay": recipe["weightDecay"],
         "lr_scheduler_type": recipe["lrSchedulerType"],
@@ -306,6 +379,54 @@ def _build_sft_config(
         "max_seq_length": recipe["maxSeqLength"],
     }
     return SFTConfig(**_normalize_sft_config_kwargs(SFTConfig, values))
+
+
+def _normalize_sft_trainer_kwargs(
+    callable_obj: Any, values: dict[str, Any]
+) -> dict[str, Any]:
+    """Bind the tokenizer to the one explicit SFTTrainer processor parameter.
+
+    TRL 0.23.1 exposes ``processing_class`` and rejects ``tokenizer``.  Unsloth's
+    wrapper adds ``**kwargs``, so a filter that forwards every name on seeing
+    ``**kwargs`` reintroduces the retired argument and the constructor fails
+    before ``train()``.
+    """
+
+    try:
+        parameters = inspect.signature(callable_obj).parameters
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("SFTTrainer signature is not inspectable") from exc
+
+    values = dict(values)
+    processor_fields = _explicit_fields(parameters, _TRAINER_PROCESSOR_FIELDS)
+    if len(processor_fields) != 1:
+        raise RuntimeError(
+            "SFTTrainer signature must expose exactly one processor field"
+        )
+    supplied = [name for name in _TRAINER_PROCESSOR_FIELDS if name in values]
+    if not supplied:
+        raise RuntimeError("SFTTrainer processor value is missing")
+    if len({values[name] for name in supplied}) != 1:
+        raise RuntimeError("SFTTrainer processor aliases disagree")
+    processor = values[supplied[0]]
+    for name in supplied:
+        values.pop(name, None)
+    values[processor_fields[0]] = processor
+    explicit = {
+        name
+        for name, parameter in parameters.items()
+        if parameter.kind
+        not in (
+            inspect.Parameter.VAR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+        )
+    }
+    unsupported = sorted(set(values) - explicit)
+    if unsupported:
+        raise RuntimeError(
+            f"SFTTrainer values contain unsupported fields: {unsupported}"
+        )
+    return values
 
 
 def _build_sft_trainer(
@@ -327,7 +448,7 @@ def _build_sft_trainer(
         "callbacks": callbacks,
         "args": config,
     }
-    return SFTTrainer(**_filtered_kwargs(SFTTrainer, values))
+    return SFTTrainer(**_normalize_sft_trainer_kwargs(SFTTrainer, values))
 
 
 def _license_values(value: Any) -> set[str]:
