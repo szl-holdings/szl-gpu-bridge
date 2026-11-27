@@ -176,6 +176,11 @@ def read_ledger(path):
         if path.suffix == ".csv":
             with path.open(newline="", encoding="utf-8") as stream:
                 for row in csv.DictReader(stream):
+                    # Extra or missing columns mean a corrupted row; refuse.
+                    require(
+                        None not in row and None not in row.values(),
+                        "SPEND_LEDGER_INVALID",
+                    )
                     rows.append((row.get("at_et") or row.get("ts_et"), row["usd"]))
         else:
             for line in path.read_text(encoding="utf-8").splitlines():
@@ -210,6 +215,14 @@ def append_ledger(path, row):
     """Append in the ledger's own format so a CSV tracker stays a CSV tracker."""
 
     path = Path(path)
+    with path.open("rb") as stream:
+        stream.seek(0, os.SEEK_END)
+        if stream.tell():
+            stream.seek(-1, os.SEEK_END)
+            if stream.read(1) != b"\n":
+                # Never glue a new row onto an unterminated last line.
+                with path.open("ab") as fix:
+                    fix.write(b"\n")
     if path.suffix != ".csv":
         with path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, sort_keys=True) + "\n")

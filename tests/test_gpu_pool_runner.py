@@ -474,6 +474,26 @@ class CsvLedger(PoolHarness):
         self.assertEqual(len(rows), 2)
         self.assertNotIn("{", self.ledger.read_text())
 
+    def test_append_never_glues_onto_an_unterminated_line(self):
+        for name in ("tail.csv", "tail.jsonl"):
+            path = self.base / name
+            if name.endswith(".csv"):
+                path.write_text("ts_et,usd\n2026-11-27T00:00:00-05:00,1.5")
+            else:
+                path.write_text(
+                    json.dumps({"at_et": "2026-11-27T00:00:00-05:00", "usd": 1.5})
+                )
+            pool.append_ledger(path, {"at_et": "2026-11-27T00:01:00-05:00", "usd": 2})
+            self.assertEqual([usd for _, usd in pool.read_ledger(path)], [1.5, 2.0])
+
+    def test_csv_row_with_extra_columns_refuses(self):
+        path = self.base / "glued.csv"
+        path.write_text(
+            "ts_et,usd\n2026-11-27T00:00:00-05:00,1.5,2026-11-27T00:01:00-05:00,2\n"
+        )
+        with self.assertRaisesRegex(pool.GateError, "SPEND_LEDGER_INVALID"):
+            pool.read_ledger(path)
+
     def test_csv_without_usd_column_refuses_append(self):
         path = self.base / "bad.csv"
         path.write_text("ts_et,run_id\n")
