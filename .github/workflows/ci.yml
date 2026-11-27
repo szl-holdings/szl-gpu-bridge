@@ -255,3 +255,27 @@ jobs:
               throw "forbidden execution primitive present: $forbidden"
             }
           }
+
+  # Aggregate check named exactly `ci-gate` (org starter from
+  # szl-holdings/.github workflow-templates/ci-gate.yml, #1047).
+  # Depends only on jobs in this workflow. Other workflows (CodeQL,
+  # Scorecard, etc.) remain separate required checks.
+  ci-gate:
+    name: ci-gate
+    if: ${{ always() }}
+    needs: [sdk-contract, verify-contract, windows-watchdog-contract]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every needed job to succeed
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "${NEEDS_JSON}" | jq -r 'to_entries[] | "\(.key)=\(.value.result)"'
+          bad=$(echo "${NEEDS_JSON}" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(" ")')
+          if [ -n "${bad}" ]; then
+            echo "::error::ci-gate: not successful: ${bad}"
+            exit 1
+          fi
