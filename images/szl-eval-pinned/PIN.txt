@@ -14,3 +14,13 @@ LM_EVAL_WHEEL_SHA256=5daaa1973bf874005f64f28d3834b875f6886f0d6475878e6a6c821994a
 TRAIN_IMAGE=ghcr.io/szl-holdings/szl-train-pinned@sha256:8c1c82f0f8551cd807178587362a44880a1f7d9c3358864df08bd3e6f7c6b1fd
 TRAIN_IMAGE_SOURCE_COMMIT=5f6ff205fcf1ec3c0fb0ef0dac7eb0bb42f85f98
 # Suyu suite v1 is the estate mandate eval-suite-v1; it is not copied into this image.
+
+# N-14 (Nemotron-H kernels). Astral cu126 / torch 2.14 / cp312 wheels.
+# strings(1) on the CUDA extensions listed sm_90 and compute_90 (also sm_75/80/87).
+N14_MAMBA_SSM=2.3.2.post1+cu.12.6.torch.2.14
+N14_MAMBA_SSM_WHEEL_SHA256=329557d964d58ebfcaf44cb17dc043356a24dd5c8ab9b68d96dc0fbf89911614
+N14_CAUSAL_CONV1D=1.7.0+cu.12.6.torch.2.14
+N14_CAUSAL_CONV1D_WHEEL_SHA256=75f42d6ab5c87490d04a9a58f9e3c191c9cd88b31e8b626fc057099e01832d60
+N14_INDEX=https://wheels.astral.sh/simple/cu126/
+# vLLM is NOT in this image: PyPI vLLM 0.27.1–0.34.0 pin torch==2.13.0 or torch==2.14.0
+# and pull nvidia-cutlass-dsl[cu13]. This base is torch 2.14.1+cu126. See N14.md.

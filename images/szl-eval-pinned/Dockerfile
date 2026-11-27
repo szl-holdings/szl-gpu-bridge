@@ -24,7 +24,7 @@ RUN case "${TRAIN_IMAGE}" in *@sha256:??????????????????????????????????????????
       *) echo "TRAIN_IMAGE must be pinned by @sha256 digest, got: ${TRAIN_IMAGE}" >&2; exit 64;; esac
 
 WORKDIR /work
-COPY requirements-eval.lock constraints-from-train.txt PIN.txt build_gate.py /work/eval-image/
+COPY requirements-eval.lock requirements-n14.lock constraints-from-train.txt PIN.txt build_gate.py /work/eval-image/
 # Hash-locked overlay only. --no-deps --require-hashes. Already-identical
 # packages from the training image are left at the same version (the lock was
 # compiled against constraints-from-train.txt; the gate refuses conflicts).
@@ -33,7 +33,10 @@ COPY requirements-eval.lock constraints-from-train.txt PIN.txt build_gate.py /wo
 # build, which installs before PIP_NO_INDEX is set). Hashes still gate every
 # file. The finished image keeps PIP_NO_INDEX=1 from the base.
 RUN env -u PIP_NO_INDEX PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
+      --extra-index-url https://pypi.org/simple \
+      --extra-index-url https://wheels.astral.sh/simple/cu126/ \
       -r /work/eval-image/requirements-eval.lock \
+      -r /work/eval-image/requirements-n14.lock \
  && python3 /work/eval-image/build_gate.py --require-installed \
  && find /work/eval-image -name __pycache__ -prune -exec rm -rf {} + \
  && rm -rf /tmp/* /root/.cache
@@ -43,7 +46,7 @@ ENV SZL_EXPECT_LM_EVAL=${EXPECT_LM_EVAL} \
     SZL_EVAL_SUITE=v1
 
 LABEL org.opencontainers.image.source="https://github.com/szl-holdings/szl-gpu-bridge" \
-      org.opencontainers.image.description="Pinned eval image: szl-train-pinned + lm-eval 0.4.13 @ ddd67220 (Suyu suite v1)" \
+      org.opencontainers.image.description="Pinned eval image N-14: szl-train-pinned + lm-eval 0.4.13 + mamba-ssm/causal-conv1d (cu126, sm_90)" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.base.name="${TRAIN_IMAGE}" \
       szl.pins="lm-eval==${EXPECT_LM_EVAL} commit=${EXPECT_LM_EVAL_COMMIT}"

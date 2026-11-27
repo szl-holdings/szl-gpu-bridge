@@ -40,3 +40,16 @@ python3 build_gate.py --require-installed  # inside the image
 The gate refuses an unhashed lock, an `lm-eval` pin other than 0.4.13, a wheel sha mismatch, a PIN file mismatch, or any version that would bump the training stack.
 
 NOTHING is installed at boot (`PIP_NO_INDEX` stays on from the base). This image is for Massed Compute or SaladCloud evals only; do not train on a laptop.
+
+
+## N-14 (Nemotron-H kernels)
+
+This branch adds a hash-locked overlay (`requirements-n14.lock`) of Astral
+`mamba-ssm` / `causal-conv1d` wheels built for torch 2.14 + CUDA 12.6, with
+`sm_90` present in the prebuilt CUDA extensions. See `N14.md` for the full
+coverage table. vLLM is **not** included: it cannot be overlaid on
+`torch 2.14.1+cu126` without changing the training pin (evidence in `N14.md`).
+
+Build/publish is `.github/workflows/eval-image-ghcr.yml` on branch
+`kamay/szl-eval-pinned-n14`, tagged `n14-<sha>`. Pin the immutable digest, not
+the tag. Launch specs must use `@sha256:<64hex>`.

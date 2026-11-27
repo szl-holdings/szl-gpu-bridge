@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - kamay/szl-eval-pinned
+      - kamay/szl-eval-pinned-n14
     paths:
       - "images/szl-eval-pinned/**"
       - ".github/workflows/eval-image-ghcr.yml"
@@ -21,8 +22,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build-push:
-    # Only this feature branch and main may publish (workflow_dispatch from any other ref is refused).
-    if: github.ref == 'refs/heads/kamay/szl-eval-pinned' || github.ref == 'refs/heads/main'
+    # Only these feature branches and main may publish (workflow_dispatch from any other ref is refused).
+    if: github.ref == 'refs/heads/kamay/szl-eval-pinned' || github.ref == 'refs/heads/kamay/szl-eval-pinned-n14' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -45,6 +46,7 @@ jobs:
           set -euo pipefail
           cd images/szl-eval-pinned
           test -f requirements-eval.lock
+          test -f requirements-n14.lock
           test -f constraints-from-train.txt
           test -f PIN.txt
           test -f build_gate.py
@@ -54,11 +56,22 @@ jobs:
           # every requirement line must carry hashes (gate already checks; repeat here as a CI-visible fail)
           python3 - <<'PY'
           import re,sys
-          t=open('requirements-eval.lock').read()
-          blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
-          bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
-          sys.exit(f"unhashed: {bad}" if bad else 0)
+          for path in ('requirements-eval.lock','requirements-n14.lock'):
+              t=open(path).read()
+              blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
+              bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
+              if bad:
+                  sys.exit(f"unhashed in {path}: {bad}")
           PY
+      - name: Set distinct image tag (n14-* on the N-14 branch)
+        id: tags
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/kamay/szl-eval-pinned-n14" ]; then
+            echo "tags=${IMAGE}:n14-${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tags=${IMAGE}:sha-${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          fi
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -74,7 +87,7 @@ jobs:
           push: true
           provenance: false
           sbom: false
-          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             GIT_COMMIT=${{ github.sha }}
       - name: Attest build provenance (GitHub Attestations API + Rekor)
@@ -154,6 +167,8 @@ jobs:
           docker run --rm --entrypoint python3 "${REF}" /work/eval-image/build_gate.py --require-installed
           docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md, lm_eval; v=md.version('lm-eval'); assert v=='0.4.13', v; print('LM_EVAL_OK', v, getattr(lm_eval,'__version__',v))"
           docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md; pins={'transformers':'5.22.2','peft':'0.21.2','trl':'1.17.1'}; got={n:md.version(n) for n in pins}; assert got==pins, got; print('TRAIN_PINS_OK', got)"
+          docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md; m=md.version('mamba-ssm'); c=md.version('causal-conv1d'); assert m=='2.3.2.post1+cu.12.6.torch.2.14', m; assert c=='1.7.0+cu.12.6.torch.2.14', c; print('N14_PINS_OK', m, c)"
+          docker run --rm --entrypoint python3 "${REF}" -c "from transformers import NemotronHForCausalLM; print('NEMOTRONH_CLASS_OK', NemotronHForCausalLM.__name__)"
           REVISION="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
           test "${REVISION}" = "${GITHUB_SHA}"
           BASE="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.base.name"}}')"
