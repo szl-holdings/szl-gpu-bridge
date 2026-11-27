@@ -59,9 +59,18 @@ jobs:
           for path in ('requirements-eval.lock','requirements-n14.lock'):
               t=open(path).read()
               blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
-              bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
+              bad=[]; n=0
+              for b in blocks:
+                  lines=[ln for ln in b.splitlines() if ln.strip() and not ln.strip().startswith('#')]
+                  if not lines:
+                      continue
+                  n += 1
+                  if '--hash=sha256:' not in b:
+                      bad.append(lines[0].split()[0])
               if bad:
                   sys.exit(f"unhashed in {path}: {bad}")
+              if n == 0:
+                  sys.exit(f"no hashed packages in {path}")
           PY
       - name: Set distinct image tag (n14-* on the N-14 branch)
         id: tags
