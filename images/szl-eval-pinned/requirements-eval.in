@@ -1,0 +1,8 @@
+# Incremental eval extras on top of szl-train-pinned.
+# Official qualifying harness: EleutherAI lm-eval 0.4.13, tag v0.4.13,
+# git commit ddd67220430a2470529f25fd5c05a576ca1057a0 (verified via
+# git ls-remote refs/tags/v0.4.13^{} on 2026-11-26, 10:16 PM ET).
+# Extras cover official S-tier IFEval and MATH-500/GSM8K-style math.
+# EvalPlus and BFCL scorers are Kallpa's pins — not invented here.
+# Do not bump the training stack; uv is run with constraints-from-train.txt.
+lm-eval[ifeval,math]==0.4.13

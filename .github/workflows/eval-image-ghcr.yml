@@ -1,0 +1,168 @@
+name: Eval image (pinned, hash-locked) - GHCR build + sign
+# Builds images/szl-eval-pinned/Dockerfile (digest-pinned train-image base, requirements-eval.lock
+# installed with --require-hashes --no-deps, build-time import gate), pushes
+# ghcr.io/szl-holdings/szl-eval-pinned, then signs it keyless (cosign v3, legacy OCI
+# signature so v2/v3 verifiers read it), attests build provenance and verifies both.
+# No Salad, no GPU, no repository secrets: only the workflow's own GITHUB_TOKEN
+# (packages: write) and OIDC.
+on:
+  push:
+    branches:
+      - main
+      - kamay/szl-eval-pinned
+    paths:
+      - "images/szl-eval-pinned/**"
+      - ".github/workflows/eval-image-ghcr.yml"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: eval-image-ghcr-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build-push:
+    # Only this feature branch and main may publish (workflow_dispatch from any other ref is refused).
+    if: github.ref == 'refs/heads/kamay/szl-eval-pinned' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      IMAGE: ghcr.io/szl-holdings/szl-eval-pinned
+    steps:
+      - name: Free runner disk (the train-image base is ~10 GB uncompressed)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lockfile and PIN sanity (hash-locked, build gate, lock-only)
+        run: |
+          set -euo pipefail
+          cd images/szl-eval-pinned
+          test -f requirements-eval.lock
+          test -f constraints-from-train.txt
+          test -f PIN.txt
+          test -f build_gate.py
+          test -f Dockerfile
+          grep -q 'TRAIN_IMAGE=ghcr.io/szl-holdings/szl-train-pinned@sha256:' PIN.txt
+          python3 build_gate.py --lock-only
+          # every requirement line must carry hashes (gate already checks; repeat here as a CI-visible fail)
+          python3 - <<'PY'
+          import re,sys
+          t=open('requirements-eval.lock').read()
+          blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
+          bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
+          sys.exit(f"unhashed: {bad}" if bad else 0)
+          PY
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up isolated Buildx builder
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build-push
+        with:
+          context: images/szl-eval-pinned
+          file: images/szl-eval-pinned/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+      - name: Attest build provenance (GitHub Attestations API + Rekor)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build-push.outputs.digest }}
+          push-to-registry: true
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # installer v4.1.2; Cosign v3.0.6
+      - name: Sign and verify immutable digest (keyless)
+        id: signature
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          DIGEST="${{ steps.build-push.outputs.digest }}"
+          [[ "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          REF="${IMAGE}@${DIGEST}"
+          IDENTITY="${{ github.server_url }}/${{ github.repository }}/.github/workflows/eval-image-ghcr.yml@${{ github.ref }}"
+          cosign sign --yes \
+            --upload=true \
+            --new-bundle-format=false \
+            --use-signing-config=false \
+            --registry-referrers-mode=legacy \
+            "${REF}"
+          cosign verify \
+            --new-bundle-format=false \
+            --certificate-identity="${IDENTITY}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-ref="${GITHUB_REF}" \
+            --certificate-github-workflow-sha="${GITHUB_SHA}" \
+            --certificate-github-workflow-trigger="${{ github.event_name }}" \
+            "${REF}" | tee cosign-verify.json
+          jq -e 'type == "array" and length > 0' cosign-verify.json > /dev/null
+          echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
+          echo "ref=${REF}" >> "${GITHUB_OUTPUT}"
+      - name: cosign attest SLSA provenance (registry, cosign-verifiable)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          set -euo pipefail
+          DIGEST="${{ steps.build-push.outputs.digest }}"
+          cat > predicate.json <<PRED
+          {
+            "builder": { "id": "${{ github.server_url }}/${{ github.repository }}/.github/workflows/eval-image-ghcr.yml@${{ github.ref }}" },
+            "buildType": "https://actions.github.io/buildtypes/workflow/v1",
+            "invocation": {
+              "configSource": {
+                "uri": "git+${{ github.server_url }}/${{ github.repository }}@${{ github.ref }}",
+                "digest": { "sha1": "${{ github.sha }}" },
+                "entryPoint": ".github/workflows/eval-image-ghcr.yml"
+              },
+              "environment": { "event_name": "${{ github.event_name }}", "repository_id": "${{ github.repository_id }}" }
+            },
+            "buildVersion": "${{ github.sha }}",
+            "metadata": {
+              "buildInvocationId": "${{ github.run_id }}",
+              "completeness": { "parameters": true, "environment": true, "materials": true },
+              "reproducible": false
+            }
+          }
+          PRED
+          # cosign v3 has no --registry-referrers-mode on attest; legacy (tag-based) storage is selected with
+          # --new-bundle-format=false, the same as the signature above.
+          cosign attest --yes --predicate predicate.json --type slsaprovenance \
+            --new-bundle-format=false --use-signing-config=false "${IMAGE}@${DIGEST}"
+          cosign verify-attestation --type slsaprovenance --new-bundle-format=false \
+            --certificate-identity="${{ github.server_url }}/${{ github.repository }}/.github/workflows/eval-image-ghcr.yml@${{ github.ref }}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "${IMAGE}@${DIGEST}" > /dev/null
+      - name: Smoke the pushed digest (CPU only, no GPU, no token)
+        run: |
+          set -euo pipefail
+          REF="${{ steps.signature.outputs.ref }}"
+          docker pull "${REF}" > /dev/null
+          # Verify the *pushed digest*, not the local build directory or a mutable tag.
+          docker run --rm --entrypoint python3 "${REF}" /work/eval-image/build_gate.py --require-installed
+          docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md, lm_eval; v=md.version('lm-eval'); assert v=='0.4.13', v; print('LM_EVAL_OK', v, getattr(lm_eval,'__version__',v))"
+          docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md; pins={'transformers':'5.22.2','peft':'0.21.2','trl':'1.17.1'}; got={n:md.version(n) for n in pins}; assert got==pins, got; print('TRAIN_PINS_OK', got)"
+          REVISION="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "${REVISION}" = "${GITHUB_SHA}"
+          BASE="$(docker image inspect "${REF}" --format '{{index .Config.Labels "org.opencontainers.image.base.name"}}')"
+          echo "base=${BASE}"
+          echo "${BASE}" | grep -q 'szl-train-pinned@sha256:'
+          docker run --rm --entrypoint python3 "${REF}" -c "import os,sys; bad=[k for k in os.environ if 'TOKEN' in k or 'SECRET' in k]; print('token env vars in image:', bad); sys.exit(1 if bad else 0)"
+          docker image inspect "${REF}" --format 'base={{index .Config.Labels "org.opencontainers.image.base.name"}} size={{.Size}}'
+          {
+            echo "### Eval image"
+            printf -- '- Image: `%s`\n' "${REF}"
+            printf -- '- Signed (cosign keyless) and provenance-attested; both verified in this run.\n'
+          } >> "${GITHUB_STEP_SUMMARY}"

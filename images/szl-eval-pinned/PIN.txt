@@ -1,0 +1,16 @@
+# Suyu suite v1 pins. The build gate refuses a mismatch.
+LM_EVAL_VERSION=0.4.13
+LM_EVAL_GIT_TAG=v0.4.13
+LM_EVAL_GIT_COMMIT=ddd67220430a2470529f25fd5c05a576ca1057a0
+LM_EVAL_WHEEL_SHA256=5daaa1973bf874005f64f28d3834b875f6886f0d6475878e6a6c821994a5286a
+# Verified 2026-11-26 10:16 PM ET (America/New_York):
+# git ls-remote https://github.com/EleutherAI/lm-evaluation-harness.git
+#   eb4678c395c2c1f157d462b8f3a09831160c861a  refs/tags/v0.4.13
+#   ddd67220430a2470529f25fd5c05a576ca1057a0  refs/tags/v0.4.13^{}
+# Downloaded PyPI wheel sha256 matched the published digest (evidence/WHEEL_SHA256.txt).
+#
+# Base image: latest PUBLISHED szl-train-pinned as of 2026-11-26.
+# 975a572d is the #283 head build; it has been superseded on GHCR.
+TRAIN_IMAGE=ghcr.io/szl-holdings/szl-train-pinned@sha256:8c1c82f0f8551cd807178587362a44880a1f7d9c3358864df08bd3e6f7c6b1fd
+TRAIN_IMAGE_SOURCE_COMMIT=5f6ff205fcf1ec3c0fb0ef0dac7eb0bb42f85f98
+# Suyu suite v1 is the estate mandate eval-suite-v1; it is not copied into this image.
