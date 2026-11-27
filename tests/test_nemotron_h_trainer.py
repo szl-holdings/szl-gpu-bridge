@@ -302,8 +302,11 @@ class NemotronHTrainerTests(unittest.TestCase):
             "transformers: requirements.txt and pyproject.toml pin 5.17.0; image pins 5.22.2",
             "peft: requirements.txt and pyproject.toml pin 0.21.0; image pins 0.21.2",
             "trl: requirements.txt and pyproject.toml pin 1.14.0; image pins 1.17.1",
-            "torch: requirements.txt and pyproject.toml do not pin 2.14.1+cu126 "
-            "(image pin). The CPU dry-run installs torch==2.14.1+cpu.",
+            (
+                "torch: requirements.txt and pyproject.toml do not pin "
+                "2.14.1+cu126 (image pin). The CPU dry-run installs "
+                "torch==2.14.1+cpu."
+            ),
         ]
         self.assertEqual(observed, expected)
 
@@ -362,6 +365,79 @@ class NemotronHTrainerTests(unittest.TestCase):
         lines = [json.loads(line) for line in result["metrics"].splitlines()]
         self.assertEqual([line["step"] for line in lines], [1, 2])
         self.assertEqual(lines[0]["eval_loss"], result["losses"][0])
+
+    def test_name_gate_does_not_treat_every_nemotron_as_hybrid(self):
+        self.assertTrue(
+            nemotron.base_requires_nemotron_h_preflight(
+                "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16"
+            )
+        )
+        self.assertTrue(
+            nemotron.base_requires_nemotron_h_preflight(
+                "nvidia/NVIDIA-Nemotron-Nano-9B-v2"
+            )
+        )
+        self.assertFalse(
+            nemotron.base_requires_nemotron_h_preflight(
+                "nvidia/Llama-3.1-Nemotron-70B-Instruct"
+            )
+        )
+        self.assertFalse(
+            nemotron.base_requires_nemotron_h_preflight(
+                "nvidia/Nemotron-4-340B-Instruct"
+            )
+        )
+
+    def test_eager_out_proj_ignores_a_fused_kernel_tensor(self):
+        torch = importlib.import_module("torch")
+        config_mod = importlib.import_module(
+            "transformers.models.nemotron_h.configuration_nemotron_h"
+        )
+        modeling = importlib.import_module(
+            "transformers.models.nemotron_h.modeling_nemotron_h"
+        )
+        config = config_mod.NemotronHConfig(
+            hidden_size=32,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=8,
+            mamba_num_heads=4,
+            mamba_head_dim=8,
+            n_groups=2,
+            ssm_state_size=8,
+            conv_kernel=4,
+            chunk_size=8,
+            intermediate_size=64,
+            vocab_size=128,
+            max_position_embeddings=64,
+            num_hidden_layers=1,
+            hybrid_override_pattern="M",
+            num_nextn_predict_layers=0,
+            use_cache=False,
+            mlp_hidden_act="silu",
+        )
+        mixer = modeling.NemotronHMamba2Mixer(config, layer_idx=0)
+        mixer.train()
+        sentinel = torch.zeros(1, 4, 32)
+        original = modeling.mamba2_split_conv1d_scan_combined
+
+        def fused_kernel(*args, **kwargs):
+            return sentinel
+
+        modeling.mamba2_split_conv1d_scan_combined = fused_kernel
+        try:
+            states = torch.randn(1, 4, 32)
+            with torch.no_grad():
+                self.assertIs(mixer(states), sentinel)
+            nemotron.use_eager_out_proj(mixer)
+            output = mixer(states)
+            self.assertIsNot(output, sentinel)
+            output.sum().backward()
+            gradient = mixer.out_proj.weight.grad
+            self.assertIsNotNone(gradient)
+            self.assertGreater(float(gradient.abs().sum()), 0)
+        finally:
+            modeling.mamba2_split_conv1d_scan_combined = original
 
 
 if __name__ == "__main__":

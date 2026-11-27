@@ -149,25 +149,61 @@ def lora_target_modules(config) -> list[str]:
     return names
 
 
-def use_eager_out_proj() -> None:
-    """Make Mamba out_proj LoRA execute.
+def base_requires_nemotron_h_preflight(base: str) -> bool:
+    """True only for Nemotron-H hub ids, not every name that contains nemotron.
 
-    PEFT 0.21.2 rejects ``out_proj`` on ``nemotron_h`` because the fused kernel
-    reads ``out_proj.weight`` and never calls the module. Returning None from
-    that kernel selects the PyTorch path, which calls ``out_proj`` and therefore
-    applies the adapter. ``conv1d`` stays excluded.
+    Llama-Nemotron and Nemotron-4 stay on the worker's ordinary LoRA targets.
+    """
+
+    name = base.lower()
+    markers = (
+        "nemotron-h",
+        "nemotron_h",
+        "nemotronh",
+        "nvidia-nemotron-3-nano",
+        "nvidia-nemotron-nano-9b",
+    )
+    return any(marker in name for marker in markers)
+
+
+def use_eager_out_proj(model=None) -> None:
+    """Make Mamba out_proj LoRA execute when mamba-ssm is installed.
+
+    The mixer calls ``mamba2_split_conv1d_scan_combined`` and, only when that
+    returns a tensor, uses it as the layer output. ``None`` is the documented
+    signal that the fused kernel is unavailable, after which the same forward
+    calls ``self.out_proj``. Replacing the module global forces that branch
+    even if the import-time wrapper closed over mamba-ssm. A mixer whose
+    instance forward is no longer the class method is pointed back at the
+    class method, which reads the global. ``conv1d`` stays excluded.
     """
 
     import transformers.models.nemotron_h.modeling_nemotron_h as modeling
 
-    if getattr(modeling, "_szl_eager_out_proj", False):
-        return
-
-    def _skip_fused_scan(*args, **kwargs):
+    def _pytorch_fallback(*args, **kwargs):
         return None
 
-    modeling.mamba2_split_conv1d_scan_combined = _skip_fused_scan
-    modeling._szl_eager_out_proj = True
+    modeling.mamba2_split_conv1d_scan_combined = _pytorch_fallback
+    if model is None:
+        return
+    mixer_type = modeling.NemotronHMamba2Mixer
+    class_forward = mixer_type.forward
+
+    def _class_forward(module):
+        def forward(*args, **kwargs):
+            return class_forward(module, *args, **kwargs)
+
+        forward._szl_eager_out_proj = True
+        return forward
+
+    for module in model.modules():
+        if not isinstance(module, mixer_type):
+            continue
+        current = module.forward
+        if getattr(current, "_szl_eager_out_proj", False):
+            continue
+        if getattr(current, "__func__", None) is not class_forward:
+            module.forward = _class_forward(module)
 
 
 def attach_lora(model, *, r, lora_alpha, lora_dropout, target_modules):
@@ -175,7 +211,7 @@ def attach_lora(model, *, r, lora_alpha, lora_dropout, target_modules):
 
     from peft import LoraConfig, get_peft_model
 
-    use_eager_out_proj()
+    use_eager_out_proj(model)
     config = model.config
     original = getattr(config, "model_type", None)
     renamed = original == "nemotron_h" and "out_proj" in list(target_modules)

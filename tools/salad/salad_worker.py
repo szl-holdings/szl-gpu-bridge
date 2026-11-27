@@ -160,16 +160,16 @@ def nemotron_h_support():
     return module
 
 
-def resolve_lora_targets(args, model, nemotron, named_nemotron):
+def resolve_lora_targets(args, model, nemotron, claimed_nemotron_h):
     """Keep q/k/v/o for other models. Nemotron-H uses the modules its config names."""
 
     config = getattr(model, "config", None)
     model_type = getattr(config, "model_type", None)
     architectures = list(getattr(config, "architectures", None) or [])
     is_nemotron = model_type == "nemotron_h" or "NemotronHForCausalLM" in architectures
-    if named_nemotron and not is_nemotron:
+    if claimed_nemotron_h and not is_nemotron:
         raise RuntimeError(
-            "base name is Nemotron but the loaded architecture is not Nemotron-H"
+            "base was identified as Nemotron-H but the loaded architecture is not"
         )
     if not is_nemotron:
         return ["q_proj", "k_proj", "v_proj", "o_proj"], nemotron
@@ -1295,19 +1295,28 @@ def run_training(a, api) -> int:
                 {"training_started": False, "completion_qualified": False})
         return 8
     enable_thinking = None if a.enable_thinking is None else a.enable_thinking == "true"
-    named_nemotron = "nemotron" in a.base.lower()
     pool_attached = bool(
         os.environ.get("SZL_POOL_METRICS_FILE")
         or os.environ.get("SZL_POOL_CHECKPOINT_REQUEST")
     )
     nemotron = None
-    if named_nemotron or pool_attached or enable_thinking is not None or a.license_id or a.notice_file:
+    needs_support = (
+        pool_attached
+        or enable_thinking is not None
+        or a.license_id
+        or a.notice_file
+        or "nemotron" in a.base.lower()
+    )
+    if needs_support:
         try:
             nemotron = nemotron_h_support()
         except RuntimeError as exc:
             receipt("fail-closed", str(exc), {"training_started": False})
             return 9
-    if named_nemotron:
+    claimed_nemotron_h = bool(
+        nemotron and nemotron.base_requires_nemotron_h_preflight(a.base)
+    )
+    if claimed_nemotron_h:
         try:
             nemotron.preflight_license(
                 {
@@ -1373,7 +1382,9 @@ def run_training(a, api) -> int:
     if a.gradient_checkpointing:
         model.config.use_cache = False
     try:
-        target_modules, nemotron = resolve_lora_targets(a, model, nemotron, named_nemotron)
+        target_modules, nemotron = resolve_lora_targets(
+            a, model, nemotron, claimed_nemotron_h
+        )
     except RuntimeError as exc:
         receipt("fail-closed", str(exc),
                 {"training_started": False, "lora_targets": False})

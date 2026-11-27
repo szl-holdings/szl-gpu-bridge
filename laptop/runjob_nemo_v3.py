@@ -925,7 +925,7 @@ def main(spec_path: str) -> int:
                 nemotron.preflight_license(spec["base"], notice)
             except nemotron.NemotronHError as exc:
                 blocked(spec, "train:nemotron-h", str(exc))
-            nemotron.use_eager_out_proj()
+            nemotron.use_eager_out_proj(model)
         base_config = model.config
         renamed_for_peft = nemotron is not None and "out_proj" in target_modules
         if renamed_for_peft:
