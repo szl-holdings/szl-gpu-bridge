@@ -12,8 +12,10 @@ DSSE payload check.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import pathlib
+import pickle
 import tempfile
 from collections.abc import Callable
 from typing import Any
@@ -27,7 +29,13 @@ from runjob_nemo_v3 import (
 
 CHAT_TEMPLATE = (
     "{% for message in messages %}"
+    "{% if message['role'] == 'assistant' %}"
+    "{% generation %}"
     "{{ message['role'] }} {{ message['content'] }}{{ eos_token }}"
+    "{% endgeneration %}"
+    "{% else %}"
+    "{{ message['role'] }} {{ message['content'] }}{{ eos_token }}"
+    "{% endif %}"
     "{% endfor %}"
 )
 
@@ -176,6 +184,39 @@ def _recipe(max_length: int) -> dict[str, Any]:
     }
 
 
+def _allow_pyarrow26_dataset_fingerprint() -> Callable[[], None]:
+    """datasets 5.2 dill-pickles the Arrow table to fingerprint it.
+
+    PyArrow 26 declares MonthDayNano as a builtin, and that pickle fails. When
+    it does, hash the table shape instead so the dry-run can still train.
+    """
+
+    import datasets.arrow_dataset as arrow_dataset
+    import datasets.fingerprint as fingerprint
+
+    if getattr(arrow_dataset.generate_fingerprint, "_szl_arrow_fallback", False):
+        return lambda: None
+    original = arrow_dataset.generate_fingerprint
+
+    def generate(dataset):
+        try:
+            return original(dataset)
+        except (pickle.PicklingError, RecursionError):
+            table = dataset._data
+            payload = f"{table.schema}|{table.num_rows}|{table.nbytes}".encode()
+            return hashlib.sha256(payload).hexdigest()
+
+    generate._szl_arrow_fallback = True
+    arrow_dataset.generate_fingerprint = generate
+    fingerprint.generate_fingerprint = generate
+
+    def restore() -> None:
+        arrow_dataset.generate_fingerprint = original
+        fingerprint.generate_fingerprint = original
+
+    return restore
+
+
 def run_cpu_dry_run(
     envelope: dict[str, Any],
     verify: Callable[[dict[str, Any]], dict[str, Any]],
@@ -216,60 +257,64 @@ def run_cpu_dry_run(
     if hasattr(hook_owner, "_hf_hook"):
         del hook_owner._hf_hook
 
-    prepared = _prepare_nemo_assistant_labels(
-        Dataset.from_list(_rows()), tokenizer, max_length=32
-    )
-    columns = set(prepared.column_names)
-    if not {"input_ids", "labels", "messages"}.issubset(columns):
-        raise RuntimeError("assistant-label dataset is missing trainer columns")
-    supervised = 0
-    for row in prepared:
-        if len(row["input_ids"]) != len(row["labels"]):
-            raise RuntimeError("label width does not match input ids")
-        if not any(value != -100 for value in row["labels"]):
-            raise RuntimeError("assistant region was fully masked")
-        supervised += sum(value != -100 for value in row["labels"])
-    split = prepared.train_test_split(test_size=0.5, seed=7)
-
-    with tempfile.TemporaryDirectory() as directory:
-        config = _build_sft_config(
-            SFTConfig, _recipe(32), torch, pathlib.Path(directory)
+    restore_fingerprint = _allow_pyarrow26_dataset_fingerprint()
+    try:
+        prepared = _prepare_nemo_assistant_labels(
+            Dataset.from_list(_rows()), tokenizer, max_length=32
         )
-        if config.eval_strategy != "epoch":
-            raise RuntimeError("evaluation strategy was not bound to eval_strategy")
-        if getattr(config, "max_seq_length", None) not in (None, config.max_length):
-            raise RuntimeError("retired max_seq_length survived construction")
-        if config.max_length != 32 or config.packing_strategy != "bfd":
-            raise RuntimeError("sequence length or packing strategy was not bound")
-        if config.bf16 or config.fp16:
-            raise RuntimeError("CPU dry-run requested mixed precision")
-        trainer = _build_sft_trainer(
-            SFTTrainer,
-            model=model,
-            tokenizer=tokenizer,
-            train_dataset=split["train"],
-            eval_dataset=split["test"],
-            callbacks=[],
-            config=config,
-        )
-        trained = trainer.train()
-        loss = float(trained.training_loss)
+        columns = set(prepared.column_names)
+        if not {"input_ids", "labels", "messages"}.issubset(columns):
+            raise RuntimeError("assistant-label dataset is missing trainer columns")
+        supervised = 0
+        for row in prepared:
+            if len(row["input_ids"]) != len(row["labels"]):
+                raise RuntimeError("label width does not match input ids")
+            if not any(value != -100 for value in row["labels"]):
+                raise RuntimeError("assistant region was fully masked")
+            supervised += sum(value != -100 for value in row["labels"])
+        split = prepared.train_test_split(test_size=0.5, seed=7)
 
-    if not math.isfinite(loss):
-        raise RuntimeError("CPU dry-run loss is not finite")
-    return {
-        "training_loss": loss,
-        "global_steps": int(trainer.state.global_step),
-        "chat_template_present": bool(template),
-        "supervised_tokens": supervised,
-        "eval_strategy": config.eval_strategy,
-        "max_length": config.max_length,
-        "packing_strategy": config.packing_strategy,
-        "bf16": bool(config.bf16),
-        "fp16": bool(config.fp16),
-        "cpu_dtype": str(cpu_load["dtype"]),
-        "quantization_refused": quant_error,
-        "dataset_field": payload["dataset"]["field"],
-        "lm_head_device": materialized.device.type,
-        "gpu_job_launched": False,
-    }
+        with tempfile.TemporaryDirectory() as directory:
+            config = _build_sft_config(
+                SFTConfig, _recipe(32), torch, pathlib.Path(directory)
+            )
+            if config.eval_strategy != "epoch":
+                raise RuntimeError("evaluation strategy was not bound to eval_strategy")
+            if getattr(config, "max_seq_length", None) not in (None, config.max_length):
+                raise RuntimeError("retired max_seq_length survived construction")
+            if config.max_length != 32 or config.packing_strategy != "bfd":
+                raise RuntimeError("sequence length or packing strategy was not bound")
+            if config.bf16 or config.fp16:
+                raise RuntimeError("CPU dry-run requested mixed precision")
+            trainer = _build_sft_trainer(
+                SFTTrainer,
+                model=model,
+                tokenizer=tokenizer,
+                train_dataset=split["train"],
+                eval_dataset=split["test"],
+                callbacks=[],
+                config=config,
+            )
+            trained = trainer.train()
+            loss = float(trained.training_loss)
+
+        if not math.isfinite(loss):
+            raise RuntimeError("CPU dry-run loss is not finite")
+        return {
+            "training_loss": loss,
+            "global_steps": int(trainer.state.global_step),
+            "chat_template_present": bool(template),
+            "supervised_tokens": supervised,
+            "eval_strategy": config.eval_strategy,
+            "max_length": config.max_length,
+            "packing_strategy": config.packing_strategy,
+            "bf16": bool(config.bf16),
+            "fp16": bool(config.fp16),
+            "cpu_dtype": str(cpu_load["dtype"]),
+            "quantization_refused": quant_error,
+            "dataset_field": payload["dataset"]["field"],
+            "lm_head_device": materialized.device.type,
+            "gpu_job_launched": False,
+        }
+    finally:
+        restore_fingerprint()

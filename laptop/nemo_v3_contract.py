@@ -18,6 +18,8 @@ from frontier_contract import ContractError
 
 NEMO_V3_PAYLOAD_TYPE = "application/vnd.szl.gpu-bridge.nemo-v3.jobspec.v1+json"
 NEMO_V3_KIND = "szl-nemo-governed-v3"
+NEMOTRON_OPEN_MODEL_LICENSE_ID = "nvidia-nemotron-open-model-license"
+LICENSE_ACK_MIN_CHARS = 20
 _SHA = re.compile(r"^[0-9a-f]{40,64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -1262,6 +1264,54 @@ def require_nemo_v3_dispatchable(
             )
 
 
+def validate_fixed_recipe_ranges(recipe: dict[str, Any]) -> None:
+    """Reject a recipe outside the fixed Nemo v3 ranges. Ranges are not configurable."""
+
+    integer_ranges = {
+        "maxSeqLength": (256, 4096),
+        "loraR": (1, 64),
+        "loraAlpha": (1, 256),
+        "batchSize": (1, 1),
+        "gradAccum": (1, 64),
+    }
+    for field, (minimum, maximum) in integer_ranges.items():
+        value = recipe[field]
+        if not isinstance(value, int) or not minimum <= value <= maximum:
+            raise ContractError(f"recipe.{field} is outside the fixed range")
+    if (
+        not isinstance(recipe["loraDropout"], (int, float))
+        or not 0 <= recipe["loraDropout"] <= 0.2
+    ):
+        raise ContractError("recipe.loraDropout is outside the fixed range")
+    if (
+        not isinstance(recipe["targetModules"], list)
+        or not recipe["targetModules"]
+        or len(recipe["targetModules"]) != len(set(recipe["targetModules"]))
+    ):
+        raise ContractError("recipe.targetModules must be a non-empty unique array")
+    if not all(isinstance(item, str) and item for item in recipe["targetModules"]):
+        raise ContractError("recipe.targetModules contains an invalid item")
+    if not isinstance(recipe["epochs"], (int, float)) or not 0 < recipe["epochs"] <= 8:
+        raise ContractError("recipe.epochs is outside the fixed range")
+    if (
+        not isinstance(recipe["learningRate"], (int, float))
+        or not 0 < recipe["learningRate"] <= 0.001
+    ):
+        raise ContractError("recipe.learningRate is outside the fixed range")
+    if recipe["optimizer"] not in {"adamw_8bit", "paged_adamw_8bit"}:
+        raise ContractError("recipe.optimizer is unsupported")
+    if recipe["gradientCheckpointing"] not in {"unsloth", "true"}:
+        raise ContractError("recipe.gradientCheckpointing is unsupported")
+    if not isinstance(recipe["seed"], int):
+        raise ContractError("recipe.seed must be an integer")
+    for field, maximum in (("warmupRatio", 0.2), ("weightDecay", 0.2)):
+        value = recipe[field]
+        if not isinstance(value, (int, float)) or not 0 <= value <= maximum:
+            raise ContractError(f"recipe.{field} is outside the fixed range")
+    if recipe["lrSchedulerType"] not in {"linear", "cosine"}:
+        raise ContractError("recipe.lrSchedulerType is unsupported")
+
+
 def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ContractError("Nemo v3 spec must be an object")
@@ -2189,14 +2239,14 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
     if (
         coordinated_binding is not None
         and coordinated_binding["successorGeneration"] >= 10
-        and base["licenseId"] != "nvidia-nemotron-open-model-license"
+        and base["licenseId"] != NEMOTRON_OPEN_MODEL_LICENSE_ID
     ):
         raise ContractError(
             "runtime recovery must bind the exact immutable custom license ID"
         )
     if (
         not isinstance(base["licenseAcknowledgement"], str)
-        or len(base["licenseAcknowledgement"].strip()) < 20
+        or len(base["licenseAcknowledgement"].strip()) < LICENSE_ACK_MIN_CHARS
     ):
         raise ContractError("base.licenseAcknowledgement must be explicit")
     if not isinstance(base["trustRemoteCode"], bool):
@@ -2252,50 +2302,11 @@ def validate_nemo_v3_spec(spec: dict[str, Any]) -> dict[str, Any]:
         "weightDecay",
         "lrSchedulerType",
     }
-    recipe = _object(spec, "recipe", recipe_required, recipe_required)
-    integer_ranges = {
-        "maxSeqLength": (256, 4096),
-        "loraR": (1, 64),
-        "loraAlpha": (1, 256),
-        "batchSize": (1, 1),
-        "gradAccum": (1, 64),
-    }
-    for field, (minimum, maximum) in integer_ranges.items():
-        value = recipe[field]
-        if not isinstance(value, int) or not minimum <= value <= maximum:
-            raise ContractError(f"recipe.{field} is outside the fixed range")
-    if (
-        not isinstance(recipe["loraDropout"], (int, float))
-        or not 0 <= recipe["loraDropout"] <= 0.2
-    ):
-        raise ContractError("recipe.loraDropout is outside the fixed range")
-    if (
-        not isinstance(recipe["targetModules"], list)
-        or not recipe["targetModules"]
-        or len(recipe["targetModules"]) != len(set(recipe["targetModules"]))
-    ):
-        raise ContractError("recipe.targetModules must be a non-empty unique array")
-    if not all(isinstance(item, str) and item for item in recipe["targetModules"]):
-        raise ContractError("recipe.targetModules contains an invalid item")
-    if not isinstance(recipe["epochs"], (int, float)) or not 0 < recipe["epochs"] <= 8:
-        raise ContractError("recipe.epochs is outside the fixed range")
-    if (
-        not isinstance(recipe["learningRate"], (int, float))
-        or not 0 < recipe["learningRate"] <= 0.001
-    ):
-        raise ContractError("recipe.learningRate is outside the fixed range")
-    if recipe["optimizer"] not in {"adamw_8bit", "paged_adamw_8bit"}:
-        raise ContractError("recipe.optimizer is unsupported")
-    if recipe["gradientCheckpointing"] not in {"unsloth", "true"}:
-        raise ContractError("recipe.gradientCheckpointing is unsupported")
-    if not isinstance(recipe["seed"], int):
-        raise ContractError("recipe.seed must be an integer")
-    for field, maximum in (("warmupRatio", 0.2), ("weightDecay", 0.2)):
-        value = recipe[field]
-        if not isinstance(value, (int, float)) or not 0 <= value <= maximum:
-            raise ContractError(f"recipe.{field} is outside the fixed range")
-    if recipe["lrSchedulerType"] not in {"linear", "cosine"}:
-        raise ContractError("recipe.lrSchedulerType is unsupported")
+    recipe_allowed = recipe_required | {"enableThinking"}
+    recipe = _object(spec, "recipe", recipe_required, recipe_allowed)
+    validate_fixed_recipe_ranges(recipe)
+    if "enableThinking" in recipe and not isinstance(recipe["enableThinking"], bool):
+        raise ContractError("recipe.enableThinking must be boolean")
 
     gates_required = {
         "minFreeVramGb",

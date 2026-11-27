@@ -82,7 +82,8 @@
         "seed": {"type": "integer"},
         "warmupRatio": {"type": "number", "minimum": 0, "maximum": 0.2},
         "weightDecay": {"type": "number", "minimum": 0, "maximum": 0.2},
-        "lrSchedulerType": {"enum": ["linear", "cosine"]}
+        "lrSchedulerType": {"enum": ["linear", "cosine"]},
+        "enableThinking": {"type": "boolean"}
       }
     },
     "gates": {

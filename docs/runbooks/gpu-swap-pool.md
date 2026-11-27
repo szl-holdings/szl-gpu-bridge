@@ -111,10 +111,12 @@ python -m unittest discover -s tests -p test_gpu_pool_runner.py -v
   today, so it is refused unless the node manifest sets
   `allow_unenforced_shared_memory: true`. VRAM fit uses the manifest estimate
   plus headroom, not live `nvidia-smi` readings.
-* **Trainer support.** The existing trainers do not yet write the metrics file
-  or honor the checkpoint-request file. Until they do, plateau detection has no
-  input and eviction checkpoints fall back to `checkpoint-*` directories already
-  on disk. That trainer work is separate from this PR.
+* **Trainer support.** `tools/salad/salad_worker.py` and `laptop/runjob_nemo_v3.py`
+  append `{"eval_loss", "step"}` lines when `SZL_POOL_METRICS_FILE` is set, and
+  they save into the directory named by `SZL_POOL_CHECKPOINT_REQUEST` and write
+  `COMPLETE`. With the variable unset, those hooks do nothing. A Salad container
+  of digest `8eb91965` still runs the worker baked into that image, which does
+  not contain this hook, until a later image build copies it.
 * **Cost is an estimate.** Spend is device `usd_per_hour` x wall time, charged at
   the full device rate even for shared placement (conservative). It is not a
   provider bill and does not include storage or egress.

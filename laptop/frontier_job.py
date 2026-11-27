@@ -340,6 +340,16 @@ def _normalize_sft_config_kwargs(
             inspect.Parameter.VAR_POSITIONAL,
         )
     }
+    # TRL 1.17 dropped warmup_ratio. Zero is that constructor's default, so
+    # omitting it does not change the schedule. Any other ratio still fails
+    # closed rather than being rewritten into warmup_steps.
+    if "warmup_ratio" in values and "warmup_ratio" not in explicit:
+        ratio = values["warmup_ratio"]
+        if isinstance(ratio, bool) or not isinstance(ratio, (int, float)) or ratio != 0:
+            raise RuntimeError(
+                "SFTConfig values contain unsupported fields: ['warmup_ratio']"
+            )
+        values.pop("warmup_ratio")
     unsupported = sorted(set(values) - explicit - {supplied_alias})
     if unsupported:
         raise RuntimeError(

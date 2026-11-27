@@ -106,6 +106,7 @@ class SourceRuntimeTests(unittest.TestCase):
             set(contract.SOURCE_FILES),
             {
                 "salad_worker.py",
+                "nemotron_h.py",
                 "tools/salad/resume_integrity.py",
                 "tools/salad/training_snapshot.py",
                 "step_heartbeat.py",

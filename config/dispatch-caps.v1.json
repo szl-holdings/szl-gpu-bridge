@@ -1,0 +1,7 @@
+{
+  "schema": "szl.dispatch.org-caps/v1",
+  "fail_closed": true,
+  "per_run_usd": 100,
+  "per_day_usd": 500,
+  "per_month_usd": 5000
+}

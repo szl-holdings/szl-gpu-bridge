@@ -17,6 +17,7 @@ SCHEMA = "szl.training-image-source/v1"
 REPOSITORY = "szl-holdings/szl-gpu-bridge"
 SOURCE_FILES = (
     "salad_worker.py",
+    "nemotron_h.py",
     "tools/salad/resume_integrity.py",
     "tools/salad/training_snapshot.py",
     "step_heartbeat.py",
