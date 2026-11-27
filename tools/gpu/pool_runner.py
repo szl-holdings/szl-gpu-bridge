@@ -207,8 +207,26 @@ def committed_spend(path, now_ts):
 
 
 def append_ledger(path, row):
-    with open(path, "a", encoding="utf-8") as stream:
-        stream.write(json.dumps(row, sort_keys=True) + "\n")
+    """Append in the ledger's own format so a CSV tracker stays a CSV tracker."""
+
+    path = Path(path)
+    if path.suffix != ".csv":
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row, sort_keys=True) + "\n")
+        return
+    with path.open(newline="", encoding="utf-8") as stream:
+        header = next(csv.reader(stream), None)
+    require(header and "usd" in header, "SPEND_LEDGER_CSV_HEADER")
+    stamp_column = "at_et" if "at_et" in header else "ts_et"
+    require(stamp_column in header, "SPEND_LEDGER_CSV_HEADER")
+    values = dict(row)
+    values[stamp_column] = values.pop("at_et")
+    if "note" in header and "note" not in values:
+        values["note"] = f"node={values.get('node_id', '')}"
+    with path.open("a", newline="", encoding="utf-8") as stream:
+        csv.DictWriter(stream, header, restval="", extrasaction="ignore").writerow(
+            values
+        )
 
 
 # ------------------------------------------------------------------ node manifest
@@ -797,6 +815,7 @@ class PoolRunner:
         try:
             (run.run_dir / "checkpoint.request").unlink()
         except FileNotFoundError:
+            # The child or a previous attempt already consumed the request file.
             pass
         if source is None:
             return None, "NO_CHECKPOINT_AVAILABLE"
@@ -820,6 +839,7 @@ class PoolRunner:
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
+            # The owned child exited between poll() and the signal; wait() reaps it.
             pass
         try:
             return process.wait(timeout=self.cfg["grace_s"]), False
@@ -827,6 +847,7 @@ class PoolRunner:
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # It completed during the grace-period race; wait() still reaps it.
                 pass
             return process.wait(), True
 
@@ -938,6 +959,9 @@ class PoolRunner:
             self._stop_all(CAP_MONTH)
             return False
         for run in list(self.running):
+            # An earlier eviction in this tick can block for a checkpoint
+            # timeout; never judge later runs against a stale timestamp.
+            now = self.clock()
             self._read_metrics(run)
             returncode = run.process.poll()
             if returncode is not None:

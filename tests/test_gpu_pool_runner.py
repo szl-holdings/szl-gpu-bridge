@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest import mock
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -463,6 +463,24 @@ class CostCaps(PoolHarness):
         self.assertIn(self.swaps()[0]["reason"], ("cap_run", "run_timebox"))
 
 
+class CsvLedger(PoolHarness):
+    def test_csv_tracker_stays_csv_after_evictions(self):
+        self.ledger = self.base / "spend.csv"
+        self.ledger.write_text("ts_et,run_id,provider,job_id,kind,usd,basis,note\n")
+        entries = [self.entry("c1", [1.0]), self.entry("c2", [1.0])]
+        summary = self.runner(self.node(spend_ledger=str(self.ledger)), entries).run()
+        self.assertEqual(len(summary["finished"]), 2)
+        rows = pool.read_ledger(self.ledger)
+        self.assertEqual(len(rows), 2)
+        self.assertNotIn("{", self.ledger.read_text())
+
+    def test_csv_without_usd_column_refuses_append(self):
+        path = self.base / "bad.csv"
+        path.write_text("ts_et,run_id\n")
+        with self.assertRaisesRegex(pool.GateError, "SPEND_LEDGER_CSV_HEADER"):
+            pool.append_ledger(path, {"at_et": "2026-11-27T00:00:00-05:00", "usd": 1})
+
+
 class BindingAndNodeGates(PoolHarness):
     def test_envelope_drift_is_refused_before_launch(self):
         entry = self.entry("drift", [1.0])
@@ -624,12 +642,12 @@ class PlanModeAndCli(PoolHarness):
         clean = {k: v for k, v in os.environ.items() if not k.startswith("R2_")}
         out = io.StringIO()
         with (
-            mock.patch.dict(
+            unittest.mock.patch.dict(
                 os.environ,
                 dict(clean, SZL_EXECUTION_BRIDGE_REVISION=REVISION),
                 clear=True,
             ),
-            mock.patch("sys.stdout", out),
+            unittest.mock.patch("sys.stdout", out),
         ):
             self.assertEqual(pool.main(argv), 0)
             self.assertEqual(json.loads(out.getvalue())["status"], "PLAN_ONLY")
@@ -693,6 +711,10 @@ class R2Store(unittest.TestCase):
                 store.upload_checkpoint("run-1", "0002-final", ckpt, tmp)
             self.assertNotIn(SECRET, str(caught.exception))
             self.assertEqual(str(caught.exception), "R2_UPLOAD_FAILED:RuntimeError")
+            (ckpt / "link").symlink_to(ckpt / "adapter.bin")
+            with self.assertRaisesRegex(r2.R2Error, "CHECKPOINT_CONTAINS_SYMLINK"):
+                store.upload_checkpoint("run-1", "0003-final", ckpt, tmp)
+            self.assertEqual(list(Path(tmp).glob("*.tar")), [])
 
 
 if __name__ == "__main__":

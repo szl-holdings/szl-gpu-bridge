@@ -78,11 +78,17 @@ def archive_directory(source, destination_dir):
         raise R2Error("CHECKPOINT_DIR_MISSING")
     fd, name = tempfile.mkstemp(suffix=".tar", dir=destination_dir)
     os.close(fd)
-    with tarfile.open(name, "w") as archive:
-        for path in sorted(source.rglob("*")):
-            if path.is_symlink():
-                raise R2Error("CHECKPOINT_CONTAINS_SYMLINK")
-            archive.add(path, arcname=str(path.relative_to(source)), recursive=False)
+    try:
+        with tarfile.open(name, "w") as archive:
+            for path in sorted(source.rglob("*")):
+                if path.is_symlink():
+                    raise R2Error("CHECKPOINT_CONTAINS_SYMLINK")
+                archive.add(
+                    path, arcname=str(path.relative_to(source)), recursive=False
+                )
+    except BaseException:
+        Path(name).unlink(missing_ok=True)
+        raise
     return Path(name)
 
 
