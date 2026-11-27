@@ -266,11 +266,12 @@ is on the `py_compile` list. Retrieval CI already runs `pytest tests/`.
 
 ## Draft pull requests
 
-Branch names for this pass:
+All three are drafts. None request review.
 
-- `szl-gpu-bridge`: `cursor/nvidia-open-tooling-4367` (this plan and the
-  trainer backend)
-- `szl-constellation`: `cursor/estate-graph-pyg-spec-4367`
-- `szl-retrieval-bench`: `cursor/nemo-retriever-q7-baseline-4367`
-
-Pull request URLs are filled in after the drafts are opened.
+- `szl-gpu-bridge` `cursor/nvidia-open-tooling-4367`:
+  https://github.com/szl-holdings/szl-gpu-bridge/pull/358
+  (this plan and the trainer backend)
+- `szl-constellation` `cursor/estate-graph-pyg-spec-4367`:
+  https://github.com/szl-holdings/szl-constellation/pull/67
+- `szl-retrieval-bench` `cursor/nemo-retriever-q7-baseline-4367`:
+  https://github.com/szl-holdings/szl-retrieval-bench/pull/47
