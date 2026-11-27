@@ -23,6 +23,7 @@ jobs:
   build-push:
     # Only the PR branch and main may publish (workflow_dispatch from any other ref is refused).
     if: github.ref == 'refs/heads/kamay/pinned-training-image-20261119' || github.ref == 'refs/heads/main'
+    environment: release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
