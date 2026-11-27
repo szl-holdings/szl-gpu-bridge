@@ -28,7 +28,11 @@ COPY requirements-eval.lock constraints-from-train.txt PIN.txt build_gate.py /wo
 # Hash-locked overlay only. --no-deps --require-hashes. Already-identical
 # packages from the training image are left at the same version (the lock was
 # compiled against constraints-from-train.txt; the gate refuses conflicts).
-RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
+# The base image sets PIP_NO_INDEX=1 so a runtime pip install cannot drift.
+# Unset it only for this hashed install (same pattern as the training image
+# build, which installs before PIP_NO_INDEX is set). Hashes still gate every
+# file. The finished image keeps PIP_NO_INDEX=1 from the base.
+RUN env -u PIP_NO_INDEX PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
       -r /work/eval-image/requirements-eval.lock \
  && python3 /work/eval-image/build_gate.py --require-installed \
  && find /work/eval-image -name __pycache__ -prune -exec rm -rf {} + \
