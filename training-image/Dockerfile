@@ -32,6 +32,14 @@ COPY training-image/requirements.lock /work/requirements.lock
 RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
       --extra-index-url https://download.pytorch.org/whl/cu126 -r /work/requirements.lock
 
+# N-14 overlay: hash-locked mamba-ssm / causal-conv1d (Astral cu126 / torch 2.14, sm_90 in the wheels).
+# Installed before PIP_NO_INDEX is set. Does not re-resolve or bump the training lock.
+COPY training-image/requirements-n14.lock /work/requirements-n14.lock
+RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps --require-hashes \
+      --extra-index-url https://pypi.org/simple \
+      --extra-index-url https://wheels.astral.sh/simple/cu126/ \
+      -r /work/requirements-n14.lock
+
 # One canonical training worker. Do not build from the retired image-local copy:
 # it predates immutable resume_integrity and may silently restart from genesis.
 COPY tools/salad/salad_worker.py /work/salad_worker.py
@@ -71,7 +79,7 @@ ENV SZL_SOURCE_REVISION=${GIT_COMMIT} \
 # HF_TOKEN is deliberately NOT set here; the runtime injects it.
 
 LABEL org.opencontainers.image.source="https://github.com/szl-holdings/szl-gpu-bridge" \
-      org.opencontainers.image.description="Pinned hash-locked training image (torch 2.14.1+cu126, transformers 5.22.2, peft 0.21.2, trl 1.17.1)" \
+      org.opencontainers.image.description="Pinned hash-locked training image N-14 (torch 2.14.1+cu126 + mamba-ssm/causal-conv1d sm_90)" \
       org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.base.name="${BASE_IMAGE}" \
       szl.pins="torch=${EXPECT_TORCH} torchvision=${EXPECT_TORCHVISION} torchaudio=${EXPECT_TORCHAUDIO} transformers==${EXPECT_TRANSFORMERS} peft==${EXPECT_PEFT} trl==${EXPECT_TRL}"

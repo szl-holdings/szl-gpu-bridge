@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - kamay/pinned-training-image-20261119
+      - kamay/szl-train-pinned-n14
     paths:
       - "training-image/**"
       - "tools/salad/salad_worker.py"
@@ -22,7 +23,7 @@ concurrency:
 jobs:
   build-push:
     # Only the PR branch and main may publish (workflow_dispatch from any other ref is refused).
-    if: github.ref == 'refs/heads/kamay/pinned-training-image-20261119' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/kamay/pinned-training-image-20261119' || github.ref == 'refs/heads/kamay/szl-train-pinned-n14' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -63,10 +64,30 @@ jobs:
           bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
           sys.exit(f"unhashed: {bad}" if bad else 0)
           PY
+          test -f requirements-n14.lock
+          grep -q 'mamba-ssm==2.3.2.post1+cu.12.6.torch.2.14' requirements-n14.lock
+          grep -q 'causal-conv1d==1.7.0+cu.12.6.torch.2.14' requirements-n14.lock
+          ! grep -q 'nvidia-cutlass-dsl-libs-cu13' requirements-n14.lock
+          python3 - <<'PY'
+          import re,sys
+          t=open('requirements-n14.lock').read()
+          blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
+          bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
+          sys.exit(f"unhashed in requirements-n14.lock: {bad}" if bad else 0)
+          PY
       - name: Refuse incompatible pinned NumPy and PyArrow before image build
         run: >-
           python3 tools/salad/numpy_pyarrow_preflight.py
           training-image/requirements.lock --python-version 3.12
+      - name: Set distinct image tag (n14-* on the N-14 branch)
+        id: tags
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" = "refs/heads/kamay/szl-train-pinned-n14" ]; then
+            echo "tags=${IMAGE}:n14-${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "tags=${IMAGE}:sha-${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          fi
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -82,7 +103,7 @@ jobs:
           push: true
           provenance: false
           sbom: false
-          tags: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             GIT_COMMIT=${{ github.sha }}
       - name: Attest build provenance (GitHub Attestations API + Rekor)
@@ -169,6 +190,7 @@ jobs:
           docker run --rm --entrypoint python3 "${REF}" -W ignore /work/readiness_probe.py imports --from-env --no-gpu
           docker run --rm --entrypoint python3 "${REF}" -c "import os,sys; bad=[k for k in os.environ if 'TOKEN' in k or 'SECRET' in k]; print('token env vars in image:', bad); sys.exit(1 if bad else 0)"
           docker run --rm --entrypoint python3 "${REF}" -W ignore -c "import torch,torchvision,torchaudio,transformers,peft,trl; print({m.__name__:m.__version__ for m in (torch,torchvision,torchaudio,transformers,peft,trl)}, 'cuda', torch.version.cuda)"
+          docker run --rm --entrypoint python3 "${REF}" -c "import importlib.metadata as md; from transformers import NemotronHForCausalLM; ms=md.version('mamba-ssm'); cc=md.version('causal-conv1d'); assert ms=='2.3.2.post1+cu.12.6.torch.2.14', ms; assert cc=='1.7.0+cu.12.6.torch.2.14', cc; print('N14_PIN_OK', ms, cc, NemotronHForCausalLM)"
           docker image inspect "${REF}" --format 'base={{index .Config.Labels "org.opencontainers.image.base.name"}} size={{.Size}}'
           {
             echo "### Training image"

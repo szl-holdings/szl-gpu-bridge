@@ -11,7 +11,9 @@ Checks (CPU only; the build host has no GPU):
      salad_worker.sft_sequence_length_kwargs enforces) and the retired max_seq_length= is rejected;
   6. salad_worker imports against these pins;
   7. the run-receipt uploader: imports, `--dry-run` on a synthetic proof run with no token and no network,
-     and the image carries no HF/GitHub token.
+     and the image carries no HF/GitHub token;
+  8. N-14: mamba-ssm and causal-conv1d match the pinned overlay versions, and
+     transformers exposes NemotronHForCausalLM (CPU class import, no GPU load).
 """
 from __future__ import annotations
 
@@ -243,6 +245,23 @@ def _receipts():
     print(t.stderr[-500:], flush=True)
     if t.returncode != 0:
         raise AssertionError("receipt_upload unit tests failed")
+
+
+
+@step("N-14 mamba-ssm / causal-conv1d pins and NemotronH class")
+def _n14():
+    import importlib.metadata as md
+    expect = {
+        "mamba-ssm": "2.3.2.post1+cu.12.6.torch.2.14",
+        "causal-conv1d": "1.7.0+cu.12.6.torch.2.14",
+    }
+    for name, want in expect.items():
+        got = md.version(name)
+        if got != want:
+            raise AssertionError(f"{name} {got}, expected {want}")
+        versions[name] = got
+    from transformers import NemotronHForCausalLM  # noqa: F401
+    # Do not import mamba_ssm / causal_conv1d CUDA extensions here: the build host has no NVIDIA driver.
 
 
 print(json.dumps({"versions": versions, "failures": failures}), flush=True)
