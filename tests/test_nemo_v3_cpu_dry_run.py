@@ -8,6 +8,7 @@ job is launched.
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import pathlib
 import sys
@@ -76,12 +77,11 @@ class NemoV3CpuDryRunTests(unittest.TestCase):
             verify_synthetic_trainer_envelope(bad, _verify)
 
     def test_cpu_dry_run_trains_a_few_steps(self) -> None:
-        try:
-            import torch
-            import trl
-        except ImportError as exc:
-            self.skipTest(f"pinned trainer stack is not installed: {exc}")
-        del torch, trl
+        if (
+            importlib.util.find_spec("torch") is None
+            or importlib.util.find_spec("trl") is None
+        ):
+            self.skipTest("pinned trainer stack is not installed")
         result = nemo_v3_cpu_dry_run.run_cpu_dry_run(_envelope(), _verify)
         self.assertGreaterEqual(result["global_steps"], 1)
         self.assertTrue(result["chat_template_present"])
