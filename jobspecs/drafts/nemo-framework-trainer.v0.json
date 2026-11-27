@@ -1,0 +1,111 @@
+{
+  "backend": "nemo-framework",
+  "baseImage": "ghcr.io/szl-holdings/szl-train-pinned@sha256:8eb919654e0da406d41a2e307e7705cce8f6b79ad0be9556d74d4c4640e63235",
+  "baseImageRegistryVerified": "UNKNOWN",
+  "caps": {
+    "perDayUsd": 500,
+    "perDayUusd": 500000000,
+    "perMonthUsd": 5000,
+    "perMonthUusd": 5000000000,
+    "perRunUsd": 100,
+    "perRunUusd": 100000000
+  },
+  "existingBackend": "hf-peft",
+  "existingBackendModule": "tools/salad/salad_worker.py",
+  "families": [
+    "nano-4b",
+    "nano-9b-v2",
+    "illapa"
+  ],
+  "launch": false,
+  "launcher": "saywa",
+  "launcherImplementation": "UNKNOWN",
+  "licenseRegister": {
+    "illapa": {
+      "amaruLicenseCheck": "PENDING",
+      "hfApiLicense": "UNKNOWN",
+      "hfApiLicenseLink": "UNKNOWN",
+      "hfApiLicenseName": "UNKNOWN",
+      "hfRepoId": "UNKNOWN",
+      "hfRevision": "UNKNOWN",
+      "internalName": "Illapa",
+      "licenseObservedOn": "2026-11-27",
+      "matchesV3LicenseGate": false,
+      "role": "Nemotron flagship, internal name only",
+      "unboundCandidatesObserved": [
+        {
+          "adopted": false,
+          "hfApiLicense": "other",
+          "hfApiLicenseName": "openmdw-1.1",
+          "hfRepoId": "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+          "hfRevision": "77df655d5e9f8362164ed14dd8b48f8bce657498"
+        },
+        {
+          "adopted": false,
+          "hfApiLicense": "other",
+          "hfApiLicenseName": "nvidia-nemotron-open-model-license",
+          "hfRepoId": "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+          "hfRevision": "2dc98e2afe4face0e4ce40972a915c45368bd34a"
+        }
+      ]
+    },
+    "nano-4b": {
+      "amaruLicenseCheck": "PENDING",
+      "hfApiLicense": "other",
+      "hfApiLicenseLink": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/",
+      "hfApiLicenseName": "nvidia-nemotron-open-model-license",
+      "hfRepoId": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+      "hfRevision": "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
+      "internalName": "Nemotron Nano-4B",
+      "licenseObservedOn": "2026-11-27",
+      "matchesV3LicenseGate": true
+    },
+    "nano-9b-v2": {
+      "amaruLicenseCheck": "PENDING",
+      "hfApiLicense": "other",
+      "hfApiLicenseLink": "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/",
+      "hfApiLicenseName": "nvidia-open-model-license",
+      "hfRepoId": "nvidia/NVIDIA-Nemotron-Nano-9B-v2",
+      "hfRevision": "6533e8de2c68e4536bf7c411d7a3ce5734111476",
+      "internalName": "Nemotron Nano-9B-v2",
+      "licenseObservedOn": "2026-11-27",
+      "matchesV3LicenseGate": false
+    }
+  },
+  "nemoFramework": {
+    "compatibilityWithPinnedTorch": "UNKNOWN",
+    "githubApiSpdx": "Apache-2.0",
+    "ngcContainer": false,
+    "revision": "UNKNOWN",
+    "source": "https://github.com/NVIDIA-NeMo/NeMo"
+  },
+  "providers": [
+    "massed",
+    "salad"
+  ],
+  "recipe": {
+    "batchSize": 1,
+    "epochs": 2,
+    "gradAccum": 8,
+    "gradientCheckpointing": "unsloth",
+    "learningRate": 0.0001,
+    "loraAlpha": 32,
+    "loraDropout": 0.05,
+    "loraR": 16,
+    "lrSchedulerType": "linear",
+    "maxSeqLength": 768,
+    "optimizer": "paged_adamw_8bit",
+    "seed": 3407,
+    "targetModules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ],
+    "warmupRatio": 0.05,
+    "weightDecay": 0.01
+  },
+  "schema": "szl.nemo-framework-trainer-draft/v0",
+  "successorImageDigest": "UNKNOWN",
+  "successorImageStatus": "NOT_BUILT"
+}
