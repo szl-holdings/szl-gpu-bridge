@@ -72,8 +72,18 @@ jobs:
           import re,sys
           t=open('requirements-n14.lock').read()
           blocks=re.split(r'\n(?=[A-Za-z0-9_.-]+(?:\[[^\]]*\])?==)', t.strip())
-          bad=[b.split()[0] for b in blocks if '--hash=sha256:' not in b]
-          sys.exit(f"unhashed in requirements-n14.lock: {bad}" if bad else 0)
+          bad=[]; n=0
+          for b in blocks:
+              lines=[ln for ln in b.splitlines() if ln.strip() and not ln.strip().startswith('#')]
+              if not lines:
+                  continue
+              n += 1
+              if '--hash=sha256:' not in b:
+                  bad.append(lines[0].split()[0])
+          if bad:
+              sys.exit(f"unhashed in requirements-n14.lock: {bad}")
+          if n == 0:
+              sys.exit("no hashed packages in requirements-n14.lock")
           PY
       - name: Refuse incompatible pinned NumPy and PyArrow before image build
         run: >-
