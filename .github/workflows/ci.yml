@@ -67,6 +67,7 @@ jobs:
       - name: Compile Python
         run: >-
           python -m py_compile laptop/*.py tests/*.py workforce/*.py tools/salad/salad_worker.py
+          tools/nemo_framework/__init__.py tools/nemo_framework/backend.py
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
@@ -80,7 +81,7 @@ jobs:
           tools/a6000-migration/complete_record.py
       - name: Verify deterministic Python formatting
         run: >-
-          ruff format --check laptop tests workforce
+          ruff format --check laptop tests workforce tools/nemo_framework
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
@@ -94,7 +95,7 @@ jobs:
           tools/a6000-migration/complete_record.py
       - name: Lint Python
         run: >-
-          ruff check laptop tests workforce
+          ruff check laptop tests workforce tools/nemo_framework
           tools/salad/artifact_qualification.py tools/salad/training_observer.py
           tools/salad/fleet_watch_readonly.py
           tools/salad/controller_gates.py tools/salad/fleet_controller.py
