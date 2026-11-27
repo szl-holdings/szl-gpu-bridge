@@ -131,6 +131,41 @@ class NemoV3SftConfigCompatibilityTests(unittest.TestCase):
                     )
                 self.assertEqual(config.calls, [])
 
+    def test_warmup_ratio_binds_to_warmup_steps_when_the_ratio_field_is_gone(
+        self,
+    ) -> None:
+        config = _recording_config(strategy_name="eval_strategy")
+        names = [
+            parameter.name
+            for parameter in inspect.signature(config).parameters.values()
+            if parameter.kind is not inspect.Parameter.VAR_KEYWORD
+            and parameter.name != "warmup_ratio"
+        ]
+        config.__signature__ = inspect.Signature(
+            [
+                inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY)
+                for name in [*names, "warmup_steps"]
+            ]
+            + [inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD)]
+        )
+        recipe = _recipe()
+        with tempfile.TemporaryDirectory() as directory:
+            built = frontier_job._build_sft_config(
+                config, recipe, _Torch(), pathlib.Path(directory)
+            )
+        self.assertEqual(built.values["warmup_steps"], float(recipe["warmupRatio"]))
+        self.assertNotIn("warmup_ratio", built.values)
+        config.__signature__ = inspect.Signature(
+            [inspect.Parameter(name, inspect.Parameter.KEYWORD_ONLY) for name in names]
+            + [inspect.Parameter("kwargs", inspect.Parameter.VAR_KEYWORD)]
+        )
+        with self.assertRaisesRegex(
+            RuntimeError, "neither warmup_ratio nor warmup_steps"
+        ):
+            frontier_job._build_sft_config(
+                config, recipe, _Torch(), pathlib.Path("output")
+            )
+
     def test_unsupported_field_is_not_hidden_by_var_kwargs(self) -> None:
         config = _recording_config(strategy_name="eval_strategy")
         with self.assertRaisesRegex(RuntimeError, "unsupported fields"):

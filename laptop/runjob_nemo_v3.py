@@ -269,13 +269,39 @@ def _admit_gpu(spec: dict[str, Any], stage: str) -> dict[str, Any]:
     return state
 
 
+def _nemotron_h_module():
+    import importlib.util
+
+    path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "tools"
+        / "salad"
+        / "nemotron_h.py"
+    )
+    spec = importlib.util.spec_from_file_location("nemotron_h_trainer", path)
+    if spec is None or spec.loader is None or not path.is_file():
+        raise RuntimeError("Nemotron-H trainer support is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _generate(
-    model: Any, tokenizer: Any, messages: list[dict[str, Any]], max_new_tokens: int
+    model: Any,
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    max_new_tokens: int,
+    enable_thinking: bool | None = None,
 ) -> str:
     import torch
 
+    rendered = messages
+    template_kwargs: dict[str, Any] = {}
+    if enable_thinking is not None:
+        rendered = _nemotron_h_module().messages_for_thinking(messages, enable_thinking)
+        template_kwargs["enable_thinking"] = enable_thinking
     prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        rendered, tokenize=False, add_generation_prompt=True, **template_kwargs
     )
     encoded = tokenizer(prompt, return_tensors="pt")
     encoded = {key: value.to(model.device) for key, value in encoded.items()}
@@ -291,12 +317,22 @@ def _generate(
 
 
 def _evaluate_suite(
-    model: Any, tokenizer: Any, rows: list[dict[str, Any]], max_new_tokens: int
+    model: Any,
+    tokenizer: Any,
+    rows: list[dict[str, Any]],
+    max_new_tokens: int,
+    enable_thinking: bool | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     results: list[dict[str, Any]] = []
     passes = 0
     for row in rows:
-        text = _generate(model, tokenizer, row["messages"], max_new_tokens)
+        text = _generate(
+            model,
+            tokenizer,
+            row["messages"],
+            max_new_tokens,
+            enable_thinking=enable_thinking,
+        )
         folded = text.casefold()
         required = row["expected"]["required_terms"]
         forbidden = row["expected"]["forbidden_terms"]
@@ -623,8 +659,26 @@ def _materialize_nemo_lm_head_for_trainer(
         raise RuntimeError("materialized lm_head metadata changed")
 
 
+def _flat_token_ids(values: Any) -> Any:
+    """Unwrap a chat-template return into the flat id list the label mask requires.
+
+    Transformers 5 returns a mapping with ``input_ids``. A batch of one row is
+    unwrapped. Anything else is returned unchanged so the existing check refuses it.
+    """
+
+    if not isinstance(values, list) and hasattr(values, "input_ids"):
+        values = values["input_ids"] if isinstance(values, dict) else values.input_ids
+    if hasattr(values, "tolist") and not isinstance(values, list):
+        values = values.tolist()
+    return values
+
+
 def _prepare_nemo_assistant_labels(
-    dataset: Any, tokenizer: Any, *, max_length: int
+    dataset: Any,
+    tokenizer: Any,
+    *,
+    max_length: int,
+    enable_thinking: bool | None = None,
 ) -> Any:
     if (
         not isinstance(max_length, int)
@@ -647,11 +701,33 @@ def _prepare_nemo_assistant_labels(
         if roles != ["system", "user", "assistant"]:
             raise RuntimeError("assistant-label row must be system, user, assistant")
 
-        context_ids = tokenizer.apply_chat_template(
-            messages[:-1], tokenize=True, add_generation_prompt=False
+        context_messages = messages[:-1]
+        full_messages = messages
+        template_kwargs: dict[str, Any] = {}
+        if enable_thinking is not None:
+            nemotron = _nemotron_h_module()
+            context_messages = nemotron.messages_for_thinking(
+                context_messages, enable_thinking
+            )
+            full_messages = nemotron.messages_for_thinking(
+                full_messages, enable_thinking
+            )
+            template_kwargs["enable_thinking"] = enable_thinking
+        context_ids = _flat_token_ids(
+            tokenizer.apply_chat_template(
+                context_messages,
+                tokenize=True,
+                add_generation_prompt=False,
+                **template_kwargs,
+            )
         )
-        full_ids = tokenizer.apply_chat_template(
-            messages, tokenize=True, add_generation_prompt=False
+        full_ids = _flat_token_ids(
+            tokenizer.apply_chat_template(
+                full_messages,
+                tokenize=True,
+                add_generation_prompt=False,
+                **template_kwargs,
+            )
         )
         for name, values in (("context", context_ids), ("full", full_ids)):
             if (
@@ -833,31 +909,64 @@ def main(spec_path: str) -> int:
             PreTrainedTokenizerBase,
             tokenizer_snapshot,
         )
+        target_modules = list(recipe["targetModules"])
+        model_type = getattr(getattr(model, "config", None), "model_type", None)
+        architectures = list(
+            getattr(getattr(model, "config", None), "architectures", None) or []
+        )
+        nemotron = None
+        if model_type == "nemotron_h" or "NemotronHForCausalLM" in architectures:
+            nemotron = _nemotron_h_module()
+            try:
+                target_modules = nemotron.lora_targets_for_model(model, target_modules)
+                notice = os.environ.get("SZL_NEMO_NOTICE_FILE")
+                if not notice:
+                    raise nemotron.NemotronHError("NVIDIA NOTICE file is absent")
+                nemotron.preflight_license(spec["base"], notice)
+            except nemotron.NemotronHError as exc:
+                blocked(spec, "train:nemotron-h", str(exc))
+            nemotron.use_eager_out_proj(model)
+        base_config = model.config
+        renamed_for_peft = nemotron is not None and "out_proj" in target_modules
+        if renamed_for_peft:
+            base_config.model_type = "nemotron_h_lora_out_proj"
         _require_nemo_model_materialization(
-            model, recipe["targetModules"], phase="before adapter construction"
+            model, target_modules, phase="before adapter construction"
         )
-        model = FastLanguageModel.get_peft_model(
-            model,
-            r=recipe["loraR"],
-            lora_alpha=recipe["loraAlpha"],
-            lora_dropout=recipe["loraDropout"],
-            bias="none",
-            target_modules=recipe["targetModules"],
-            use_gradient_checkpointing=_gradient_checkpointing(
-                recipe["gradientCheckpointing"]
-            ),
-            random_state=recipe["seed"],
-            max_seq_length=recipe["maxSeqLength"],
-            use_rslora=True,
-            loftq_config=None,
-        )
+        try:
+            model = FastLanguageModel.get_peft_model(
+                model,
+                r=recipe["loraR"],
+                lora_alpha=recipe["loraAlpha"],
+                lora_dropout=recipe["loraDropout"],
+                bias="none",
+                target_modules=target_modules,
+                use_gradient_checkpointing=_gradient_checkpointing(
+                    recipe["gradientCheckpointing"]
+                ),
+                random_state=recipe["seed"],
+                max_seq_length=recipe["maxSeqLength"],
+                use_rslora=True,
+                loftq_config=None,
+            )
+        finally:
+            if renamed_for_peft:
+                base_config.model_type = "nemotron_h"
+                if (
+                    getattr(getattr(model, "config", None), "model_type", None)
+                    != "nemotron_h"
+                ):
+                    model.config.model_type = "nemotron_h"
         _require_nemo_model_materialization(
-            model, recipe["targetModules"], phase="after adapter construction"
+            model, target_modules, phase="after adapter construction"
         )
+        label_kwargs: dict[str, Any] = {"max_length": recipe["maxSeqLength"]}
+        if "enableThinking" in recipe:
+            label_kwargs["enable_thinking"] = recipe["enableThinking"]
         full_train = _prepare_nemo_assistant_labels(
             Dataset.from_list(train_rows),
             tokenizer,
-            max_length=recipe["maxSeqLength"],
+            **label_kwargs,
         )
         split = full_train.train_test_split(
             test_size=min(0.15, max(1 / len(full_train), 0.05)), seed=recipe["seed"]
@@ -902,15 +1011,22 @@ def main(spec_path: str) -> int:
         config = _build_sft_config(SFTConfig, frontier_recipe, torch, trainer_output)
         _materialize_nemo_lm_head_for_trainer(model)
         _require_nemo_model_materialization(
-            model, recipe["targetModules"], phase="before trainer construction"
+            model, target_modules, phase="before trainer construction"
         )
+        callbacks = [GateCallback()]
+        if os.environ.get("SZL_POOL_METRICS_FILE") or os.environ.get(
+            "SZL_POOL_CHECKPOINT_REQUEST"
+        ):
+            if nemotron is None:
+                nemotron = _nemotron_h_module()
+            callbacks.append(nemotron.pool_callback_class()())
         trainer = _build_sft_trainer(
             SFTTrainer,
             model=model,
             tokenizer=tokenizer,
             train_dataset=split["train"],
             eval_dataset=split["test"],
-            callbacks=[GateCallback()],
+            callbacks=callbacks,
             config=config,
         )
         train_output = trainer.train()
@@ -947,7 +1063,13 @@ def main(spec_path: str) -> int:
         total = total_passes = total_degenerate = 0
         for descriptor, rows in holdout_rows:
             results, passes = _evaluate_suite(
-                model, tokenizer, rows, spec["evaluation"]["maxNewTokens"]
+                model,
+                tokenizer,
+                rows,
+                spec["evaluation"]["maxNewTokens"],
+                enable_thinking=recipe["enableThinking"]
+                if "enableThinking" in recipe
+                else None,
             )
             degenerate = sum(int(item["degenerate"]) for item in results)
             suite_results[descriptor["name"]] = {

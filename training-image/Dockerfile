@@ -35,6 +35,7 @@ RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install --no-cache-dir --no-deps 
 # One canonical training worker. Do not build from the retired image-local copy:
 # it predates immutable resume_integrity and may silently restart from genesis.
 COPY tools/salad/salad_worker.py /work/salad_worker.py
+COPY tools/salad/nemotron_h.py /work/nemotron_h.py
 COPY tools/salad/resume_integrity.py tools/salad/training_snapshot.py /work/tools/salad/
 COPY training-image/readiness_probe.py training-image/step_heartbeat.py training-image/build_gate.py /work/
 COPY training-image/source_runtime_contract.py /work/source_runtime_contract.py
@@ -45,7 +46,7 @@ COPY training-image/vendor /work/receipts/vendor
 COPY training-image/receipt_tests /work/receipts/tests
 
 # Bind all installed worker/helper/uploader bytes after their final COPY.
-RUN python3 -m py_compile /work/salad_worker.py /work/tools/salad/resume_integrity.py /work/tools/salad/training_snapshot.py \
+RUN python3 -m py_compile /work/salad_worker.py /work/nemotron_h.py /work/tools/salad/resume_integrity.py /work/tools/salad/training_snapshot.py \
  && python3 /work/source_runtime_contract.py create --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}" \
  && python3 /work/source_runtime_contract.py verify --root /work --manifest /work/source-bindings.json --source-revision "${GIT_COMMIT}"
 

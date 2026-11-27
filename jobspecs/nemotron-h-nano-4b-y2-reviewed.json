@@ -1,0 +1,61 @@
+{
+  "jobId": "job-2026-nemotron-h-nano-4b-y2",
+  "kind": "szl-nemotron-h-qlora-sft-v1",
+  "createdAt": "2026-11-27T06:21:00Z",
+  "expiresAt": "2026-12-27T06:21:00Z",
+  "base": {
+    "repoId": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+    "revision": "dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f",
+    "licenseId": "nvidia-nemotron-open-model-license",
+    "licenseAcknowledgement": "I accept the pinned NVIDIA Nemotron Open Model License, preserve NVIDIA attribution, and keep the NOTICE file with the base.",
+    "trustRemoteCode": true
+  },
+  "trainingImage": "ghcr.io/szl-holdings/szl-train-pinned@sha256:8eb919654e0da406d41a2e307e7705cce8f6b79ad0be9556d74d4c4640e63235",
+  "providers": ["salad", "massed"],
+  "caps": {
+    "config": "config/dispatch-caps.v1.json",
+    "stricterWins": true
+  },
+  "expectedHybridPattern": "M-M-M-MM-M-M*-M-M*-M-M-M*-M-M-MM*-MMM-M-M-",
+  "recipe": {
+    "maxSeqLength": 768,
+    "loraR": 16,
+    "loraAlpha": 32,
+    "loraDropout": 0.05,
+    "targetModules": [
+      "in_proj",
+      "out_proj",
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "batchSize": 1,
+    "gradAccum": 8,
+    "epochs": 2,
+    "learningRate": 0.0001,
+    "optimizer": "paged_adamw_8bit",
+    "gradientCheckpointing": "true",
+    "seed": 3407,
+    "warmupRatio": 0.05,
+    "weightDecay": 0.01,
+    "lrSchedulerType": "linear",
+    "enableThinking": true
+  },
+  "gates": {
+    "minFreeVramGb": 6.5,
+    "minFreeDiskGb": 50,
+    "maxWallclockMinutes": 240,
+    "maxDatasetRows": 500,
+    "maxTemperatureC": 78,
+    "maxUtilizationPct": 15
+  },
+  "outputs": {
+    "candidateId": "SZL-Nemotron-H-Nano-4B-Y2",
+    "private": true,
+    "publishCandidate": false
+  },
+  "notes": "Reviewed plaintext for the Y2 Nano-4B LoRA/QLoRA run. This file is not a DSSE envelope and is not a launch approval. Dispatcher still requires a signed queue envelope; this change does not add an unsigned path. The hub revision dfaf35de3e30f1867dd8dbc38a7fc9fb52d3914f publishes no NOTICE file, so a launch must present one locally. Digest 8eb91965 was built before this worker, so a container of that exact digest runs the worker baked at build time until a later image build copies tools/salad/nemotron_h.py. nvidia/NVIDIA-Nemotron-Nano-9B-v2 uses the same detected projection suffixes."
+}

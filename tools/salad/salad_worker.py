@@ -144,6 +144,50 @@ from huggingface_hub import HfApi
 DS_RECEIPTS = "SZLHOLDINGS/frontier-54-runs"
 
 
+def nemotron_h_support():
+    """Load the sibling helper. The image copies it next to this worker."""
+
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "nemotron_h.py"
+    if not path.is_file():
+        raise RuntimeError("Nemotron-H trainer support is not beside salad_worker.py")
+    spec = importlib.util.spec_from_file_location("nemotron_h_support", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Nemotron-H trainer support could not be loaded")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def resolve_lora_targets(args, model, nemotron, claimed_nemotron_h):
+    """Keep q/k/v/o for other models. Nemotron-H uses the modules its config names."""
+
+    config = getattr(model, "config", None)
+    model_type = getattr(config, "model_type", None)
+    architectures = list(getattr(config, "architectures", None) or [])
+    is_nemotron = model_type == "nemotron_h" or "NemotronHForCausalLM" in architectures
+    if claimed_nemotron_h and not is_nemotron:
+        raise RuntimeError(
+            "base was identified as Nemotron-H but the loaded architecture is not"
+        )
+    if not is_nemotron:
+        return ["q_proj", "k_proj", "v_proj", "o_proj"], nemotron
+    if nemotron is None:
+        nemotron = nemotron_h_support()
+    nemotron.preflight_license(
+        {
+            "licenseId": args.license_id,
+            "licenseAcknowledgement": args.license_acknowledgement,
+        },
+        args.notice_file,
+    )
+    names = nemotron.assert_lora_modules_present(
+        model, nemotron.lora_target_modules(config)
+    )
+    return names, nemotron
+
+
 def sft_sequence_length_kwargs(constructor, length: int) -> dict:
     """Bind the exact supported TRL API without treating **kwargs as acceptance.
 
@@ -889,24 +933,39 @@ def training_format_contract(tok, columns, prompt_completion_format, base, base_
             "tokenizer_base": base, "tokenizer_revision": base_revision or None}
 
 
-def format_training_example(example, tok, prompt_completion_format):
+def format_training_example(example, tok, prompt_completion_format, enable_thinking=None):
     """Preserve raw text, or tokenize chat once without TRL adding another EOS."""
     ex = dict(example)  # LazyRow -> plain dict.
     if "text" in ex:
         return {"text": ex["text"]}
+    template = getattr(tok, "chat_template", None) or ""
+    if not isinstance(template, str):
+        template = ""
+    if "enable_thinking" in template and not isinstance(enable_thinking, bool):
+        raise ValueError("chat template requires recipe enableThinking")
+
+    def render(messages):
+        if isinstance(enable_thinking, bool):
+            messages = nemotron_h_support().messages_for_thinking(
+                messages, enable_thinking
+            )
+            return dict(tok.apply_chat_template(
+                messages, tokenize=True, add_generation_prompt=False,
+                return_dict=True, enable_thinking=enable_thinking))
+        return dict(tok.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=False, return_dict=True))
+
     if "messages" in ex:
-        return dict(tok.apply_chat_template(ex["messages"], tokenize=True,
-                    add_generation_prompt=False, return_dict=True))
+        return render(ex["messages"])
     if "prompt" in ex and "completion" in ex:
         prompt, completion = ex["prompt"], ex["completion"]
         if (not isinstance(prompt, str) or not isinstance(completion, str)
                 or not prompt.strip() or not completion.strip()):
             raise ValueError("prompt/completion fields must be nonempty strings")
         if prompt_completion_format == "chat":
-            return dict(tok.apply_chat_template(
+            return render(
                 [{"role": "user", "content": prompt},
-                 {"role": "assistant", "content": completion}],
-                tokenize=True, add_generation_prompt=False, return_dict=True))
+                 {"role": "assistant", "content": completion}])
         if prompt_completion_format != "verbatim":
             raise ValueError("unknown prompt/completion serialization mode")
         if not (prompt[-1].isspace() or completion[0].isspace()):
@@ -984,6 +1043,14 @@ def main() -> int:
                     help="opt-in PyTorch allocator cap; requires one visible GPU")
     ap.add_argument("--gpu-reserve-mib", type=int, default=8192,
                     help="additional free memory required at shared-GPU admission")
+    ap.add_argument("--enable-thinking", choices=("true", "false"), default=None,
+                    help="Nemotron recipe field: /think or /no_think system prompt")
+    ap.add_argument("--license-id", default="",
+                    help="base license id; Nemotron-H requires nvidia-nemotron-open-model-license")
+    ap.add_argument("--license-acknowledgement", default="",
+                    help="explicit NVIDIA Open Model License acknowledgement")
+    ap.add_argument("--notice-file", default="",
+                    help="path to the NVIDIA NOTICE file that must accompany the base")
     a = ap.parse_args()
     if min(a.max_steps, a.save_steps, a.max_examples, a.min_examples, a.heartbeat_seconds) < 1:
         ap.error("step, save, example and minimum-example bounds must be positive")
@@ -1227,6 +1294,41 @@ def run_training(a, api) -> int:
         receipt("fail-closed", "pinned-image liveness write unavailable",
                 {"training_started": False, "completion_qualified": False})
         return 8
+    enable_thinking = None if a.enable_thinking is None else a.enable_thinking == "true"
+    pool_attached = bool(
+        os.environ.get("SZL_POOL_METRICS_FILE")
+        or os.environ.get("SZL_POOL_CHECKPOINT_REQUEST")
+    )
+    nemotron = None
+    needs_support = (
+        pool_attached
+        or enable_thinking is not None
+        or a.license_id
+        or a.notice_file
+        or "nemotron" in a.base.lower()
+    )
+    if needs_support:
+        try:
+            nemotron = nemotron_h_support()
+        except RuntimeError as exc:
+            receipt("fail-closed", str(exc), {"training_started": False})
+            return 9
+    claimed_nemotron_h = bool(
+        nemotron and nemotron.base_requires_nemotron_h_preflight(a.base)
+    )
+    if claimed_nemotron_h:
+        try:
+            nemotron.preflight_license(
+                {
+                    "licenseId": a.license_id,
+                    "licenseAcknowledgement": a.license_acknowledgement,
+                },
+                a.notice_file,
+            )
+        except RuntimeError as exc:
+            receipt("fail-closed", str(exc),
+                    {"training_started": False, "license_preflight": False})
+            return 9
     tok = AutoTokenizer.from_pretrained(a.base, **base_kwargs)
     ds = load_train_split(a, api)  # F2/F3
 
@@ -1247,7 +1349,8 @@ def run_training(a, api) -> int:
         format_contract = training_format_contract(
             tok, ds.column_names, a.prompt_completion_format, a.base, a.base_revision)
         verify_resume_training_format(resume, format_contract)
-        ds = ds.map(lambda ex: format_training_example(ex, tok, a.prompt_completion_format),
+        ds = ds.map(lambda ex: format_training_example(
+                        ex, tok, a.prompt_completion_format, enable_thinking=enable_thinking),
                     remove_columns=ds.column_names, load_from_cache_file=False)
     except Exception:
         # Avoid echoing an exception that may contain private example text.
@@ -1278,6 +1381,23 @@ def run_training(a, api) -> int:
             model, use_gradient_checkpointing=a.gradient_checkpointing)
     if a.gradient_checkpointing:
         model.config.use_cache = False
+    try:
+        target_modules, nemotron = resolve_lora_targets(
+            a, model, nemotron, claimed_nemotron_h
+        )
+    except RuntimeError as exc:
+        receipt("fail-closed", str(exc),
+                {"training_started": False, "lora_targets": False})
+        return 9
+    eval_ds = None
+    if os.environ.get("SZL_POOL_METRICS_FILE"):
+        if len(ds) < 2:
+            receipt("fail-closed",
+                    "dataset is too small to hold out an eval row for the swap pool",
+                    {"examples_used": len(ds), "training_started": False})
+            return 9
+        eval_ds = ds.select([len(ds) - 1])
+        ds = ds.select(range(len(ds) - 1))
     if image_heartbeat is not None and not image_heartbeat.beat(0, a.max_steps, run_id):
         receipt("fail-closed", "pinned-image model milestone liveness unavailable",
                 {"training_started": False, "completion_qualified": False})
@@ -1294,7 +1414,8 @@ def run_training(a, api) -> int:
         bf16=True, optim=optim_name, report_to=[], logging_steps=10,
         gradient_checkpointing=a.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False} if a.gradient_checkpointing else None,
-        packing=False)
+        packing=False,
+        **({"eval_strategy": "steps", "eval_steps": 1} if eval_ds is not None else {}))
     try:
         verify_sequence_binding(cfg, sequence_kw, 2048)
     except RuntimeError as error:
@@ -1303,11 +1424,22 @@ def run_training(a, api) -> int:
         print(f"FAIL-CLOSED: {error}; no training started", file=sys.stderr, flush=True)
         return 8
     peft = LoraConfig(r=32, lora_alpha=64, lora_dropout=0.05,
-        target_modules=["q_proj","k_proj","v_proj","o_proj"],
+        target_modules=target_modules,
         task_type="CAUSAL_LM")
+    nemotron_model = getattr(getattr(model, "config", None), "model_type", None) == "nemotron_h"
+    if nemotron_model or "NemotronHForCausalLM" in list(
+        getattr(getattr(model, "config", None), "architectures", None) or []
+    ):
+        model = nemotron.attach_lora(
+            model, r=32, lora_alpha=64, lora_dropout=0.05, target_modules=target_modules
+        )
+        peft = None
 
-    trainer = SFTTrainer(model=model, args=cfg, train_dataset=ds, peft_config=peft,
-                         processing_class=tok)
+    trainer_kwargs = dict(model=model, args=cfg, train_dataset=ds, peft_config=peft,
+                          processing_class=tok)
+    if eval_ds is not None:
+        trainer_kwargs["eval_dataset"] = eval_ds
+    trainer = SFTTrainer(**trainer_kwargs)
 
     from transformers import TrainerCallback
     class ReceiptCallback(TrainerCallback):
@@ -1381,6 +1513,11 @@ def run_training(a, api) -> int:
             if STOP["flag"]:
                 control.should_training_stop = True
     trainer.add_callback(ReceiptCallback())
+    if nemotron is not None and (
+        os.environ.get("SZL_POOL_METRICS_FILE")
+        or os.environ.get("SZL_POOL_CHECKPOINT_REQUEST")
+    ):
+        trainer.add_callback(nemotron.pool_callback_class()())
     if image_heartbeat is not None:
         trainer.add_callback(image_heartbeat.make_callback(a.max_steps, run_id))
 

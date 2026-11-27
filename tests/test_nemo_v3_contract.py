@@ -134,6 +134,30 @@ class NemoV3ContractTests(unittest.TestCase):
         spec = valid_spec()
         self.assertIs(validate_nemo_v3_spec(spec), spec)
 
+    def test_enable_thinking_is_optional_and_does_not_widen_ranges(self):
+        spec = valid_spec()
+        self.assertNotIn("enableThinking", spec["recipe"])
+        self.assertIs(validate_nemo_v3_spec(spec), spec)
+        for value in (True, False):
+            spec = valid_spec()
+            spec["recipe"]["enableThinking"] = value
+            self.assertIs(validate_nemo_v3_spec(spec), spec)
+        spec = valid_spec()
+        spec["recipe"]["enableThinking"] = "true"
+        with self.assertRaisesRegex(ContractError, "enableThinking"):
+            validate_nemo_v3_spec(spec)
+        spec = valid_spec()
+        spec["recipe"]["extraKnob"] = 1
+        with self.assertRaises(ContractError):
+            validate_nemo_v3_spec(spec)
+        spec = valid_spec()
+        spec["recipe"]["loraR"] = 65
+        with self.assertRaisesRegex(ContractError, "loraR"):
+            validate_nemo_v3_spec(spec)
+        spec = valid_spec()
+        spec["recipe"]["loraR"] = 64
+        self.assertIs(validate_nemo_v3_spec(spec), spec)
+
     def test_holdout_order_and_identity_are_immutable(self):
         spec = valid_spec()
         spec["dataset"]["holdouts"].reverse()
